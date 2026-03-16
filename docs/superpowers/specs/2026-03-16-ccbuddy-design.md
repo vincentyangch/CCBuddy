@@ -64,13 +64,34 @@ Monorepo with independent module packages, orchestrated by a process manager, co
 No module directly imports or calls another. All communication goes through the event bus.
 
 ```typescript
+// --- Typed Event Catalog ---
+interface EventMap {
+  'message.incoming': IncomingMessageEvent
+  'message.outgoing': OutgoingMessageEvent
+  'session.conflict': SessionConflictEvent
+  'alert.health': HealthAlertEvent
+  'webhook.received': WebhookEvent
+  'heartbeat.status': HeartbeatStatusEvent
+  'agent.progress': AgentProgressEvent
+}
+
 interface EventBus {
-  publish(event: string, payload: any): Promise<void>
-  subscribe(event: string, handler: (payload: any) => void): void
+  publish<K extends keyof EventMap>(event: K, payload: EventMap[K]): Promise<void>
+  subscribe<K extends keyof EventMap>(event: K, handler: (payload: EventMap[K]) => void): Disposable
+  // subscribe returns a Disposable for cleanup during shutdown/hot-reload
+}
+
+interface Disposable {
+  dispose(): void
 }
 ```
 
-- Current implementation: in-process IPC or local Redis pub/sub
+Each event payload type carries its own routing metadata (userId, sessionId, channelId, platform) so downstream consumers can route without ambient state.
+
+**Implementation:** Start with in-process IPC (Node.js `EventEmitter` across worker threads) for simplicity. No external dependencies. If scaling demands it later, swap to Redis pub/sub or NATS — the `EventBus` interface stays identical.
+
+**Fallback alerting:** If the event bus itself is down, the heartbeat module falls back to direct process signals (SIGUSR1) or filesystem-based alerts (write to a watchfile) to reach the orchestrator, which can then send alerts via platform adapters directly.
+
 - Future upgrade path: swap to NATS/RabbitMQ for distributed deployment without changing module code
 
 ### Orchestrator & Crash Recovery
@@ -84,11 +105,21 @@ launchd (macOS built-in, always running)
 ```
 
 Recovery behavior:
-- Orchestrator writes child process PIDs to a state file on disk
-- On restart, checks which children survived (children don't die with parent in Node.js)
-- Reconnects to surviving children, restarts dead ones
-- Event bus subscriptions re-establish automatically
-- Worst case (full reboot): launchd starts orchestrator, orchestrator starts all modules. Platform message buffers deliver missed messages on reconnect.
+- Orchestrator writes child process PIDs and module state to a state file on disk
+- Child processes are spawned in **detached mode** (`{ detached: true }`) with `child.unref()` so they survive parent crashes
+- On restart, orchestrator reads the PID file, checks which children are still alive (via `process.kill(pid, 0)`), and reconnects
+- Dead children are restarted; surviving children re-establish event bus subscriptions automatically
+- Worst case (full reboot): launchd starts orchestrator, orchestrator starts all modules from scratch. Discord buffers missed messages natively; for Telegram, use long-polling mode (not webhooks) so messages are re-fetched on reconnect.
+
+### Graceful Shutdown
+
+When CCBuddy is intentionally stopped (e.g., for updates):
+1. Orchestrator sends SIGTERM to all module processes
+2. Each module enters drain mode: finishes in-flight work (configurable timeout, default 30s)
+3. Platform adapters send a "going offline" status indicator where supported
+4. Agent module waits for active Claude Code sessions to complete (or aborts after timeout)
+5. Memory module flushes pending writes and closes SQLite connections
+6. Orchestrator exits cleanly after all modules confirm shutdown
 
 The orchestrator is kept as thin as possible (start, monitor, stop processes) to minimize crash surface.
 
@@ -108,6 +139,8 @@ interface AgentRequest {
   prompt: string
   userId: string
   sessionId: string
+  channelId: string
+  platform: string
   workingDirectory?: string
   allowedTools?: string[]
   systemPrompt?: string
@@ -116,12 +149,22 @@ interface AgentRequest {
   permissionLevel: 'admin' | 'chat'
 }
 
+interface Attachment {
+  type: 'image' | 'file' | 'voice'
+  mimeType: string
+  data: Buffer
+  filename?: string
+  transcript?: string          // populated by STT for voice attachments
+}
+
 type AgentEvent =
-  | { type: 'text', content: string }
-  | { type: 'tool_use', tool: string }
-  | { type: 'complete', response: string }
-  | { type: 'error', error: string }
+  | { type: 'text', sessionId: string, userId: string, content: string }
+  | { type: 'tool_use', sessionId: string, userId: string, tool: string }
+  | { type: 'complete', sessionId: string, userId: string, channelId: string, platform: string, response: string }
+  | { type: 'error', sessionId: string, userId: string, error: string }
 ```
+
+All `AgentEvent` variants carry routing metadata (`sessionId`, `userId`) so the gateway can route responses without ambient state. The `complete` event additionally carries `channelId` and `platform` for direct delivery routing.
 
 ### Backends
 
@@ -141,6 +184,25 @@ type AgentEvent =
 |---|---|
 | `admin` | All tools, all working directories, full filesystem/bash access |
 | `chat` | No bash, no file edit, no file read. Text conversation only |
+| `system` | Internal role for maintenance jobs (memory consolidation, etc.). Access to memory module internal APIs and read-only system metrics. No user-facing tools, no bash/filesystem unless explicitly required by the specific job. Cross-user memory access is permitted for consolidation — this is a privileged internal operation. |
+
+### Session Lifecycle
+
+- **Session ID format:** `{userId}-{platform}-{channelId}` (e.g., `dad-discord-dev`, `son-telegram-dm`). DMs on different platforms create separate sessions but share the same user memory DAG.
+- **Creation:** A session is created on first message in a channel. The agent module creates a Claude Code session with the corresponding ID.
+- **Timeout:** After `session_timeout_minutes` (configurable, default 30) of inactivity, the session is marked idle. The Claude Code process is released, but session state (CC's session ID) is preserved so it can be resumed.
+- **Resumption:** If a user sends a message to an idle session, the agent restarts the CC session with the same session ID, restoring conversation continuity.
+- **Cleanup:** Sessions idle for longer than `session_cleanup_hours` (configurable, default 24) are fully cleaned up — CC session state is released.
+- **Pending user input:** If a session is waiting for user input (e.g., session conflict resolution), the timeout clock pauses. After a longer timeout (configurable, default 10 minutes), the pending request is cancelled and the user is notified.
+
+### Rate Limiting & Queuing
+
+- **Per-user rate limits:** Configurable `max_requests_per_minute` per role (default: admin=30, chat=10). Excess requests receive a friendly "slow down" message.
+- **Global concurrency cap:** `max_concurrent_sessions` (configurable, default 3). When hit, requests enter a priority queue:
+  - Admin requests take priority over chat requests
+  - Within the same priority, FIFO ordering
+  - Max queue depth: configurable (default 10). Beyond this, requests are rejected with "CCBuddy is busy, try again shortly."
+  - Queue timeout: configurable (default 120s). Queued requests that wait too long are cancelled with notification.
 
 ### Session Conflict Detection
 
@@ -242,7 +304,22 @@ Messages from all platforms go into the same table with the same `user_id`. The 
 
 ### Consolidation
 
-A scheduled cron job (configurable, default daily at 3am) where Claude Code reviews the DAG: merges duplicates, updates stale facts, prunes contradicted information. CC is the brain for memory housekeeping.
+A scheduled cron job (configurable, default daily at 3am) where Claude Code reviews the DAG: merges duplicates, updates stale facts, prunes contradicted information. CC is the brain for memory housekeeping. Runs as the `system` role (see Section 3).
+
+### Error Handling & Data Integrity
+
+**Summarization failures:** All DAG mutations (leaf creation, condensation) run inside SQLite transactions. If Claude Code fails mid-summarization (rate limit, network error, context overflow), the transaction rolls back — no orphaned nodes or partially linked entries. The failed batch is retried on the next compaction cycle.
+
+**Retry strategy:** Failed summarization retries up to 3 times with exponential backoff (configurable). After max retries, the batch is skipped and an `alert.health` event is published so the admin is notified.
+
+**Integrity checks:** A periodic integrity scan (part of the consolidation cron) validates the DAG: ensures all `source_ids` reference existing nodes/messages, no orphaned summaries exist, and token counts are consistent. Corruption is auto-repaired where possible (re-summarize broken nodes) or flagged for admin review.
+
+### Data Management & Backup
+
+- **WAL mode:** SQLite runs in WAL (Write-Ahead Logging) mode for concurrent read/write safety
+- **Backups:** Daily automated backup via SQLite `.backup` command (configurable schedule). Stored in `backup_dir` with rotation (default: keep last 7).
+- **Size monitoring:** Heartbeat module tracks database file size. Alert when exceeding configurable threshold (default: 5GB).
+- **Archival:** Raw messages older than a configurable threshold (default: 365 days) that have been fully summarized can be moved to a cold storage SQLite file. The DAG retains summary nodes; `memory_expand` can still recover originals from cold storage when needed.
 
 ### Future Extensibility
 
@@ -350,6 +427,9 @@ Platform accounts map to a single user identity. CCBuddy recognizes "Dad" whethe
 |---|---|---|---|---|---|
 | `admin` | Full | Full | Full | Full | Full |
 | `chat` | Full | None | None | Configurable per tool | Restricted sandbox |
+| `system` | N/A (internal) | Read-only metrics | None (unless job-specific) | None | None |
+
+The `system` role is internal-only, used for maintenance jobs like memory consolidation. It has cross-user memory access for DAG housekeeping but no user-facing tools.
 
 ## 7. Scheduler Module
 
@@ -441,7 +521,10 @@ webhooks:
 
 ### Security
 
-- Per-handler secrets for validation
+- Per-handler secrets for signature validation
+- Timestamp-based replay protection: reject requests with timestamps older than configurable window (default: 5 minutes), matching GitHub's webhook security model
+- Request body size limit: configurable (default: 1MB) to prevent abuse
+- Rate limiting on the HTTP endpoint: configurable per-handler (default: 30 requests/minute)
 - Exposed to internet via Tailscale Funnel or Cloudflare Tunnel (not direct port forwarding)
 
 ## 10. Media Module
@@ -534,9 +617,10 @@ skills/
 
 ### Safety Guardrails
 
-- Generated skills run in a sandboxed context
+- **Sandboxing approach:** Generated skills run as separate Node.js worker threads with restricted API surface. Skills cannot access `child_process`, `fs` (outside designated skill data dirs), or `net` modules unless explicitly granted elevated permissions. This is not OS-level sandboxing — it's a restricted execution context. For stronger isolation, macOS `sandbox-exec` profiles can be layered on as a future enhancement.
+- **Code review gate:** Before a generated skill is registered, Claude Code reviews its own generated code for security issues (injection, data exfiltration, unbounded resource usage). This is a pragmatic rather than cryptographic security boundary.
 - Admin approval required for skills requesting elevated permissions (network, filesystem, shell)
-- Chat-only user skill creation: restricted sandbox (configurable)
+- Chat-only user skill creation: restricted sandbox (configurable, default: disabled for chat users)
 - All generated skills committed to git for audit trail
 
 ### Unified Tool Registry
@@ -560,16 +644,28 @@ ccbuddy:
     default_working_directory: "~"
     admin_skip_permissions: true
     session_timeout_minutes: 30
+    session_cleanup_hours: 24
+    pending_input_timeout_minutes: 10
+    queue_max_depth: 10
+    queue_timeout_seconds: 120
+    rate_limits:
+      admin: 30                        # max requests per minute
+      chat: 10
+    graceful_shutdown_timeout_seconds: 30
 
   memory:
     db_path: "./data/memory.sqlite"
-    context_threshold: 0.75
+    max_context_tokens: 100000       # total token budget for context assembly
+    context_threshold: 0.75          # trigger compaction at 75% of max_context_tokens
     fresh_tail_count: 32
     leaf_chunk_tokens: 20000
     leaf_target_tokens: 1200
     condensed_target_tokens: 2000
     max_expand_tokens: 4000
     consolidation_cron: "0 3 * * *"
+    backup_cron: "0 4 * * *"         # daily SQLite backup
+    backup_dir: "./data/backups"
+    max_backups: 7                   # keep last 7 daily backups
 
   gateway:
     unknown_user_reply: true
@@ -595,6 +691,9 @@ ccbuddy:
   webhooks:
     enabled: true
     port: 18800
+    max_body_size_bytes: 1048576       # 1MB
+    replay_window_seconds: 300         # 5 minutes
+    rate_limit_per_minute: 30
     handlers: [...]
 
   media:
