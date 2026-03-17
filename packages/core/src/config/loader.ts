@@ -127,5 +127,10 @@ export function loadConfig(configDir: string): CCBuddyConfig {
   config = resolvePlaceholders(config) as CCBuddyConfig;
   config = applyEnvOverrides(config);
 
+  // Ensure users is always an object (guard against YAML edge cases)
+  if (!config.users || typeof config.users !== 'object') {
+    config.users = {};
+  }
+
   return config;
 }
