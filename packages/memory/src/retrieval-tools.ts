@@ -1,6 +1,6 @@
 import { MessageStore, type StoredMessage } from './message-store.js';
 import { SummaryStore, type SummaryNode } from './summary-store.js';
-import type { ToolDescription } from '@ccbuddy/skills';
+import type { ToolDescription } from '@ccbuddy/core';
 
 export interface GrepResult {
   messages: StoredMessage[];

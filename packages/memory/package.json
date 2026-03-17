@@ -13,7 +13,6 @@
   },
   "dependencies": {
     "@ccbuddy/core": "*",
-    "@ccbuddy/skills": "*",
     "better-sqlite3": "^11"
   },
   "devDependencies": {

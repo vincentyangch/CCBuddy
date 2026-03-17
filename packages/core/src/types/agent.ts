@@ -37,3 +37,13 @@ export interface AgentBackend {
   execute(request: AgentRequest): AsyncGenerator<AgentEvent>;
   abort(sessionId: string): Promise<void>;
 }
+
+export interface ToolDescription {
+  name: string;
+  description: string;
+  inputSchema: {
+    type: 'object';
+    properties: Record<string, { type: string; description?: string; enum?: string[]; default?: unknown }>;
+    required?: string[];
+  };
+}

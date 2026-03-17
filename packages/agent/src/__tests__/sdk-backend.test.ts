@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SdkBackend } from '../backends/sdk-backend.js';
 import type { AgentRequest } from '@ccbuddy/core';
 
@@ -29,9 +29,12 @@ async function* successGenerator() {
 }
 
 describe('SdkBackend', () => {
-  it('passes through admin requests without chat restriction', async () => {
+  beforeEach(() => {
+    mockQuery.mockClear();
     mockQuery.mockReturnValue(successGenerator());
+  });
 
+  it('passes through admin requests without chat restriction', async () => {
     const backend = new SdkBackend({ skipPermissions: false });
     const events = [];
     for await (const event of backend.execute(makeRequest({ permissionLevel: 'admin' }))) {
@@ -41,14 +44,13 @@ describe('SdkBackend', () => {
     expect(events).toHaveLength(1);
     expect(events[0].type).toBe('complete');
 
-    const callOptions = mockQuery.mock.calls[0][0].options;
+    const callArg = mockQuery.mock.calls[0][0] as { prompt: string; options: Record<string, unknown> };
+    const callOptions = callArg.options;
     // No chat restriction for admin
-    expect(callOptions.systemPrompt ?? '').not.toContain('chat-only mode');
+    expect(callOptions['systemPrompt'] ?? '').not.toContain('chat-only mode');
   });
 
   it('adds system prompt restriction for chat users', async () => {
-    mockQuery.mockReturnValue(successGenerator());
-
     const backend = new SdkBackend();
     const events = [];
     for await (const event of backend.execute(makeRequest({ permissionLevel: 'chat' }))) {
@@ -58,15 +60,14 @@ describe('SdkBackend', () => {
     expect(events).toHaveLength(1);
     expect(events[0].type).toBe('complete');
 
-    const callOptions = mockQuery.mock.calls[0][0].options;
-    expect(callOptions.allowedTools).toEqual([]);
-    expect(callOptions.systemPrompt).toContain('chat-only mode');
-    expect(callOptions.systemPrompt).toContain('Do NOT use any tools');
+    const callArg = mockQuery.mock.calls[0][0] as { prompt: string; options: Record<string, unknown> };
+    const callOptions = callArg.options;
+    expect(callOptions['allowedTools']).toEqual([]);
+    expect(callOptions['systemPrompt'] as string).toContain('chat-only mode');
+    expect(callOptions['systemPrompt'] as string).toContain('Do NOT use any tools');
   });
 
   it('prepends existing system prompt with chat restriction for chat users', async () => {
-    mockQuery.mockReturnValue(successGenerator());
-
     const backend = new SdkBackend();
     const events = [];
     for await (const event of backend.execute(
@@ -75,23 +76,24 @@ describe('SdkBackend', () => {
       events.push(event);
     }
 
-    const callOptions = mockQuery.mock.calls[0][0].options;
-    expect(callOptions.systemPrompt).toContain('You are a helpful assistant.');
-    expect(callOptions.systemPrompt).toContain('chat-only mode');
+    const callArg = mockQuery.mock.calls[0][0] as { prompt: string; options: Record<string, unknown> };
+    const callOptions = callArg.options;
+    const sp = callOptions['systemPrompt'] as string;
+    expect(sp).toContain('You are a helpful assistant.');
+    expect(sp).toContain('chat-only mode');
     // Original prompt should come first
-    const idx1 = callOptions.systemPrompt.indexOf('You are a helpful assistant.');
-    const idx2 = callOptions.systemPrompt.indexOf('chat-only mode');
+    const idx1 = sp.indexOf('You are a helpful assistant.');
+    const idx2 = sp.indexOf('chat-only mode');
     expect(idx1).toBeLessThan(idx2);
   });
 
   it('sets bypassPermissions for admin with skipPermissions=true', async () => {
-    mockQuery.mockReturnValue(successGenerator());
-
     const backend = new SdkBackend({ skipPermissions: true });
     for await (const _event of backend.execute(makeRequest({ permissionLevel: 'admin' }))) {}
 
-    const callOptions = mockQuery.mock.calls[0][0].options;
-    expect(callOptions.permissionMode).toBe('bypassPermissions');
-    expect(callOptions.allowDangerouslySkipPermissions).toBe(true);
+    const callArg = mockQuery.mock.calls[0][0] as { prompt: string; options: Record<string, unknown> };
+    const callOptions = callArg.options;
+    expect(callOptions['permissionMode']).toBe('bypassPermissions');
+    expect(callOptions['allowDangerouslySkipPermissions']).toBe(true);
   });
 });

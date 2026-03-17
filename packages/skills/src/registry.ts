@@ -1,19 +1,15 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { load as yamlLoad, dump as yamlDump } from 'js-yaml';
+import type { ToolDescription } from '@ccbuddy/core';
 import type {
   SkillDefinition,
   SkillMetadata,
   RegisteredSkill,
   RegistryFile,
   SkillSource,
-  SkillInputSchema,
 } from './types.js';
 
-export interface ToolDescription {
-  name: string;
-  description: string;
-  inputSchema: SkillInputSchema;
-}
+export type { ToolDescription };
 
 export class SkillRegistry {
   private skills: Map<string, RegisteredSkill> = new Map();
