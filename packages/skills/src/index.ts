@@ -7,3 +7,4 @@ export {
   type UpdateSkillRequest,
   type GeneratorResult,
 } from './generator.js';
+export { SkillRunner, type SkillRunnerOptions } from './runner.js';
