@@ -24,12 +24,26 @@ ccbuddy:
     rate_limits:
       admin: 30
       chat: 10
+    default_working_directory: "~"
+    admin_skip_permissions: true
+    session_cleanup_hours: 24
+    pending_input_timeout_minutes: 10
+    graceful_shutdown_timeout_seconds: 30
 
   # --- Memory ---
   memory:
     db_path: "./data/memory.sqlite"
     max_context_tokens: 100000
     context_threshold: 0.75
+    fresh_tail_count: 32
+    leaf_chunk_tokens: 20000
+    leaf_target_tokens: 1200
+    condensed_target_tokens: 2000
+    max_expand_tokens: 4000
+    consolidation_cron: "0 3 * * *"
+    backup_cron: "0 4 * * *"
+    backup_dir: "./data/backups"
+    max_backups: 7
 
   # --- Gateway ---
   gateway:
@@ -83,8 +97,10 @@ ccbuddy:
 
   # --- Skills ---
   skills:
-    directory: "./skills"
-    auto_reload: false
+    generated_dir: "./skills/generated"
+    sandbox_enabled: true
+    require_admin_approval_for_elevated: true
+    auto_git_commit: true
 
   # --- Apple ---
   apple:

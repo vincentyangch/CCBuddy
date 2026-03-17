@@ -8,12 +8,26 @@ export interface AgentConfig {
     admin: number;
     chat: number;
   };
+  default_working_directory: string;
+  admin_skip_permissions: boolean;
+  session_cleanup_hours: number;
+  pending_input_timeout_minutes: number;
+  graceful_shutdown_timeout_seconds: number;
 }
 
 export interface MemoryConfig {
   db_path: string;
   max_context_tokens: number;
   context_threshold: number;
+  fresh_tail_count: number;
+  leaf_chunk_tokens: number;
+  leaf_target_tokens: number;
+  condensed_target_tokens: number;
+  max_expand_tokens: number;
+  consolidation_cron: string;
+  backup_cron: string;
+  backup_dir: string;
+  max_backups: number;
 }
 
 export interface PlatformChannelConfig {
@@ -57,8 +71,10 @@ export interface ImageGenerationConfig {
 }
 
 export interface SkillsConfig {
-  directory: string;
-  auto_reload: boolean;
+  generated_dir: string;
+  sandbox_enabled: boolean;
+  require_admin_approval_for_elevated: boolean;
+  auto_git_commit: boolean;
 }
 
 export interface AppleConfig {
@@ -110,11 +126,25 @@ export const DEFAULT_CONFIG: CCBuddyConfig = {
       admin: 30,
       chat: 10,
     },
+    default_working_directory: '~',
+    admin_skip_permissions: true,
+    session_cleanup_hours: 24,
+    pending_input_timeout_minutes: 10,
+    graceful_shutdown_timeout_seconds: 30,
   },
   memory: {
     db_path: './data/memory.sqlite',
     max_context_tokens: 100000,
     context_threshold: 0.75,
+    fresh_tail_count: 32,
+    leaf_chunk_tokens: 20000,
+    leaf_target_tokens: 1200,
+    condensed_target_tokens: 2000,
+    max_expand_tokens: 4000,
+    consolidation_cron: '0 3 * * *',
+    backup_cron: '0 4 * * *',
+    backup_dir: './data/backups',
+    max_backups: 7,
   },
   gateway: {
     host: '127.0.0.1',
@@ -139,8 +169,10 @@ export const DEFAULT_CONFIG: CCBuddyConfig = {
     enabled: false,
   },
   skills: {
-    directory: './skills',
-    auto_reload: false,
+    generated_dir: './skills/generated',
+    sandbox_enabled: true,
+    require_admin_approval_for_elevated: true,
+    auto_git_commit: true,
   },
   apple: {
     shortcuts_enabled: false,
