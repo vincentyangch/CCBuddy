@@ -2,13 +2,18 @@ import { describe, it, expect, vi } from 'vitest';
 import { SdkBackend } from '../sdk-backend.js';
 import type { AgentRequest } from '@ccbuddy/core';
 
-// Mock the Claude Code SDK
-vi.mock('@anthropic-ai/claude-code', () => ({
+// Mock the Claude Agent SDK
+vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
 }));
 
-import { query } from '@anthropic-ai/claude-code';
+import { query } from '@anthropic-ai/claude-agent-sdk';
 const mockQuery = vi.mocked(query);
+
+/** Create an async generator that yields the given messages */
+async function* makeAsyncGen(...messages: any[]) {
+  for (const msg of messages) yield msg;
+}
 
 function makeRequest(overrides: Partial<AgentRequest> = {}): AgentRequest {
   return {
@@ -23,18 +28,22 @@ function makeRequest(overrides: Partial<AgentRequest> = {}): AgentRequest {
 }
 
 describe('SdkBackend', () => {
-  it('passes prompt and options to Claude Code SDK', async () => {
-    mockQuery.mockResolvedValueOnce([{ type: 'text', text: 'Hello back!' }] as any);
+  it('passes prompt and options to Claude Agent SDK', async () => {
+    mockQuery.mockReturnValueOnce(
+      makeAsyncGen({ type: 'result', subtype: 'success', result: 'Hello back!' }) as any,
+    );
     const backend = new SdkBackend({ skipPermissions: true });
     const events: any[] = [];
     for await (const event of backend.execute(makeRequest())) { events.push(event); }
     expect(mockQuery).toHaveBeenCalledOnce();
     const callArgs = mockQuery.mock.calls[0];
-    expect(callArgs[0]).toBe('Hello');
+    expect(callArgs[0]).toMatchObject({ prompt: 'Hello' });
   });
 
   it('emits complete event with response', async () => {
-    mockQuery.mockResolvedValueOnce([{ type: 'text', text: 'The answer is 42' }] as any);
+    mockQuery.mockReturnValueOnce(
+      makeAsyncGen({ type: 'result', subtype: 'success', result: 'The answer is 42' }) as any,
+    );
     const backend = new SdkBackend({ skipPermissions: true });
     const events: any[] = [];
     for await (const event of backend.execute(makeRequest())) { events.push(event); }
@@ -44,7 +53,9 @@ describe('SdkBackend', () => {
   });
 
   it('emits error event on SDK failure', async () => {
-    mockQuery.mockRejectedValueOnce(new Error('SDK connection failed'));
+    mockQuery.mockImplementationOnce(() => {
+      throw new Error('SDK connection failed');
+    });
     const backend = new SdkBackend({ skipPermissions: true });
     const events: any[] = [];
     for await (const event of backend.execute(makeRequest())) { events.push(event); }
@@ -54,7 +65,9 @@ describe('SdkBackend', () => {
   });
 
   it('includes routing metadata in all events', async () => {
-    mockQuery.mockResolvedValueOnce([{ type: 'text', text: 'reply' }] as any);
+    mockQuery.mockReturnValueOnce(
+      makeAsyncGen({ type: 'result', subtype: 'success', result: 'reply' }) as any,
+    );
     const backend = new SdkBackend({ skipPermissions: true });
     const request = makeRequest({ userId: 'dad', sessionId: 's1', channelId: 'c1', platform: 'discord' });
     const events: any[] = [];

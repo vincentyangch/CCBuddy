@@ -1,14 +1,14 @@
 import type { AgentBackend, AgentRequest, AgentEvent, AgentEventBase } from '@ccbuddy/core';
-import { query } from '@anthropic-ai/claude-code';
+import { query } from '@anthropic-ai/claude-agent-sdk';
 
 export interface SdkBackendOptions {
   skipPermissions?: boolean;
 }
 
-// Known limitation: The SDK `query()` function returns the full result, so
-// streaming intermediate events (text chunks, tool_use) is not yet supported.
-// When the SDK adds a streaming/callback API, update this backend to yield
-// intermediate events. For now, only 'complete' or 'error' events are emitted.
+// Known limitation: The SDK `query()` function yields SDKMessage events as an
+// AsyncGenerator. We collect the final 'result' message to emit a 'complete'
+// event. When streaming intermediate text chunks is needed, iterate events
+// where msg.type === 'assistant' and yield them as 'text' events.
 
 export class SdkBackend implements AgentBackend {
   private options: SdkBackendOptions;
@@ -37,7 +37,8 @@ export class SdkBackend implements AgentBackend {
       }
 
       if (request.permissionLevel === 'admin' && this.options.skipPermissions) {
-        options.permissions = { allow: ['*'], deny: [] };
+        options.permissionMode = 'bypassPermissions';
+        options.allowDangerouslySkipPermissions = true;
       } else if (request.permissionLevel === 'chat') {
         options.allowedTools = [];
       }
@@ -47,14 +48,19 @@ export class SdkBackend implements AgentBackend {
         fullPrompt = `<memory_context>\n${request.memoryContext}\n</memory_context>\n\n${request.prompt}`;
       }
 
-      const result = await query(fullPrompt, options);
+      const result = query({ prompt: fullPrompt, options });
 
-      const responseText = Array.isArray(result)
-        ? result
-            .filter((block: any) => block.type === 'text')
-            .map((block: any) => block.text)
-            .join('\n')
-        : String(result);
+      let responseText = '';
+      for await (const msg of result) {
+        if (msg.type === 'result') {
+          if ((msg as any).subtype === 'success') {
+            responseText = (msg as any).result ?? '';
+          } else {
+            const errors: string[] = (msg as any).errors ?? [];
+            throw new Error(errors.join('; ') || `Query ended with subtype: ${(msg as any).subtype}`);
+          }
+        }
+      }
 
       yield { ...base, type: 'complete', response: responseText };
     } catch (err) {
