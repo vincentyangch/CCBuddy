@@ -32,7 +32,12 @@ export class DiscordAdapter implements PlatformAdapter {
       if (msg.author.bot) return;
       if (!this.messageHandler) return;
       const normalized = this.normalizeMessage(msg);
-      if (normalized) this.messageHandler(normalized);
+      // Handler may return a Promise (gateway does) — catch defensively
+      if (normalized) {
+        Promise.resolve(this.messageHandler(normalized)).catch((err) => {
+          console.error('[DiscordAdapter] Unhandled error in message handler:', err);
+        });
+      }
     });
     await this.client.login(this.config.token);
   }

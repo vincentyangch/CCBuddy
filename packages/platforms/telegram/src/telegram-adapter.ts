@@ -45,7 +45,10 @@ export class TelegramAdapter implements PlatformAdapter {
         raw: ctx,
       };
 
-      this.messageHandler(normalized);
+      // Handler may return a Promise (gateway does) — catch defensively
+      Promise.resolve(this.messageHandler(normalized)).catch((err) => {
+        console.error('[TelegramAdapter] Unhandled error in message handler:', err);
+      });
     });
 
     await this.bot.start();
