@@ -65,6 +65,7 @@ vi.mock('@ccbuddy/skills', () => ({
   SkillRegistry: function (this: unknown, ...args: unknown[]) {
     return mockSkillRegistry(...args);
   },
+  MCP_SERVER_PATH: '/mock/mcp-server.js',
 }));
 
 const mockGateway = vi.fn();
@@ -142,6 +143,8 @@ function makeConfig(overrides: Record<string, unknown> = {}) {
     },
     skills: {
       generated_dir: './skills/generated',
+      require_admin_approval_for_elevated: true,
+      auto_git_commit: true,
     },
     scheduler: {
       timezone: 'UTC',

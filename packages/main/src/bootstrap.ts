@@ -9,7 +9,7 @@ import {
   ContextAssembler,
   RetrievalTools,
 } from '@ccbuddy/memory';
-import { SkillRegistry } from '@ccbuddy/skills';
+import { SkillRegistry, MCP_SERVER_PATH } from '@ccbuddy/skills';
 import { Gateway } from '@ccbuddy/gateway';
 import { DiscordAdapter } from '@ccbuddy/platform-discord';
 import { TelegramAdapter } from '@ccbuddy/platform-telegram';
@@ -76,13 +76,34 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
     skillRegistry.registerExternalTool(tool);
   }
 
+  // Build skill MCP server spec
+  const skillMcpServerPath = config.skills.mcp_server_path ?? MCP_SERVER_PATH;
+  const registryDir = dirname(config.skills.generated_dir); // parent dir (e.g., './skills')
+  const skillMcpServer = {
+    name: 'ccbuddy-skills',
+    command: 'node',
+    args: [
+      skillMcpServerPath,
+      '--registry', registryPath,
+      '--skills-dir', registryDir,
+      ...(config.skills.require_admin_approval_for_elevated ? [] : ['--no-approval']),
+      ...(config.skills.auto_git_commit ? [] : ['--no-git-commit']),
+    ],
+  };
+
+  const skillNudge = 'You have access to reusable skills (prefixed skill_) and can create new ones with create_skill. When you solve a novel problem that could be reusable, consider creating a skill for it.';
+
   // 8. Create Gateway with injected dependencies
   const gateway = new Gateway({
     eventBus,
     findUser: (platform, platformId) => userManager.findByPlatformId(platform, platformId),
     buildSessionId: (userName, platform, channelId) =>
       userManager.buildSessionId(userName, platform, channelId),
-    executeAgentRequest: (request) => agentService.handleRequest(request),
+    executeAgentRequest: (request) => agentService.handleRequest({
+      ...request,
+      mcpServers: [skillMcpServer],
+      systemPrompt: [request.systemPrompt, skillNudge].filter(Boolean).join('\n\n'),
+    }),
     assembleContext: (userId, sessionId) => {
       const context = contextAssembler.assemble(userId, sessionId);
       return contextAssembler.formatAsPrompt(context);
@@ -164,7 +185,11 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
   const schedulerService = new SchedulerService({
     config,
     eventBus,
-    executeAgentRequest: (request) => agentService.handleRequest(request),
+    executeAgentRequest: (request) => agentService.handleRequest({
+      ...request,
+      mcpServers: [skillMcpServer],
+      systemPrompt: [request.systemPrompt, skillNudge].filter(Boolean).join('\n\n'),
+    }),
     sendProactiveMessage,
     runSkill: undefined, // skill-type jobs use the agent prompt path; direct skill execution deferred
     checkDatabase: async () => {
