@@ -1,3 +1,8 @@
+export interface MessageTarget {
+  platform: string;
+  channel: string;
+}
+
 export interface Disposable {
   dispose(): void;
 }
@@ -66,6 +71,14 @@ export interface AgentProgressEvent {
   content: string;
 }
 
+export interface SchedulerJobCompleteEvent {
+  jobName: string;
+  source: 'cron' | 'heartbeat' | 'webhook';
+  success: boolean;
+  target: MessageTarget;
+  timestamp: number;
+}
+
 export interface EventMap {
   'message.incoming': IncomingMessageEvent;
   'message.outgoing': OutgoingMessageEvent;
@@ -74,6 +87,7 @@ export interface EventMap {
   'heartbeat.status': HeartbeatStatusEvent;
   'webhook.received': WebhookEvent;
   'agent.progress': AgentProgressEvent;
+  'scheduler.job.complete': SchedulerJobCompleteEvent;
 }
 
 export interface EventBus {
