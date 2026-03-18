@@ -45,7 +45,8 @@ export class Gateway {
   registerAdapter(adapter: PlatformAdapter): void {
     this.adapters.set(adapter.platform, adapter);
     adapter.onMessage((msg) => {
-      this.handleIncomingMessage(msg).catch((err) => {
+      // Return the promise so tests can await it via simulateMessage
+      return this.handleIncomingMessage(msg).catch((err) => {
         console.error(`[Gateway] Error handling message on ${adapter.platform}:`, err);
       });
     });
