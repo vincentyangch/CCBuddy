@@ -21,9 +21,15 @@ export function chunkMessage(text: string, maxLength: number): string[] {
       current = remaining;
       isRemainder = true;
     } else if (isRemainder) {
-      // Remainder from a hard split: combine with next line
-      current = withLine;
-      isRemainder = false;
+      // Remainder from a hard split: combine with next line only if it fits
+      if (withLine.length <= maxLength) {
+        current = withLine;
+        isRemainder = false;
+      } else {
+        chunks.push(current);
+        current = line;
+        isRemainder = false;
+      }
     } else {
       chunks.push(current);
       if (line.length > maxLength) {
