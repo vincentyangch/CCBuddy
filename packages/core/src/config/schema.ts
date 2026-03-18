@@ -1,3 +1,5 @@
+import type { MessageTarget } from '../types/events.js';
+
 export interface AgentConfig {
   backend: 'sdk' | 'cli';
   max_concurrent_sessions: number;
@@ -7,6 +9,7 @@ export interface AgentConfig {
   rate_limits: {
     admin: number;
     chat: number;
+    system: number;
   };
   default_working_directory: string;
   admin_skip_permissions: boolean;
@@ -50,17 +53,31 @@ export interface PlatformConfig {
 
 export interface HeartbeatConfig {
   interval_seconds: number;
+  alert_target?: MessageTarget;
+  daily_report_cron?: string;
+  checks: {
+    process: boolean;
+    database: boolean;
+    agent: boolean;
+  };
 }
 
-export interface WebhookHandler {
+export interface WebhookEndpointConfig {
   path: string;
-  secret?: string;
+  secret_env?: string;
+  signature_header?: string;
+  signature_algorithm?: string;
+  prompt_template: string;
+  max_payload_chars?: number;
+  user: string;
+  target?: MessageTarget;
+  enabled?: boolean;
 }
 
 export interface WebhooksConfig {
   enabled: boolean;
   port: number;
-  handlers?: Record<string, WebhookHandler>;
+  endpoints?: Record<string, WebhookEndpointConfig>;
 }
 
 export interface MediaConfig {
@@ -85,8 +102,20 @@ export interface AppleConfig {
   shortcuts_enabled: boolean;
 }
 
+export interface ScheduledJobConfig {
+  cron: string;
+  prompt?: string;
+  skill?: string;
+  user: string;
+  target?: MessageTarget;
+  enabled?: boolean;
+  permission_level?: 'admin' | 'system';
+}
+
 export interface SchedulerConfig {
   timezone: string;
+  default_target?: MessageTarget;
+  jobs?: Record<string, ScheduledJobConfig>;
 }
 
 export interface UserConfig {
@@ -128,6 +157,7 @@ export const DEFAULT_CONFIG: CCBuddyConfig = {
     rate_limits: {
       admin: 30,
       chat: 10,
+      system: 20,
     },
     default_working_directory: '~',
     admin_skip_permissions: true,
@@ -158,6 +188,11 @@ export const DEFAULT_CONFIG: CCBuddyConfig = {
   },
   heartbeat: {
     interval_seconds: 60,
+    checks: {
+      process: true,
+      database: true,
+      agent: true,
+    },
   },
   webhooks: {
     enabled: false,
