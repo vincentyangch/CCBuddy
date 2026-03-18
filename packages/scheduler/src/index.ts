@@ -11,3 +11,6 @@ export type { CronRunnerOptions } from './cron-runner.js';
 
 export { HeartbeatMonitor } from './heartbeat.js';
 export type { HeartbeatOptions } from './heartbeat.js';
+
+export { WebhookServer } from './webhook-server.js';
+export type { WebhookServerOptions, WebhookEndpoint } from './webhook-server.js';
