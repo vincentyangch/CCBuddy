@@ -14,6 +14,8 @@ import { Gateway } from '@ccbuddy/gateway';
 import { DiscordAdapter } from '@ccbuddy/platform-discord';
 import { TelegramAdapter } from '@ccbuddy/platform-telegram';
 import { ShutdownHandler } from '@ccbuddy/orchestrator';
+import { SchedulerService } from '@ccbuddy/scheduler';
+import { chunkMessage } from '@ccbuddy/gateway';
 
 export interface BootstrapResult {
   stop: () => Promise<void>;
@@ -41,6 +43,7 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
     rateLimits: {
       admin: config.agent.rate_limits.admin,
       chat: config.agent.rate_limits.chat,
+      system: config.agent.rate_limits.system,
     },
     queueMaxDepth: config.agent.queue_max_depth,
     queueTimeoutSeconds: config.agent.queue_timeout_seconds,
@@ -136,6 +139,57 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
     const { SdkBackend } = await import('@ccbuddy/agent');
     agentService.setBackend(new SdkBackend({ skipPermissions: config.agent.admin_skip_permissions }));
   }
+
+  // 14. Create proactive sender closure
+  const sendProactiveMessage = async (target: { platform: string; channel: string }, text: string) => {
+    const adapter = gateway.getAdapter(target.platform);
+    if (!adapter) {
+      console.error(`[Scheduler] No adapter for platform '${target.platform}'`);
+      return;
+    }
+    const limit = target.platform === 'telegram' ? 4096 : 2000;
+    const chunks = chunkMessage(text, limit);
+    for (const chunk of chunks) {
+      await adapter.sendText(target.channel, chunk);
+    }
+    await eventBus.publish('message.outgoing', {
+      userId: 'system',
+      sessionId: 'scheduler',
+      channelId: target.channel,
+      platform: target.platform,
+      text,
+    });
+  };
+
+  // 15. Create and start scheduler
+  const schedulerService = new SchedulerService({
+    config,
+    eventBus,
+    executeAgentRequest: (request) => agentService.handleRequest(request),
+    sendProactiveMessage,
+    runSkill: undefined,
+    checkDatabase: async () => {
+      // Lightweight DB health check — try to read a non-existent row
+      messageStore.getById(0);
+      return true;
+    },
+    checkAgent: async () => {
+      const start = Date.now();
+      try {
+        const { execSync } = await import('node:child_process');
+        execSync('claude --version', { timeout: 10_000, stdio: 'ignore' });
+        return { reachable: true, durationMs: Date.now() - start };
+      } catch {
+        return { reachable: false, durationMs: Date.now() - start };
+      }
+    },
+  });
+
+  shutdownHandler.register('scheduler', async () => {
+    await schedulerService.stop();
+  });
+
+  await schedulerService.start();
 
   return {
     stop: async () => {

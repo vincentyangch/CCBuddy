@@ -69,12 +69,6 @@ vi.mock('@ccbuddy/skills', () => ({
 
 const mockGateway = vi.fn();
 
-vi.mock('@ccbuddy/gateway', () => ({
-  Gateway: function (this: unknown, ...args: unknown[]) {
-    return mockGateway(...args);
-  },
-}));
-
 const mockDiscordAdapter = vi.fn();
 
 vi.mock('@ccbuddy/platform-discord', () => ({
@@ -99,6 +93,23 @@ vi.mock('@ccbuddy/orchestrator', () => ({
   },
 }));
 
+const mockSchedulerService = vi.fn();
+
+vi.mock('@ccbuddy/scheduler', () => ({
+  SchedulerService: function (this: unknown, ...args: unknown[]) {
+    return mockSchedulerService(...args);
+  },
+}));
+
+vi.mock('@ccbuddy/gateway', async (importOriginal) => {
+  return {
+    Gateway: function (this: unknown, ...args: unknown[]) {
+      return mockGateway(...args);
+    },
+    chunkMessage: (text: string) => [text],
+  };
+});
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function makeConfig(overrides: Record<string, unknown> = {}) {
@@ -109,7 +120,7 @@ function makeConfig(overrides: Record<string, unknown> = {}) {
       session_timeout_minutes: 30,
       queue_max_depth: 10,
       queue_timeout_seconds: 120,
-      rate_limits: { admin: 30, chat: 10 },
+      rate_limits: { admin: 30, chat: 10, system: 20 },
       default_working_directory: '~',
       admin_skip_permissions: true,
       session_cleanup_hours: 24,
@@ -132,6 +143,17 @@ function makeConfig(overrides: Record<string, unknown> = {}) {
     skills: {
       generated_dir: './skills/generated',
     },
+    scheduler: {
+      timezone: 'UTC',
+    },
+    heartbeat: {
+      interval_seconds: 60,
+      checks: { process: true, database: true, agent: true },
+    },
+    webhooks: {
+      enabled: false,
+      port: 18800,
+    },
     users: {
       alice: { name: 'alice', role: 'admin', discord_id: 'discord-alice' },
     },
@@ -152,12 +174,13 @@ describe('bootstrap', () => {
   let fakeAgentServiceInstance: {
     handleRequest: ReturnType<typeof vi.fn>;
     tick: ReturnType<typeof vi.fn>;
+    setBackend: ReturnType<typeof vi.fn>;
   };
   let fakeDatabaseInstance: {
     init: ReturnType<typeof vi.fn>;
     close: ReturnType<typeof vi.fn>;
   };
-  let fakeMessageStoreInstance: { add: ReturnType<typeof vi.fn> };
+  let fakeMessageStoreInstance: { add: ReturnType<typeof vi.fn>; getById: ReturnType<typeof vi.fn> };
   let fakeSummaryStoreInstance: object;
   let fakeProfileStoreInstance: object;
   let fakeContextAssemblerInstance: {
@@ -171,6 +194,7 @@ describe('bootstrap', () => {
   };
   let fakeGatewayInstance: {
     registerAdapter: ReturnType<typeof vi.fn>;
+    getAdapter: ReturnType<typeof vi.fn>;
     start: ReturnType<typeof vi.fn>;
     stop: ReturnType<typeof vi.fn>;
   };
@@ -194,12 +218,13 @@ describe('bootstrap', () => {
     fakeAgentServiceInstance = {
       handleRequest: vi.fn().mockReturnValue((async function* () {})()),
       tick: vi.fn(),
+      setBackend: vi.fn(),
     };
     fakeDatabaseInstance = {
       init: vi.fn(),
       close: vi.fn(),
     };
-    fakeMessageStoreInstance = { add: vi.fn() };
+    fakeMessageStoreInstance = { add: vi.fn(), getById: vi.fn() };
     fakeSummaryStoreInstance = {};
     fakeProfileStoreInstance = {};
     fakeContextAssemblerInstance = {
@@ -219,6 +244,7 @@ describe('bootstrap', () => {
     };
     fakeGatewayInstance = {
       registerAdapter: vi.fn(),
+      getAdapter: vi.fn(),
       start: vi.fn().mockResolvedValue(undefined),
       stop: vi.fn().mockResolvedValue(undefined),
     };
@@ -246,6 +272,10 @@ describe('bootstrap', () => {
     mockDiscordAdapter.mockReturnValue(fakeDiscordAdapterInstance);
     mockTelegramAdapter.mockReturnValue(fakeTelegramAdapterInstance);
     mockShutdownHandler.mockReturnValue(fakeShutdownHandlerInstance);
+    mockSchedulerService.mockReturnValue({
+      start: vi.fn().mockResolvedValue(undefined),
+      stop: vi.fn().mockResolvedValue(undefined),
+    });
   });
 
   afterEach(() => {

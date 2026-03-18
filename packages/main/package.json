@@ -20,7 +20,8 @@
     "@ccbuddy/gateway": "*",
     "@ccbuddy/platform-discord": "*",
     "@ccbuddy/platform-telegram": "*",
-    "@ccbuddy/orchestrator": "*"
+    "@ccbuddy/orchestrator": "*",
+    "@ccbuddy/scheduler": "*"
   },
   "devDependencies": {
     "@types/node": "^22",
