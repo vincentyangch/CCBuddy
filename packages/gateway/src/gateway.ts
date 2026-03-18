@@ -45,9 +45,9 @@ export class Gateway {
   registerAdapter(adapter: PlatformAdapter): void {
     this.adapters.set(adapter.platform, adapter);
     adapter.onMessage((msg) => {
-      return this.handleIncomingMessage(msg).catch((err) => {
+      this.handleIncomingMessage(msg).catch((err) => {
         console.error(`[Gateway] Error handling message on ${adapter.platform}:`, err);
-      }) as unknown as void;
+      });
     });
   }
 
