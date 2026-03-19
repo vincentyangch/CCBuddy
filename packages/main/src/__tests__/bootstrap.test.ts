@@ -141,6 +141,7 @@ function makeConfig(overrides: Record<string, unknown> = {}) {
       discord: { enabled: true, token: 'discord-token-123' },
       telegram: { enabled: true, token: 'telegram-token-456' },
     },
+    data_dir: './data',
     skills: {
       generated_dir: './skills/generated',
       require_admin_approval_for_elevated: true,
