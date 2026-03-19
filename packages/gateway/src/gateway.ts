@@ -17,6 +17,7 @@ export interface StoreMessageParams {
   platform: string;
   content: string;
   role: 'user' | 'assistant';
+  attachments?: string;
 }
 
 export interface GatewayDeps {
@@ -105,13 +106,23 @@ export class Gateway {
       timestamp: Date.now(),
     });
 
-    // 5. Store user message
+    // 5. Store user message (with attachment metadata if present)
+    const attachmentMeta = msg.attachments.length > 0
+      ? JSON.stringify(msg.attachments.map(a => ({
+          type: a.type,
+          mimeType: a.mimeType,
+          filename: a.filename,
+          bytes: a.data.byteLength,
+        })))
+      : undefined;
+
     this.deps.storeMessage({
       userId: user.name,
       sessionId,
       platform: msg.platform,
       content: msg.text,
       role: 'user',
+      attachments: attachmentMeta,
     });
 
     // 6. Assemble memory context

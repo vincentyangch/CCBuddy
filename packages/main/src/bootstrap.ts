@@ -118,6 +118,7 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
         platform: params.platform,
         content: params.content,
         role: params.role,
+        attachments: params.attachments,
       });
     },
     gatewayConfig: config.gateway,
@@ -126,12 +127,12 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
 
   // 9. Create and register platform adapters based on config
   if (config.platforms.discord?.enabled && config.platforms.discord.token) {
-    const discordAdapter = new DiscordAdapter({ token: config.platforms.discord.token });
+    const discordAdapter = new DiscordAdapter({ token: config.platforms.discord.token, mediaConfig: config.media });
     gateway.registerAdapter(discordAdapter);
   }
 
   if (config.platforms.telegram?.enabled && config.platforms.telegram.token) {
-    const telegramAdapter = new TelegramAdapter({ token: config.platforms.telegram.token });
+    const telegramAdapter = new TelegramAdapter({ token: config.platforms.telegram.token, mediaConfig: config.media });
     gateway.registerAdapter(telegramAdapter);
   }
 
