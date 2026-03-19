@@ -24,6 +24,7 @@ import { SkillGenerator } from './generator.js';
 import { SkillValidator } from './validator.js';
 import { SkillRunner } from './runner.js';
 import type { SkillPermission } from './types.js';
+import { MemoryDatabase, MessageStore, SummaryStore, RetrievalTools } from '@ccbuddy/memory';
 
 // ── CLI argument parsing ────────────────────────────────────────────────────
 
@@ -32,11 +33,13 @@ function parseArgs(argv: string[]): {
   skillsDir: string;
   requireApproval: boolean;
   autoGitCommit: boolean;
+  memoryDbPath: string;
 } {
   let registryPath = '';
   let skillsDir = '';
   let requireApproval = true;
   let autoGitCommit = true;
+  let memoryDbPath = '';
 
   for (let i = 0; i < argv.length; i++) {
     switch (argv[i]) {
@@ -52,6 +55,9 @@ function parseArgs(argv: string[]): {
       case '--no-git-commit':
         autoGitCommit = false;
         break;
+      case '--memory-db':
+        memoryDbPath = argv[++i] ?? '';
+        break;
     }
   }
 
@@ -64,7 +70,7 @@ function parseArgs(argv: string[]): {
     process.exit(1);
   }
 
-  return { registryPath, skillsDir, requireApproval, autoGitCommit };
+  return { registryPath, skillsDir, requireApproval, autoGitCommit, memoryDbPath };
 }
 
 // ── Elevated permission check ───────────────────────────────────────────────
@@ -88,6 +94,15 @@ async function main(): Promise<void> {
   // 1. Load registry
   const registry = new SkillRegistry(args.registryPath);
   await registry.load();
+
+  // 1b. Optionally wire memory retrieval tools
+  let retrievalTools: RetrievalTools | null = null;
+  if (args.memoryDbPath) {
+    const memoryDatabase = new MemoryDatabase(args.memoryDbPath, { readonly: true });
+    const messageStore = new MessageStore(memoryDatabase);
+    const summaryStore = new SummaryStore(memoryDatabase);
+    retrievalTools = new RetrievalTools(messageStore, summaryStore);
+  }
 
   // 2. Create validator, generator, runner
   const validator = new SkillValidator();
@@ -178,6 +193,17 @@ async function main(): Promise<void> {
         description: definition.description,
         inputSchema: definition.inputSchema as unknown as Record<string, unknown>,
       });
+    }
+
+    // Memory retrieval tools — exposed when --memory-db is provided
+    if (retrievalTools) {
+      for (const tool of retrievalTools.getToolDefinitions()) {
+        tools.push({
+          name: tool.name,
+          description: tool.description,
+          inputSchema: tool.inputSchema as Record<string, unknown>,
+        });
+      }
     }
 
     return { tools };
@@ -295,6 +321,27 @@ async function main(): Promise<void> {
       return {
         content: [{ type: 'text', text: JSON.stringify(output) }],
       };
+    }
+
+    // ── memory_grep ───────────────────────────────────────────────────────
+    if (retrievalTools && name === 'memory_grep') {
+      const result = retrievalTools.grep(toolArgs.userId as string, toolArgs.query as string);
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    }
+
+    // ── memory_describe ───────────────────────────────────────────────────
+    if (retrievalTools && name === 'memory_describe') {
+      const result = retrievalTools.describe(toolArgs.userId as string, {
+        startMs: toolArgs.startMs as number,
+        endMs: toolArgs.endMs as number,
+      });
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    }
+
+    // ── memory_expand ─────────────────────────────────────────────────────
+    if (retrievalTools && name === 'memory_expand') {
+      const result = retrievalTools.expand(toolArgs.userId as string, toolArgs.nodeId as number);
+      return { content: [{ type: 'text', text: JSON.stringify(result ?? { error: 'Node not found' }) }] };
     }
 
     // ── Unknown tool ──────────────────────────────────────────────────────

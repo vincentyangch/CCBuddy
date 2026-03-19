@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { fileURLToPath } from 'node:url';
@@ -147,4 +147,85 @@ describe('MCP server integration', () => {
       await transport.close();
     }
   }, 15_000);
+});
+
+describe('with --memory-db', () => {
+  let memClient: Client;
+  let memTransport: StdioClientTransport;
+  let testDbPath: string;
+  const { registryPath, skillsDir, tmpDir } = makeTmpEnv();
+
+  beforeAll(async () => {
+    testDbPath = join(tmpDir, 'test-memory.sqlite');
+    const Database = (await import('better-sqlite3')).default;
+    const db = new Database(testDbPath);
+    db.pragma('journal_mode = WAL');
+    db.exec(`
+      CREATE TABLE messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        content TEXT NOT NULL,
+        role TEXT NOT NULL,
+        attachments TEXT,
+        timestamp INTEGER NOT NULL,
+        tokens INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE TABLE summary_nodes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        depth INTEGER NOT NULL DEFAULT 0,
+        content TEXT NOT NULL,
+        source_ids TEXT NOT NULL,
+        tokens INTEGER NOT NULL DEFAULT 0,
+        timestamp INTEGER NOT NULL
+      );
+    `);
+    db.prepare('INSERT INTO messages (user_id, session_id, platform, content, role, timestamp, tokens) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+      'testuser', 'sess-1', 'discord', 'Hello world', 'user', Date.now(), 10
+    );
+    db.prepare('INSERT INTO summary_nodes (user_id, depth, content, source_ids, tokens, timestamp) VALUES (?, ?, ?, ?, ?, ?)').run(
+      'testuser', 0, 'Summary about greetings', '[1]', 20, Date.now()
+    );
+    db.close();
+
+    memTransport = new StdioClientTransport({
+      command: 'node',
+      args: [serverPath, '--registry', registryPath, '--skills-dir', skillsDir, '--memory-db', testDbPath],
+    });
+    memClient = new Client({ name: 'test-client', version: '1.0.0' });
+    await memClient.connect(memTransport);
+  }, 15_000);
+
+  afterAll(async () => {
+    await memClient?.close();
+  });
+
+  it('lists memory tools alongside skill tools', async () => {
+    const result = await memClient.listTools();
+    const names = result.tools.map(t => t.name);
+    expect(names).toContain('list_skills');
+    expect(names).toContain('create_skill');
+    expect(names).toContain('memory_grep');
+    expect(names).toContain('memory_describe');
+    expect(names).toContain('memory_expand');
+  });
+
+  it('memory_grep returns matching messages and summaries', async () => {
+    const result = await memClient.callTool({ name: 'memory_grep', arguments: { userId: 'testuser', query: 'Hello' } });
+    const parsed = JSON.parse((result.content as any)[0].text);
+    expect(parsed.messages.length).toBeGreaterThan(0);
+    expect(parsed.messages[0].content).toContain('Hello');
+  });
+
+  it('memory_describe returns messages in time range', async () => {
+    const now = Date.now();
+    const result = await memClient.callTool({
+      name: 'memory_describe',
+      arguments: { userId: 'testuser', startMs: now - 60_000, endMs: now + 60_000 },
+    });
+    const parsed = JSON.parse((result.content as any)[0].text);
+    expect(parsed.count).toBe(1);
+  });
 });

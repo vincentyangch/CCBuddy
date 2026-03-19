@@ -3,8 +3,8 @@ import Database from 'better-sqlite3';
 export class MemoryDatabase {
   private db: Database.Database;
 
-  constructor(dbPath: string) {
-    this.db = new Database(dbPath);
+  constructor(dbPath: string, opts?: { readonly?: boolean }) {
+    this.db = new Database(dbPath, opts?.readonly ? { readonly: true } : undefined);
   }
 
   init(): void {
