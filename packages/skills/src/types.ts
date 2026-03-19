@@ -41,10 +41,17 @@ export interface SkillInput {
   [key: string]: unknown;
 }
 
+export interface SkillMediaOutput {
+  data: string;      // base64-encoded binary
+  mimeType: string;
+  filename?: string;
+}
+
 export interface SkillOutput {
   success: boolean;
   result?: unknown;
   error?: string;
+  media?: SkillMediaOutput[];
 }
 
 export interface RegistryFile {

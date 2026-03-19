@@ -32,7 +32,8 @@ export type AgentEvent =
   | AgentEventBase & { type: 'text'; content: string }
   | AgentEventBase & { type: 'tool_use'; tool: string }
   | AgentEventBase & { type: 'complete'; response: string }
-  | AgentEventBase & { type: 'error'; error: string };
+  | AgentEventBase & { type: 'error'; error: string }
+  | AgentEventBase & { type: 'media'; media: Array<{ data: Buffer; mimeType: string; filename?: string }> };
 
 export interface AgentBackend {
   execute(request: AgentRequest): AsyncGenerator<AgentEvent>;
