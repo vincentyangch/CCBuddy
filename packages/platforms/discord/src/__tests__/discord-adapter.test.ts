@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+const { mockFetchAttachment, mockValidateAttachment } = vi.hoisted(() => ({
+  mockFetchAttachment: vi.fn(),
+  mockValidateAttachment: vi.fn(),
+}));
+
 const mockSend = vi.fn().mockResolvedValue(undefined);
 const mockSendTyping = vi.fn().mockResolvedValue(undefined);
 const mockChannel = {
@@ -36,8 +41,22 @@ vi.mock('discord.js', () => ({
   Partials: { Channel: 2 },
 }));
 
+vi.mock('@ccbuddy/core', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@ccbuddy/core')>();
+  return {
+    ...original,
+    fetchAttachment: mockFetchAttachment,
+    validateAttachment: mockValidateAttachment,
+  };
+});
+
 import { DiscordAdapter } from '../discord-adapter.js';
 import type { IncomingMessage } from '@ccbuddy/core';
+
+const defaultMediaConfig = {
+  max_file_size_mb: 10,
+  allowed_mime_types: ['image/png', 'image/jpeg', 'application/pdf'],
+};
 
 function fakeDiscordMessage(overrides: Record<string, unknown> = {}) {
   return {
@@ -52,6 +71,11 @@ function fakeDiscordMessage(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/** Flush pending microtasks so async normalizeMessage resolves */
+async function flushMicrotasks() {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 describe('DiscordAdapter', () => {
   let adapter: DiscordAdapter;
   let receivedMessages: IncomingMessage[];
@@ -60,7 +84,7 @@ describe('DiscordAdapter', () => {
     vi.clearAllMocks();
     eventHandlers.clear();
     receivedMessages = [];
-    adapter = new DiscordAdapter({ token: 'test-token' });
+    adapter = new DiscordAdapter({ token: 'test-token', mediaConfig: defaultMediaConfig });
     adapter.onMessage((msg) => receivedMessages.push(msg));
   });
 
@@ -82,6 +106,7 @@ describe('DiscordAdapter', () => {
       await adapter.start();
       const handler = eventHandlers.get('messageCreate')!;
       handler(fakeDiscordMessage());
+      await flushMicrotasks();
 
       expect(receivedMessages).toHaveLength(1);
       expect(receivedMessages[0]).toEqual(
@@ -100,6 +125,7 @@ describe('DiscordAdapter', () => {
       await adapter.start();
       const handler = eventHandlers.get('messageCreate')!;
       handler(fakeDiscordMessage({ channel: { type: 1 } }));
+      await flushMicrotasks();
 
       expect(receivedMessages[0].channelType).toBe('dm');
       expect(receivedMessages[0].isMention).toBe(true);
@@ -111,6 +137,7 @@ describe('DiscordAdapter', () => {
       handler(fakeDiscordMessage({
         mentions: { has: vi.fn().mockReturnValue(true) },
       }));
+      await flushMicrotasks();
 
       expect(receivedMessages[0].isMention).toBe(true);
     });
@@ -119,6 +146,7 @@ describe('DiscordAdapter', () => {
       await adapter.start();
       const handler = eventHandlers.get('messageCreate')!;
       handler(fakeDiscordMessage({ author: { id: '999', bot: true } }));
+      await flushMicrotasks();
 
       expect(receivedMessages).toHaveLength(0);
     });
@@ -127,26 +155,73 @@ describe('DiscordAdapter', () => {
       await adapter.start();
       const handler = eventHandlers.get('messageCreate')!;
       handler(fakeDiscordMessage({ reference: { messageId: 'ref-123' } }));
+      await flushMicrotasks();
 
       expect(receivedMessages[0].replyToMessageId).toBe('ref-123');
     });
 
-    it('normalizes attachments with metadata (data buffer deferred)', async () => {
+    it('downloads and validates attachments', async () => {
+      const pngData = Buffer.from('png-bytes');
+      const pdfData = Buffer.from('pdf-bytes');
+
+      mockFetchAttachment
+        .mockResolvedValueOnce(pngData)
+        .mockResolvedValueOnce(pdfData);
+      mockValidateAttachment.mockReturnValue({ valid: true });
+
       await adapter.start();
       const handler = eventHandlers.get('messageCreate')!;
       const attachments = new Map([
-        ['att1', { contentType: 'image/png', name: 'photo.png' }],
-        ['att2', { contentType: 'application/pdf', name: 'doc.pdf' }],
+        ['att1', { url: 'https://cdn.discord.com/photo.png', contentType: 'image/png', name: 'photo.png' }],
+        ['att2', { url: 'https://cdn.discord.com/doc.pdf', contentType: 'application/pdf', name: 'doc.pdf' }],
       ]);
       handler(fakeDiscordMessage({ attachments }));
+      await flushMicrotasks();
+
+      expect(mockFetchAttachment).toHaveBeenCalledTimes(2);
+      expect(mockFetchAttachment).toHaveBeenCalledWith('https://cdn.discord.com/photo.png', {
+        maxBytes: defaultMediaConfig.max_file_size_mb * 1024 * 1024,
+      });
+      expect(mockFetchAttachment).toHaveBeenCalledWith('https://cdn.discord.com/doc.pdf', {
+        maxBytes: defaultMediaConfig.max_file_size_mb * 1024 * 1024,
+      });
 
       expect(receivedMessages[0].attachments).toHaveLength(2);
       expect(receivedMessages[0].attachments[0]).toEqual(
-        expect.objectContaining({ type: 'image', mimeType: 'image/png', filename: 'photo.png' }),
+        expect.objectContaining({ type: 'image', mimeType: 'image/png', filename: 'photo.png', data: pngData }),
       );
       expect(receivedMessages[0].attachments[1]).toEqual(
-        expect.objectContaining({ type: 'file', mimeType: 'application/pdf', filename: 'doc.pdf' }),
+        expect.objectContaining({ type: 'file', mimeType: 'application/pdf', filename: 'doc.pdf', data: pdfData }),
       );
+    });
+
+    it('skips attachments that fail validation', async () => {
+      mockFetchAttachment.mockResolvedValue(Buffer.from('data'));
+      mockValidateAttachment.mockReturnValue({ valid: false, reason: 'mime type not allowed' });
+
+      await adapter.start();
+      const handler = eventHandlers.get('messageCreate')!;
+      const attachments = new Map([
+        ['att1', { url: 'https://cdn.discord.com/file.exe', contentType: 'application/x-msdownload', name: 'file.exe' }],
+      ]);
+      handler(fakeDiscordMessage({ attachments }));
+      await flushMicrotasks();
+
+      expect(receivedMessages[0].attachments).toHaveLength(0);
+    });
+
+    it('skips attachments that fail to download', async () => {
+      mockFetchAttachment.mockRejectedValue(new Error('network error'));
+
+      await adapter.start();
+      const handler = eventHandlers.get('messageCreate')!;
+      const attachments = new Map([
+        ['att1', { url: 'https://cdn.discord.com/photo.png', contentType: 'image/png', name: 'photo.png' }],
+      ]);
+      handler(fakeDiscordMessage({ attachments }));
+      await flushMicrotasks();
+
+      expect(receivedMessages[0].attachments).toHaveLength(0);
     });
   });
 

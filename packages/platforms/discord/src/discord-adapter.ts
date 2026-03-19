@@ -1,9 +1,11 @@
 import { Client, GatewayIntentBits, ChannelType, Partials } from 'discord.js';
 import type { Message, SendableChannels } from 'discord.js';
-import type { PlatformAdapter, IncomingMessage, Attachment } from '@ccbuddy/core';
+import type { PlatformAdapter, IncomingMessage, Attachment, MediaConfig } from '@ccbuddy/core';
+import { fetchAttachment, validateAttachment } from '@ccbuddy/core';
 
 export interface DiscordAdapterConfig {
   token: string;
+  mediaConfig: MediaConfig;
 }
 
 export class DiscordAdapter implements PlatformAdapter {
@@ -35,13 +37,15 @@ export class DiscordAdapter implements PlatformAdapter {
     this.client.on('messageCreate', (msg: Message) => {
       if (msg.author.bot) return;
       if (!this.messageHandler) return;
-      const normalized = this.normalizeMessage(msg);
-      // Handler may return a Promise (gateway does) — catch defensively
-      if (normalized) {
-        Promise.resolve(this.messageHandler(normalized)).catch((err) => {
-          console.error('[DiscordAdapter] Unhandled error in message handler:', err);
-        });
-      }
+      this.normalizeMessage(msg).then((normalized) => {
+        if (normalized) {
+          Promise.resolve(this.messageHandler!(normalized)).catch((err) => {
+            console.error('[DiscordAdapter] Unhandled error in message handler:', err);
+          });
+        }
+      }).catch((err) => {
+        console.error('[DiscordAdapter] Error normalizing message:', err);
+      });
     });
     await this.client.login(this.config.token);
   }
@@ -86,18 +90,31 @@ export class DiscordAdapter implements PlatformAdapter {
     return null;
   }
 
-  private normalizeMessage(msg: Message): IncomingMessage | null {
+  private async normalizeMessage(msg: Message): Promise<IncomingMessage | null> {
     const isDm = msg.channel?.type === ChannelType.DM;
     const isMention = msg.mentions.has(this.client.user!);
 
     const attachments: Attachment[] = [];
     for (const [, att] of msg.attachments) {
-      attachments.push({
-        type: att.contentType?.startsWith('image/') ? 'image' : 'file',
-        mimeType: att.contentType ?? 'application/octet-stream',
-        data: Buffer.alloc(0),
-        filename: att.name ?? undefined,
-      });
+      try {
+        const data = await fetchAttachment(att.url, {
+          maxBytes: this.config.mediaConfig.max_file_size_mb * 1024 * 1024,
+        });
+        const attachment: Attachment = {
+          type: att.contentType?.startsWith('image/') ? 'image' : 'file',
+          mimeType: att.contentType ?? 'application/octet-stream',
+          data,
+          filename: att.name ?? undefined,
+        };
+        const validation = validateAttachment(attachment, this.config.mediaConfig);
+        if (validation.valid) {
+          attachments.push(attachment);
+        } else {
+          console.warn(`[DiscordAdapter] Attachment skipped: ${validation.reason}`);
+        }
+      } catch (err) {
+        console.warn(`[DiscordAdapter] Failed to download attachment: ${(err as Error).message}`);
+      }
     }
 
     return {
