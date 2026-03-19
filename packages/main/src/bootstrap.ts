@@ -137,7 +137,7 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
     ],
   };
 
-  const skillNudge = 'You have access to reusable skills (prefixed skill_) and can create new ones with create_skill. When you solve a novel problem that could be reusable, consider creating a skill for it.';
+  const skillNudge = 'You have access to reusable skills (prefixed skill_) and can create new ones with create_skill. When you solve a novel problem that could be reusable, consider creating a skill for it.\n\nFor image generation requests, use the skill_generate_image tool directly with a descriptive prompt. Do not deliberate — just call the tool.';
 
   // 8. Create Gateway with injected dependencies
   const gateway = new Gateway({
