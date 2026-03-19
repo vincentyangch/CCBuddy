@@ -333,8 +333,18 @@ async function main(): Promise<void> {
       // Run skill
       const output = await runner.run(skill.definition.filePath, toolArgs);
 
+      // Strip media from the tool result to avoid sending huge base64 through MCP.
+      // Skills that produce media write files to data/outbound/ and include filePath references.
+      // The agent gets a clean text result; media delivery is handled out-of-band.
+      const { media, ...cleanOutput } = output as unknown as Record<string, unknown>;
+      if (media && Array.isArray(media) && media.length > 0) {
+        (cleanOutput as Record<string, unknown>).mediaFiles = (media as Array<Record<string, unknown>>).map(
+          (m) => ({ filePath: m.filePath, mimeType: m.mimeType, filename: m.filename }),
+        );
+      }
+
       return {
-        content: [{ type: 'text', text: JSON.stringify(output) }],
+        content: [{ type: 'text', text: JSON.stringify(cleanOutput) }],
       };
     }
 

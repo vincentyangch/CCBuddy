@@ -123,6 +123,7 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
     },
     gatewayConfig: config.gateway,
     platformsConfig: config.platforms,
+    outboundMediaDir: join(config.data_dir, 'outbound'),
   });
 
   // 9. Create and register platform adapters based on config

@@ -28,7 +28,7 @@ export default async function generateImage(input) {
       'x-goog-api-key': apiKey,
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(60_000),
+    signal: AbortSignal.timeout(90_000),
   });
 
   if (!response.ok) {
@@ -52,9 +52,10 @@ export default async function generateImage(input) {
     if (part.text) {
       textResult += part.text;
     }
-    if (part.inline_data) {
-      imageData = part.inline_data.data;
-      imageMimeType = part.inline_data.mime_type || 'image/png';
+    const inlineData = part.inline_data || part.inlineData;
+    if (inlineData) {
+      imageData = inlineData.data;
+      imageMimeType = inlineData.mime_type || inlineData.mimeType || 'image/png';
     }
   }
 
@@ -65,13 +66,27 @@ export default async function generateImage(input) {
     };
   }
 
+  // Write image to temp file instead of passing base64 through MCP pipeline
+  // (550KB+ of base64 in a JSON tool result chokes the agent)
+  const { writeFileSync, mkdirSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { randomUUID } = await import('node:crypto');
+
+  const outDir = join(process.cwd(), 'data', 'outbound');
+  try { mkdirSync(outDir, { recursive: true }); } catch {}
+
+  const ext = imageMimeType === 'image/jpeg' ? 'jpg' : 'png';
+  const filename = `generated-${randomUUID().slice(0, 8)}.${ext}`;
+  const filePath = join(outDir, filename);
+  writeFileSync(filePath, Buffer.from(imageData, 'base64'));
+
   return {
     success: true,
     result: textResult || `Generated image for: ${prompt}`,
     media: [{
-      data: imageData,
+      filePath,
       mimeType: imageMimeType,
-      filename: 'generated-image.png',
+      filename,
     }],
   };
 }

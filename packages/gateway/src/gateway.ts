@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync, unlinkSync } from 'node:fs';
+import { join } from 'node:path';
 import type {
   EventBus,
   User,
@@ -29,6 +31,7 @@ export interface GatewayDeps {
   storeMessage: (params: StoreMessageParams) => void;
   gatewayConfig: GatewayConfig;
   platformsConfig: PlatformConfig;
+  outboundMediaDir?: string;
 }
 
 const PLATFORM_CHAR_LIMITS: Record<string, number> = {
@@ -176,6 +179,9 @@ export class Gateway {
             for (const chunk of chunks) {
               await adapter.sendText(msg.channelId, chunk);
             }
+
+            // Deliver any outbound media files (written by skills to data/outbound/)
+            await this.deliverOutboundMedia(adapter, msg.channelId);
             break;
           }
           case 'media': {
@@ -204,6 +210,34 @@ export class Gateway {
       );
     } finally {
       await adapter.setTypingIndicator(msg.channelId, false);
+    }
+  }
+
+  private async deliverOutboundMedia(adapter: PlatformAdapter, channelId: string): Promise<void> {
+    const dir = this.deps.outboundMediaDir;
+    if (!dir) return;
+
+    let files: string[];
+    try {
+      files = readdirSync(dir).filter(f => !f.startsWith('.'));
+    } catch {
+      return; // dir doesn't exist yet — no media to send
+    }
+
+    for (const file of files) {
+      const filePath = join(dir, file);
+      try {
+        const data = readFileSync(filePath);
+        const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(file);
+        if (isImage) {
+          await adapter.sendImage(channelId, data, file);
+        } else {
+          await adapter.sendFile(channelId, data, file);
+        }
+        unlinkSync(filePath); // clean up after delivery
+      } catch (err) {
+        console.warn(`[Gateway] Failed to deliver outbound media ${file}:`, (err as Error).message);
+      }
     }
   }
 }
