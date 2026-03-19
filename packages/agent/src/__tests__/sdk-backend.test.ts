@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SdkBackend } from '../backends/sdk-backend.js';
-import type { AgentRequest } from '@ccbuddy/core';
+import type { AgentRequest, Attachment } from '@ccbuddy/core';
 
 // Mock @anthropic-ai/claude-agent-sdk
 vi.mock('@anthropic-ai/claude-agent-sdk', () => {
@@ -95,5 +95,83 @@ describe('SdkBackend', () => {
     const callOptions = callArg.options;
     expect(callOptions['permissionMode']).toBe('bypassPermissions');
     expect(callOptions['allowDangerouslySkipPermissions']).toBe(true);
+  });
+
+  it('passes image attachments as content blocks via AsyncIterable', async () => {
+    const imageAttachment: Attachment = {
+      type: 'image',
+      mimeType: 'image/png',
+      data: Buffer.from('fake-png-data'),
+    };
+
+    const backend = new SdkBackend();
+    const events = [];
+    for await (const event of backend.execute(makeRequest({ attachments: [imageAttachment] }))) {
+      events.push(event);
+    }
+
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('complete');
+
+    // query() should have been called with an async iterable (not a string) for the prompt
+    const callArg = mockQuery.mock.calls[0][0] as { prompt: unknown; options: Record<string, unknown> };
+    const passedPrompt = callArg.prompt;
+    expect(typeof passedPrompt).not.toBe('string');
+    expect(passedPrompt != null && typeof (passedPrompt as any)[Symbol.asyncIterator] === 'function').toBe(true);
+
+    // Collect the yielded user message from the async iterable
+    const messages = [];
+    for await (const msg of passedPrompt as AsyncIterable<unknown>) {
+      messages.push(msg);
+    }
+    expect(messages).toHaveLength(1);
+    const userMsg = messages[0] as any;
+    expect(userMsg.type).toBe('user');
+    expect(userMsg.parent_tool_use_id).toBeNull();
+
+    const content = userMsg.message.content as any[];
+    // First block should be the image content block
+    expect(content[0].type).toBe('image');
+    expect(content[0].source.type).toBe('base64');
+    expect(content[0].source.media_type).toBe('image/png');
+    expect(content[0].source.data).toBe(Buffer.from('fake-png-data').toString('base64'));
+    // Last block should be the text prompt
+    const textBlock = content[content.length - 1];
+    expect(textBlock.type).toBe('text');
+    expect(textBlock.text).toBe('Hello');
+  });
+
+  it('uses plain string prompt when no attachments are present', async () => {
+    const backend = new SdkBackend();
+    for await (const _event of backend.execute(makeRequest())) {}
+
+    const callArg = mockQuery.mock.calls[0][0] as { prompt: unknown; options: Record<string, unknown> };
+    expect(typeof callArg.prompt).toBe('string');
+    expect(callArg.prompt).toBe('Hello');
+  });
+
+  it('uses plain string prompt when attachments array is empty', async () => {
+    const backend = new SdkBackend();
+    for await (const _event of backend.execute(makeRequest({ attachments: [] }))) {}
+
+    const callArg = mockQuery.mock.calls[0][0] as { prompt: unknown; options: Record<string, unknown> };
+    expect(typeof callArg.prompt).toBe('string');
+    expect(callArg.prompt).toBe('Hello');
+  });
+
+  it('skips non-image non-pdf attachments and falls back to plain string', async () => {
+    const textAttachment: Attachment = {
+      type: 'file',
+      mimeType: 'text/plain',
+      data: Buffer.from('some text'),
+    };
+
+    const backend = new SdkBackend();
+    for await (const _event of backend.execute(makeRequest({ attachments: [textAttachment] }))) {}
+
+    // text/plain produces no content blocks — should fall back to plain string
+    const callArg = mockQuery.mock.calls[0][0] as { prompt: unknown; options: Record<string, unknown> };
+    expect(typeof callArg.prompt).toBe('string');
+    expect(callArg.prompt).toBe('Hello');
   });
 });

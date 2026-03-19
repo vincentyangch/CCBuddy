@@ -1,5 +1,7 @@
 import type { AgentBackend, AgentRequest, AgentEvent, AgentEventBase } from '@ccbuddy/core';
+import { attachmentsToContentBlocks } from '@ccbuddy/core';
 import { query } from '@anthropic-ai/claude-agent-sdk';
+import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 
 export interface SdkBackendOptions {
   skipPermissions?: boolean;
@@ -63,7 +65,29 @@ export class SdkBackend implements AgentBackend {
         fullPrompt = `<memory_context>\n${request.memoryContext}\n</memory_context>\n\n${request.prompt}`;
       }
 
-      const result = query({ prompt: fullPrompt, options });
+      // Build prompt: use content blocks when attachments are present, otherwise plain string
+      const contentBlocks = request.attachments && request.attachments.length > 0
+        ? attachmentsToContentBlocks(request.attachments)
+        : [];
+
+      let prompt: string | AsyncIterable<SDKUserMessage>;
+      if (contentBlocks.length > 0) {
+        const messageContent = [
+          ...contentBlocks,
+          { type: 'text' as const, text: fullPrompt },
+        ];
+        const userMessage: SDKUserMessage = {
+          type: 'user',
+          message: { role: 'user', content: messageContent as any },
+          parent_tool_use_id: null,
+          session_id: '',
+        };
+        prompt = (async function* () { yield userMessage; })();
+      } else {
+        prompt = fullPrompt;
+      }
+
+      const result = query({ prompt, options });
 
       let responseText = '';
       for await (const msg of result) {
