@@ -61,11 +61,14 @@ function createMockDeps(overrides: Partial<CronRunnerOptions> = {}): CronRunnerO
     subscribe: vi.fn(() => ({ dispose: vi.fn() })),
   };
 
+  const assembleContext = vi.fn().mockReturnValue('Memory context for user');
+
   return {
     eventBus,
     executeAgentRequest,
     sendProactiveMessage,
     runSkill,
+    assembleContext,
     timezone: 'UTC',
     ...overrides,
   };
@@ -124,6 +127,52 @@ describe('CronRunner', () => {
       expect(deps.sendProactiveMessage).toHaveBeenCalledWith(
         job.target,
         'Here is your daily report.',
+      );
+    });
+  });
+
+  describe('executeJob — memory context', () => {
+    it('executePromptJob includes memoryContext from assembleContext', async () => {
+      const deps = createMockDeps();
+      const runner = new CronRunner(deps);
+      const job = createMockJob();
+
+      await runner.executeJob(job);
+
+      expect(deps.assembleContext).toHaveBeenCalledWith(
+        job.user,
+        expect.stringMatching(/^scheduler:cron:daily-report:\d+$/),
+      );
+
+      const request = (deps.executeAgentRequest as any).mock.calls[0][0];
+      expect(request.memoryContext).toBe('Memory context for user');
+    });
+  });
+
+  describe('registerJob — per-job timezone', () => {
+    it('uses per-job timezone when set', async () => {
+      const deps = createMockDeps();
+      const runner = new CronRunner(deps);
+      const job = createMockJob({ timezone: 'America/Chicago' });
+      runner.registerJob(job);
+
+      expect(mockSchedule).toHaveBeenCalledWith(
+        job.cron,
+        expect.any(Function),
+        { timezone: 'America/Chicago' },
+      );
+    });
+
+    it('falls back to global timezone when job has no timezone', async () => {
+      const deps = createMockDeps();
+      const runner = new CronRunner(deps);
+      const job = createMockJob();
+      runner.registerJob(job);
+
+      expect(mockSchedule).toHaveBeenCalledWith(
+        job.cron,
+        expect.any(Function),
+        { timezone: 'UTC' },
       );
     });
   });

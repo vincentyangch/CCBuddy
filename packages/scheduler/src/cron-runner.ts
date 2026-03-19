@@ -12,6 +12,7 @@ export interface CronRunnerOptions {
   executeAgentRequest: (request: AgentRequest) => AsyncGenerator<AgentEvent>;
   sendProactiveMessage: (target: MessageTarget, text: string) => Promise<void>;
   runSkill?: (name: string, input: Record<string, unknown>) => Promise<string>;
+  assembleContext: (userId: string, sessionId: string) => string;
   timezone: string;
 }
 
@@ -41,7 +42,7 @@ export class CronRunner {
       () => {
         void this.executeJob(job);
       },
-      { timezone: this.opts.timezone },
+      { timezone: job.timezone ?? this.opts.timezone },
     );
 
     this.tasks.set(job.name, task);
@@ -72,13 +73,17 @@ export class CronRunner {
   }
 
   private async executePromptJob(job: ScheduledJob): Promise<void> {
+    const sessionId = `scheduler:cron:${job.name}:${Date.now()}`;
+    const memoryContext = this.opts.assembleContext(job.user, sessionId);
+
     const request: AgentRequest = {
       prompt: job.payload,
       userId: job.user,
-      sessionId: `scheduler:cron:${job.name}:${Date.now()}`,
+      sessionId,
       channelId: job.target.channel,
       platform: job.target.platform,
       permissionLevel: job.permissionLevel,
+      memoryContext,
     };
 
     const generator = this.opts.executeAgentRequest(request);

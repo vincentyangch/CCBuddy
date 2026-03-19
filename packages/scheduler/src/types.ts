@@ -18,6 +18,7 @@ export interface ScheduledJob {
   nextRun: number;
   lastRun?: number;
   running: boolean;
+  timezone?: string;
 }
 
 export interface TriggerResult {
@@ -43,6 +44,7 @@ export interface SchedulerDeps {
   runSkill?: (name: string, input: Record<string, unknown>) => Promise<string>;
   checkDatabase: () => Promise<boolean>;
   checkAgent: () => Promise<{ reachable: boolean; durationMs: number }>;
+  assembleContext: (userId: string, sessionId: string) => string;
 }
 
 export type { MessageTarget };

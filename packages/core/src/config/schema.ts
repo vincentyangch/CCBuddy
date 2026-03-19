@@ -111,6 +111,7 @@ export interface ScheduledJobConfig {
   target?: MessageTarget;
   enabled?: boolean;
   permission_level?: 'admin' | 'system';
+  timezone?: string;
 }
 
 export interface SchedulerConfig {
