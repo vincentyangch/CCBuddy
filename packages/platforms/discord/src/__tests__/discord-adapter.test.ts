@@ -18,6 +18,7 @@ vi.mock('discord.js', () => ({
     on: vi.fn().mockImplementation((event: string, handler: Function) => {
       eventHandlers.set(event, handler);
     }),
+    once: vi.fn(),
     login: mockLogin,
     destroy: mockDestroy,
     user: { id: 'bot-user-id' },
