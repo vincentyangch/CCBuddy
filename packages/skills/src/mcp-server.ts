@@ -18,6 +18,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
+import { readFileSync } from 'node:fs';
 
 import { SkillRegistry } from './registry.js';
 import { SkillGenerator } from './generator.js';
@@ -34,12 +35,14 @@ function parseArgs(argv: string[]): {
   requireApproval: boolean;
   autoGitCommit: boolean;
   memoryDbPath: string;
+  heartbeatStatusFile: string;
 } {
   let registryPath = '';
   let skillsDir = '';
   let requireApproval = true;
   let autoGitCommit = true;
   let memoryDbPath = '';
+  let heartbeatStatusFile = '';
 
   for (let i = 0; i < argv.length; i++) {
     switch (argv[i]) {
@@ -58,6 +61,9 @@ function parseArgs(argv: string[]): {
       case '--memory-db':
         memoryDbPath = argv[++i] ?? '';
         break;
+      case '--heartbeat-status-file':
+        heartbeatStatusFile = argv[++i] ?? '';
+        break;
     }
   }
 
@@ -70,7 +76,7 @@ function parseArgs(argv: string[]): {
     process.exit(1);
   }
 
-  return { registryPath, skillsDir, requireApproval, autoGitCommit, memoryDbPath };
+  return { registryPath, skillsDir, requireApproval, autoGitCommit, memoryDbPath, heartbeatStatusFile };
 }
 
 // ── Elevated permission check ───────────────────────────────────────────────
@@ -204,6 +210,15 @@ async function main(): Promise<void> {
           inputSchema: tool.inputSchema as Record<string, unknown>,
         });
       }
+    }
+
+    // System health tool — exposed when --heartbeat-status-file is provided
+    if (args.heartbeatStatusFile) {
+      tools.push({
+        name: 'system_health',
+        description: 'Get the latest system health status from the heartbeat monitor. Returns module statuses (process, database, agent) and system metrics (cpu, memory, disk).',
+        inputSchema: { type: 'object', properties: {} },
+      });
     }
 
     return { tools };
@@ -342,6 +357,22 @@ async function main(): Promise<void> {
     if (retrievalTools && name === 'memory_expand') {
       const result = retrievalTools.expand(toolArgs.userId as string, toolArgs.nodeId as number);
       return { content: [{ type: 'text', text: JSON.stringify(result ?? { error: 'Node not found' }) }] };
+    }
+
+    // ── system_health ─────────────────────────────────────────────────────
+    if (name === 'system_health' && args.heartbeatStatusFile) {
+      try {
+        const raw = readFileSync(args.heartbeatStatusFile, 'utf8');
+        const data = JSON.parse(raw);
+        // Mark as stale if timestamp is >10 minutes old (2x default 5-min heartbeat interval)
+        const STALE_THRESHOLD_MS = 10 * 60 * 1000;
+        if (data.timestamp && Date.now() - data.timestamp > STALE_THRESHOLD_MS) {
+          data.stale = true;
+        }
+        return { content: [{ type: 'text', text: JSON.stringify(data) }] };
+      } catch {
+        return { content: [{ type: 'text', text: JSON.stringify({ status: 'no_data', message: 'Heartbeat status file not available' }) }] };
+      }
     }
 
     // ── Unknown tool ──────────────────────────────────────────────────────

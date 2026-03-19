@@ -229,3 +229,80 @@ describe('with --memory-db', () => {
     expect(parsed.count).toBe(1);
   });
 });
+
+describe('with --heartbeat-status-file', () => {
+  let hbClient: Client;
+  let hbTransport: StdioClientTransport;
+  let statusFilePath: string;
+  const { registryPath, skillsDir, tmpDir } = makeTmpEnv();
+
+  beforeAll(async () => {
+    statusFilePath = join(tmpDir, 'heartbeat-status.json');
+    writeFileSync(statusFilePath, JSON.stringify({
+      modules: { process: 'healthy', database: 'healthy', agent: 'degraded' },
+      system: { cpuPercent: 10, memoryPercent: 2.5, diskPercent: 45 },
+      timestamp: Date.now(),
+    }));
+
+    hbTransport = new StdioClientTransport({
+      command: 'node',
+      args: [serverPath, '--registry', registryPath, '--skills-dir', skillsDir, '--heartbeat-status-file', statusFilePath],
+    });
+    hbClient = new Client({ name: 'test-client', version: '1.0.0' });
+    await hbClient.connect(hbTransport);
+  }, 15_000);
+
+  afterAll(async () => {
+    await hbClient?.close();
+  });
+
+  it('lists system_health tool', async () => {
+    const result = await hbClient.listTools();
+    const names = result.tools.map(t => t.name);
+    expect(names).toContain('system_health');
+  });
+
+  it('returns heartbeat status', async () => {
+    const result = await hbClient.callTool({ name: 'system_health', arguments: {} });
+    const parsed = JSON.parse((result.content as any)[0].text);
+    expect(parsed.modules.agent).toBe('degraded');
+    expect(parsed.system.cpuPercent).toBe(10);
+  });
+
+  it('returns stale warning when data is old', async () => {
+    const stalePath = join(tmpDir, 'heartbeat-stale.json');
+    writeFileSync(stalePath, JSON.stringify({
+      modules: { process: 'healthy' },
+      system: { cpuPercent: 5, memoryPercent: 1, diskPercent: 30 },
+      timestamp: Date.now() - 700_000, // ~11 minutes ago
+    }));
+
+    const staleTransport = new StdioClientTransport({
+      command: 'node',
+      args: [serverPath, '--registry', registryPath, '--skills-dir', skillsDir, '--heartbeat-status-file', stalePath],
+    });
+    const staleClient = new Client({ name: 'test-client', version: '1.0.0' });
+    await staleClient.connect(staleTransport);
+
+    const result = await staleClient.callTool({ name: 'system_health', arguments: {} });
+    const parsed = JSON.parse((result.content as any)[0].text);
+    expect(parsed.stale).toBe(true);
+
+    await staleClient.close();
+  }, 15_000);
+
+  it('returns no-data when file missing', async () => {
+    const badTransport = new StdioClientTransport({
+      command: 'node',
+      args: [serverPath, '--registry', registryPath, '--skills-dir', skillsDir, '--heartbeat-status-file', join(tmpDir, 'nonexistent.json')],
+    });
+    const badClient = new Client({ name: 'test-client', version: '1.0.0' });
+    await badClient.connect(badTransport);
+
+    const result = await badClient.callTool({ name: 'system_health', arguments: {} });
+    const parsed = JSON.parse((result.content as any)[0].text);
+    expect(parsed.status).toBe('no_data');
+
+    await badClient.close();
+  }, 15_000);
+});
