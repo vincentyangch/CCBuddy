@@ -14,7 +14,7 @@ Add Calendar CRUD operations to CCBuddy via a Swift CLI binary using EventKit, e
 
 ```
 ccbuddy-helper calendar list --from <ISO8601> --to <ISO8601>
-ccbuddy-helper calendar search --query <string>
+ccbuddy-helper calendar search --query <string> [--from <ISO8601>] [--to <ISO8601>]
 ccbuddy-helper calendar create --title <string> --start <ISO8601> --end <ISO8601> [--calendar <name>] [--location <string>] [--notes <string>] [--all-day]
 ccbuddy-helper calendar update --id <string> [--title <string>] [--start <ISO8601>] [--end <ISO8601>] [--calendar <name>] [--location <string>] [--notes <string>]
 ccbuddy-helper calendar delete --id <string>
@@ -24,7 +24,7 @@ ccbuddy-helper calendar delete --id <string>
 
 - Uses EventKit framework (`EKEventStore`) for direct Calendar access
 - `EKEventStore.requestFullAccessToEvents()` for one-time TCC permission
-- All output is JSON to stdout, errors as JSON to stderr
+- All output is JSON to stdout (both success and error cases)
 - Event IDs use `calendarItemExternalIdentifier` (stable across syncs)
 - Date parsing: ISO 8601 format
 
@@ -100,9 +100,9 @@ class SwiftBridge {
 ```
 
 - Calls `ccbuddy-helper` binary via `child_process.execFile`
-- Parses JSON stdout
-- 10 second timeout
-- Throws clear error if binary not found
+- Parses JSON from stdout (both success and error responses are JSON on stdout)
+- 10 second timeout (tunable — iCloud-synced calendars may be slower on write ops)
+- Throws clear error if binary not found: "ccbuddy-helper not compiled — run `swift build -c release` in swift-helper/"
 
 ### AppleCalendarService
 
@@ -125,7 +125,7 @@ Five tools registered as external tools on the skill registry:
 | Tool Name | Description | Key Inputs |
 |-----------|-------------|------------|
 | `apple_calendar_list` | List events in a date range | `from`, `to` (ISO 8601) |
-| `apple_calendar_search` | Search events by keyword | `query` |
+| `apple_calendar_search` | Search events by keyword | `query`, `from?`, `to?` (defaults ±1 year) |
 | `apple_calendar_create` | Create a calendar event | `title`, `start`, `end`, `calendar?`, `location?`, `notes?`, `allDay?` |
 | `apple_calendar_update` | Update an existing event | `id`, `title?`, `start?`, `end?`, `calendar?`, `location?`, `notes?` |
 | `apple_calendar_delete` | Delete a calendar event | `id` |
@@ -152,11 +152,36 @@ Update `AppleConfig` in `packages/core/src/config/schema.ts`:
 ```typescript
 export interface AppleConfig {
   enabled: boolean;
-  helper_path?: string;  // override path to ccbuddy-helper binary
+  helper_path?: string;       // override path to ccbuddy-helper binary
+  shortcuts_enabled?: boolean; // preserved for future Shortcuts module
 }
 ```
 
-Default: `enabled: false`. Helper path auto-detected from `swift-helper/.build/release/ccbuddy-helper` relative to project root.
+Default: `enabled: false`, `shortcuts_enabled: false`. Helper path auto-detected from `swift-helper/.build/release/ccbuddy-helper` relative to project root. The existing `shortcuts_enabled` field is preserved for backward compatibility and future Shortcuts module.
+
+## MCP Server Changes
+
+The MCP server runs as a separate process and has hardcoded handler branches for each tool (memory_grep, system_health, etc.). Calendar tools need the same treatment.
+
+### New CLI arg
+
+Add `--apple-helper <path>` to the MCP server's argument parser. When provided, the server instantiates `SwiftBridge` and `AppleCalendarService` internally.
+
+### New handler branches
+
+In the `CallToolRequest` handler, add branches for each `apple_calendar_*` tool (same pattern as `memory_grep` etc.):
+
+```typescript
+if (calendarService && name === 'apple_calendar_list') {
+  const result = await calendarService.listEvents(toolArgs.from as string, toolArgs.to as string);
+  return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+}
+// ... same for search, create, update, delete
+```
+
+### Tool listing
+
+Add calendar tool definitions to the `ListTools` handler when `calendarService` is available, same pattern as retrieval tools.
 
 ## Bootstrap Wiring
 
@@ -164,11 +189,8 @@ In `packages/main/src/bootstrap.ts`, after skill registry setup:
 
 1. If `config.apple.enabled`:
    - Resolve helper path (config override or default)
-   - Create `SwiftBridge` with helper path
-   - Create `AppleCalendarService` with bridge
-   - Register each tool definition with `skillRegistry.registerExternalTool()`
-
-No MCP server changes needed — external tools are already exposed.
+   - Add `'--apple-helper', helperPath` to the `skillMcpServer.args` array
+   - Register tool definitions with `skillRegistry.registerExternalTool()` (for in-process awareness)
 
 ## Testing Strategy
 
