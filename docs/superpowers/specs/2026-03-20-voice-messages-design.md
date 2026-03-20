@@ -12,14 +12,16 @@ Add to `MediaConfig` in `packages/core/src/config/schema.ts`:
 export interface MediaConfig {
   max_file_size_mb: number;
   allowed_mime_types: string[];
-  voice_enabled: boolean;        // default: false
-  stt_backend: 'openai-whisper'; // extensible for future backends
-  tts_backend: 'openai-tts';     // extensible for future backends
-  tts_max_chars: number;         // default: 500
+  voice_enabled: boolean;   // default: false
+  tts_max_chars: number;    // default: 500
 }
 ```
 
-Requires `OPENAI_API_KEY` environment variable when `voice_enabled: true`.
+- `voice_enabled: false` by default — no voice processing unless explicitly turned on
+- When enabled, requires `OPENAI_API_KEY` environment variable
+- If `voice_enabled: true` and `OPENAI_API_KEY` is not set, throw at bootstrap with a clear error message
+- Audio MIME types (`audio/ogg`, `audio/mp4`, `audio/wav`, `audio/mpeg`, `audio/webm`) are accepted for voice processing when `voice_enabled: true`, independent of `allowed_mime_types` (which governs document/image attachments)
+- Voice messages exceeding `max_file_size_mb` are rejected with a user-facing message
 
 ## STT Pipeline (Inbound Voice)
 
@@ -41,15 +43,49 @@ class TranscriptionService {
 
 ### Platform Adapter Changes
 
-**Discord:** In attachment processing, detect `audio/*` MIME types. Set `type: 'voice'`. If `voice_enabled`, call `TranscriptionService.transcribe()` and populate `Attachment.transcript`.
+Adapters remain thin transport layers — they detect and download voice messages but do **not** transcribe. Transcription happens in the Gateway.
 
-**Telegram:** Add `message:voice` event listener. Telegram sends voice messages as OGG/Opus. Download via `getFile` API, transcribe, create attachment with `type: 'voice'` and `transcript`.
+**Discord:** In attachment processing, detect `audio/*` MIME types. Set `type: 'voice'`. Download audio data into `Attachment.data`. No transcription here.
 
-Both adapters: if `voice_enabled` is false, voice messages are ignored or treated as generic file attachments.
+**Telegram:** Add `message:voice` event listener. Telegram sends voice messages as OGG/Opus. Download via `getFile` API, create attachment with `type: 'voice'`. No transcription here.
 
-### Gateway Change
+Both adapters: if `voice_enabled` is false, voice messages are ignored (not forwarded to Gateway).
 
-When a message has voice attachments with a `transcript`, prepend to prompt: `[Voice message] {transcript}`. Set a flag on the request indicating voice input (for mirror logic).
+### PlatformAdapter Interface Update
+
+Add optional `sendVoice` to the `PlatformAdapter` interface in `packages/core/src/types/platform.ts`:
+
+```typescript
+export interface PlatformAdapter {
+  // ... existing methods ...
+  sendVoice?(channelId: string, audio: Buffer): Promise<void>;
+}
+```
+
+Optional so non-voice-capable adapters remain valid.
+
+### Gateway Voice Processing
+
+All voice orchestration lives in the Gateway, in `handleIncomingMessage`:
+
+1. Check if any attachment has `type: 'voice'`
+2. If yes and `transcriptionService` is available:
+   - Call `transcriptionService.transcribe(attachment.data, attachment.mimeType)`
+   - Set `attachment.transcript` with the result
+   - Track `voiceInput = true` as a local variable
+3. Prepend transcript to prompt: `[Voice message] {transcript}`
+4. Store the transcript-enhanced text as the message content (for memory consistency)
+5. Pass `voiceInput` flag through to `executeAndRoute`
+
+### Gateway Mirror Logic (in `executeAndRoute`)
+
+On agent `complete` event, check the `voiceInput` flag:
+
+- **Voice input + response ≤ `tts_max_chars` (500):** Call `speechService.synthesize(responseText)`, send via `adapter.sendVoice(channelId, audioBuffer)`. Do not send text.
+- **Voice input + response > `tts_max_chars`:** Synthesize first `tts_max_chars` characters as voice, send remainder as text message.
+- **Text input:** Send as text (no TTS)
+
+If `adapter.sendVoice` is not available (adapter doesn't support voice output), fall back to text.
 
 ## TTS Pipeline (Outbound Voice)
 
@@ -68,29 +104,27 @@ class SpeechService {
 - Returns OGG/Opus buffer — natively supported by Discord and Telegram
 - Default voice: `'alloy'`
 
-### Mirror Logic (Gateway)
-
-Track whether the incoming message was a voice message. On agent response:
-
-- **Voice input + response ≤ `tts_max_chars` (500):** Synthesize entire response via SpeechService, send as voice message
-- **Voice input + response > `tts_max_chars`:** Synthesize first `tts_max_chars` characters as voice, send remainder as text
-- **Text input:** Send as text (no TTS)
-
 ### Platform Adapter Additions
 
-**Discord:** `sendVoice(channelId: string, audio: Buffer, filename?: string): Promise<void>` — sends as message attachment with `.ogg` extension.
+**Discord:** Implement `sendVoice(channelId, audio)` — sends as message attachment with `.ogg` extension via Discord.js `channel.send({ files: [...] })`.
 
-**Telegram:** `sendVoice(channelId: string, audio: Buffer): Promise<void>` — uses grammY `sendVoice` API method.
+**Telegram:** Implement `sendVoice(channelId, audio)` — uses grammY `ctx.api.sendVoice(channelId, ...)`.
 
 ## Bootstrap Wiring
 
 In `packages/main/src/bootstrap.ts`:
 
 1. If `config.media.voice_enabled`:
-   - Read `OPENAI_API_KEY` from environment
-   - Create `TranscriptionService` and `SpeechService`
-   - Pass to Gateway deps (new optional fields: `transcriptionService?`, `speechService?`)
-   - Pass to platform adapter constructors (or inject via Gateway)
+   - Read `OPENAI_API_KEY` from `process.env`
+   - If not set, throw: `"voice_enabled is true but OPENAI_API_KEY is not set"`
+   - Create `TranscriptionService(apiKey)` and `SpeechService(apiKey)`
+   - Pass to Gateway deps as `transcriptionService` and `speechService` (new optional fields on `GatewayDeps`)
+   - Pass `voice_enabled` flag to adapter constructors so they know to listen for voice messages
+
+## Known Limitations
+
+- Voice responses are not reflected in `OutgoingMessageEvent` metadata (no `voiceAttached` flag). Can be added later if memory/logging needs this distinction.
+- No separate rate limiting for voice API calls — relies on existing per-user rate limits.
 
 ## Testing Strategy
 
@@ -105,16 +139,18 @@ In `packages/main/src/bootstrap.ts`:
 - Test error handling
 
 ### Platform Adapters (unit)
-- Discord: audio attachment detected as `type: 'voice'`, transcript populated
-- Telegram: `message:voice` listener fires, downloads and transcribes
+- Discord: audio attachment detected as `type: 'voice'`
+- Telegram: `message:voice` listener fires, downloads audio
 - Both: `sendVoice` sends audio buffer correctly
 - Both: voice ignored when `voice_enabled: false`
 
 ### Gateway (unit)
-- Voice message transcript prepended to prompt
+- Voice attachment transcribed via TranscriptionService
+- Transcript prepended to prompt
 - Mirror: voice input → voice response (≤500 chars)
 - Mirror: voice input → voice + text (>500 chars)
 - Text input → text response (no TTS)
+- No transcription when transcriptionService not provided
 
 ### Integration
 - Manual smoke test on Discord: send voice message, verify transcription + voice reply
