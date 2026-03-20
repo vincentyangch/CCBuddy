@@ -26,7 +26,7 @@ import { SkillValidator } from './validator.js';
 import { SkillRunner } from './runner.js';
 import type { SkillPermission } from './types.js';
 import { MemoryDatabase, MessageStore, SummaryStore, RetrievalTools } from '@ccbuddy/memory';
-import { SwiftBridge, AppleCalendarService } from '@ccbuddy/apple';
+import { SwiftBridge, AppleCalendarService, AppleShortcutsService } from '@ccbuddy/apple';
 
 // ── CLI argument parsing ────────────────────────────────────────────────────
 
@@ -118,9 +118,11 @@ async function main(): Promise<void> {
 
   // 1c. Optionally wire Apple calendar tools
   let calendarService: AppleCalendarService | null = null;
+  let shortcutsService: AppleShortcutsService | null = null;
   if (args.appleHelperPath) {
     const bridge = new SwiftBridge(args.appleHelperPath);
     calendarService = new AppleCalendarService(bridge);
+    shortcutsService = new AppleShortcutsService();
   }
 
   // 2. Create validator, generator, runner
@@ -237,6 +239,13 @@ async function main(): Promise<void> {
     // Calendar tools
     if (calendarService) {
       for (const tool of calendarService.getToolDefinitions()) {
+        tools.push(tool);
+      }
+    }
+
+    // Shortcuts tools
+    if (shortcutsService) {
+      for (const tool of shortcutsService.getToolDefinitions()) {
         tools.push(tool);
       }
     }
@@ -452,6 +461,21 @@ async function main(): Promise<void> {
     if (calendarService && name === 'apple_calendar_delete') {
       await calendarService.deleteEvent(toolArgs.id as string);
       return { content: [{ type: 'text', text: JSON.stringify({ success: true }) }] };
+    }
+
+    // ── apple_shortcuts_list ───────────────────────────────────────────────
+    if (shortcutsService && name === 'apple_shortcuts_list') {
+      const shortcuts = await shortcutsService.listShortcuts();
+      return { content: [{ type: 'text', text: JSON.stringify({ success: true, shortcuts }) }] };
+    }
+
+    // ── apple_shortcuts_run ────────────────────────────────────────────────
+    if (shortcutsService && name === 'apple_shortcuts_run') {
+      const result = await shortcutsService.runShortcut(
+        toolArgs.name as string,
+        toolArgs.input as string | undefined,
+      );
+      return { content: [{ type: 'text', text: JSON.stringify({ success: true, ...result }) }] };
     }
 
     // ── Unknown tool ──────────────────────────────────────────────────────
