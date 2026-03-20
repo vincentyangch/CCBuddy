@@ -6,7 +6,7 @@ Prevent concurrent agent sessions from writing to the same working directory sim
 
 ## Conflict Detection Logic
 
-Detection happens in `AgentService.handleRequest()`, before dispatching to the backend.
+Detection happens in `AgentService.handleRequest()`, **before** the existing concurrency check.
 
 ### DirectoryLock
 
@@ -23,23 +23,40 @@ class DirectoryLock {
 ```
 
 - Paths normalized via `path.resolve()` for consistent comparison
-- Parent/child conflict detection: if `/project` is locked, `/project/src` also conflicts (and vice versa). Check if either path starts with the other.
+- Parent/child conflict detection: check `normalizedA === normalizedB` or `normalizedA.startsWith(normalizedB + path.sep)` or `normalizedB.startsWith(normalizedA + path.sep)` — prevents `/projects` from falsely conflicting with `/project`
 - Same session re-acquiring the same directory succeeds (idempotent — it's the same conversation continuing)
 - Release by wrong session ID is a no-op (safety guard)
 
 ### Request Flow
 
+Order of checks: **directory lock → concurrency queue → backend execution**.
+
 1. Request arrives at `AgentService.handleRequest()`
 2. If `request.workingDirectory` is set:
    a. Try `directoryLock.acquire(workingDir, sessionId, userId)`
-   b. If acquired: proceed to backend execution. Release lock in `finally` block.
-   c. If not acquired: publish `session.conflict` event, push request to per-directory wait queue.
-3. If `request.workingDirectory` is not set (scheduled jobs, system tasks): skip lock, proceed directly.
-4. On lock release: check wait queue for that directory. If non-empty, shift next request and execute it.
+   b. If acquired: proceed to concurrency check and backend execution. Release lock in `finally` block after execution completes.
+   c. If not acquired: publish `session.conflict` event, suspend the caller via a promise-based queue (see Wait Queue). When the promise resolves (lock released), re-enter the normal flow from the concurrency check onward.
+3. If `request.workingDirectory` is not set (scheduled jobs, system tasks): skip lock, proceed directly to concurrency check.
+
+**Key:** The directory lock is acquired before the concurrency queue. This prevents holding a directory lock while a request sits idle in the concurrency queue. When a directory-queued request is unblocked, it enters the concurrency check normally.
 
 ### Wait Queue
 
-`Map<string, AgentRequest[]>` keyed by normalized directory path. FIFO order. When a lock is released, the next queued request is dequeued and executed automatically.
+Promise-based queue mirroring the existing `PriorityQueue` pattern in AgentService. Each queued entry is a `{ request, resolve, reject }` tuple:
+
+```typescript
+interface DirectoryQueueEntry {
+  request: AgentRequest;
+  resolve: () => void;
+  reject: (err: Error) => void;
+}
+```
+
+`Map<string, DirectoryQueueEntry[]>` keyed by normalized directory path. FIFO order.
+
+When a caller hits a directory conflict, `handleRequest()` creates a Promise and awaits it. The caller's async generator suspends — it does not return. When the lock is released, the next entry's `resolve()` is called, the generator resumes, and events flow back through the same pipeline.
+
+**Timeout:** Same `queueTimeoutSeconds` as the existing concurrency queue. On timeout, reject the promise and notify the user that the directory is still busy.
 
 ### Notification
 
@@ -52,11 +69,27 @@ eventBus.publish('session.conflict', {
   channelId: request.channelId,
   platform: request.platform,
   workingDirectory: request.workingDirectory,
-  conflictingPid: 0, // not tracking PIDs, just session-level
+  conflictingPid: 0,
 });
 ```
 
-The gateway subscribes to `session.conflict` and sends a message to the user's channel: "Another session is using this directory — your request has been queued and will run when it's free."
+**Gateway subscription:** Wire in `Gateway` constructor. Subscribe to `session.conflict`, resolve the platform adapter from the event's `platform` field via `this.adapters`, send notification to the user's channel. Log the conflict event.
+
+### SessionConflictEvent type update
+
+Make `conflictingPid` optional since we track session-level conflicts, not PIDs:
+
+```typescript
+export interface SessionConflictEvent {
+  userId: string;
+  sessionId: string;
+  channelId: string;
+  platform: string;
+  workingDirectory: string;
+  conflictingPid?: number;
+  conflictingSessionId?: string;
+}
+```
 
 ## What Does NOT Conflict
 
@@ -70,18 +103,21 @@ The gateway subscribes to `session.conflict` and sends a message to the user's c
 - Acquire/release basic flow
 - Same session re-acquires same directory (idempotent)
 - Different session blocked on same directory
-- Parent/child path conflicts detected
+- Parent/child path conflicts detected (`/project` vs `/project/src`)
+- `/projects` does NOT conflict with `/project` (path separator guard)
 - Release unblocks subsequent acquire
 - Release by wrong session ID is a no-op
 
 ### AgentService integration (unit)
 - Request with working dir acquires lock, releases on completion
-- Second request to same dir is queued, not rejected
-- Queued request executes after first completes
+- Second request to same dir is queued (promise suspends), not rejected
+- Queued request executes after first completes (promise resolves)
 - Request without working dir skips lock entirely
 - `session.conflict` event published when queued
 - Error in first request still releases lock (finally block)
+- Timeout on directory queue rejects with error
 
 ### Gateway (unit)
-- Subscribes to `session.conflict` event
-- Sends notification message to user's channel
+- Subscribes to `session.conflict` event in constructor
+- Sends notification message to correct platform/channel
+- Logs conflict event
