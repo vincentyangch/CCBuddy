@@ -325,6 +325,50 @@ async function main(): Promise<void> {
           required: ['userId', 'key'],
         },
       });
+
+      // Notification preference tools
+      tools.push({
+        name: 'notification_get',
+        description: 'Get the current notification preferences for a user. Returns merged config defaults + user overrides.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string', description: 'The user ID' },
+          },
+          required: ['userId'],
+        },
+      });
+      tools.push({
+        name: 'notification_set',
+        description: 'Update notification preferences for a user. Can toggle master switch, enable/disable specific types (health, memory, errors, sessions), change delivery target, or set quiet hours.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string', description: 'The user ID' },
+            enabled: { type: 'boolean', description: 'Master notification switch' },
+            type: { type: 'string', description: 'Notification type to configure (health, memory, errors, sessions)' },
+            type_enabled: { type: 'boolean', description: 'Enable/disable the specified type (requires type)' },
+            target_platform: { type: 'string', description: 'Delivery platform (e.g., discord)' },
+            target_channel: { type: 'string', description: 'Delivery channel ID or "DM"' },
+            quiet_start: { type: 'string', description: 'Quiet hours start (HH:MM)' },
+            quiet_end: { type: 'string', description: 'Quiet hours end (HH:MM)' },
+            quiet_timezone: { type: 'string', description: 'Quiet hours timezone' },
+          },
+          required: ['userId'],
+        },
+      });
+      tools.push({
+        name: 'notification_mute',
+        description: 'Temporarily mute all notifications for a user for a specified number of minutes. Pass 0 to unmute.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string', description: 'The user ID' },
+            minutes: { type: 'number', description: 'Minutes to mute (0 to unmute)' },
+          },
+          required: ['userId', 'minutes'],
+        },
+      });
     }
 
     // send_file tool — always available
@@ -552,6 +596,92 @@ async function main(): Promise<void> {
       const key = toolArgs.key as string;
       profileStore.delete(userId, key);
       return { content: [{ type: 'text', text: JSON.stringify({ success: true, userId, key, deleted: true }) }] };
+    }
+
+    // ── notification_get ───────────────────────────────────────────────
+    if (profileStore && name === 'notification_get') {
+      const userId = toolArgs.userId as string;
+      const prefs: Record<string, string | undefined> = {
+        notification_enabled: profileStore.get(userId, 'notification_enabled'),
+        notification_types: profileStore.get(userId, 'notification_types'),
+        notification_target: profileStore.get(userId, 'notification_target'),
+        notification_quiet_hours: profileStore.get(userId, 'notification_quiet_hours'),
+        notification_mute_until: profileStore.get(userId, 'notification_mute_until'),
+      };
+      const result = Object.fromEntries(Object.entries(prefs).filter(([, v]) => v !== undefined));
+      return {
+        content: [{
+          type: 'text',
+          text: Object.keys(result).length > 0
+            ? JSON.stringify(result, null, 2)
+            : 'No notification preferences set — using config defaults.',
+        }],
+      };
+    }
+
+    // ── notification_set ───────────────────────────────────────────────
+    if (profileStore && name === 'notification_set') {
+      const userId = toolArgs.userId as string;
+      const changes: string[] = [];
+
+      if (toolArgs.enabled !== undefined) {
+        profileStore.set(userId, 'notification_enabled', String(toolArgs.enabled));
+        changes.push(`enabled: ${toolArgs.enabled}`);
+      }
+
+      if (toolArgs.type && toolArgs.type_enabled !== undefined) {
+        const existing = profileStore.get(userId, 'notification_types');
+        let types: Record<string, boolean> = {};
+        if (existing) try { types = JSON.parse(existing); } catch {}
+        types[toolArgs.type as string] = toolArgs.type_enabled as boolean;
+        profileStore.set(userId, 'notification_types', JSON.stringify(types));
+        changes.push(`${toolArgs.type}: ${toolArgs.type_enabled}`);
+      }
+
+      if (toolArgs.target_platform || toolArgs.target_channel) {
+        const target = {
+          platform: (toolArgs.target_platform as string) ?? 'discord',
+          channel: (toolArgs.target_channel as string) ?? 'DM',
+        };
+        profileStore.set(userId, 'notification_target', JSON.stringify(target));
+        changes.push(`target: ${target.platform}/${target.channel}`);
+      }
+
+      if (toolArgs.quiet_start || toolArgs.quiet_end) {
+        const quietHours = {
+          start: (toolArgs.quiet_start as string) ?? '23:00',
+          end: (toolArgs.quiet_end as string) ?? '07:00',
+          timezone: (toolArgs.quiet_timezone as string) ?? 'America/Chicago',
+        };
+        profileStore.set(userId, 'notification_quiet_hours', JSON.stringify(quietHours));
+        changes.push(`quiet hours: ${quietHours.start}-${quietHours.end} ${quietHours.timezone}`);
+      }
+
+      return {
+        content: [{
+          type: 'text',
+          text: changes.length > 0
+            ? `Notification preferences updated: ${changes.join(', ')}`
+            : 'No changes specified.',
+        }],
+      };
+    }
+
+    // ── notification_mute ──────────────────────────────────────────────
+    if (profileStore && name === 'notification_mute') {
+      const userId = toolArgs.userId as string;
+      const minutes = toolArgs.minutes as number;
+
+      if (minutes <= 0) {
+        profileStore.delete(userId, 'notification_mute_until');
+        return { content: [{ type: 'text', text: 'Notifications unmuted.' }] };
+      }
+
+      const until = new Date(Date.now() + minutes * 60_000).toISOString();
+      profileStore.set(userId, 'notification_mute_until', until);
+      return {
+        content: [{ type: 'text', text: `Notifications muted until ${until} (${minutes} minutes).` }],
+      };
     }
 
     // ── send_file ───────────────────────────────────────────────────────
