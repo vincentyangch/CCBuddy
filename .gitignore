@@ -1,6 +1,7 @@
 .worktrees/
 node_modules/
 dist/
+dist-client/
 config/local.yaml
 data/
 *.sqlite

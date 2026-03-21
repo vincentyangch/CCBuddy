@@ -6,24 +6,28 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && cd client && npm run build",
+    "build:client": "cd client && npm run build",
+    "dev:client": "cd client && npm run dev",
     "test": "vitest run",
     "test:watch": "vitest",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist dist-client"
   },
   "dependencies": {
-    "@ccbuddy/core": "*",
     "@ccbuddy/agent": "*",
+    "@ccbuddy/core": "*",
     "@ccbuddy/memory": "*",
-    "fastify": "^5",
-    "@fastify/websocket": "^11",
-    "@fastify/static": "^8",
     "@fastify/cors": "^10",
+    "@fastify/static": "^8",
+    "@fastify/websocket": "^11",
+    "fastify": "^5",
     "js-yaml": "^4"
   },
   "devDependencies": {
-    "@types/node": "^22",
     "@types/js-yaml": "^4",
-    "vitest": "^3"
+    "@types/node": "^22",
+    "@types/ws": "^8.18.1",
+    "vitest": "^3",
+    "ws": "^8.19.0"
   }
 }
