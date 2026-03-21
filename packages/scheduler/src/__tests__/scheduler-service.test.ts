@@ -101,6 +101,12 @@ function createMinimalConfig(overrides: Partial<CCBuddyConfig> = {}): CCBuddyCon
     apple: {
       enabled: false,
     },
+    dashboard: {
+      enabled: false,
+      port: 18801,
+      host: '127.0.0.1',
+      auth_token_env: 'CCBUDDY_DASHBOARD_TOKEN',
+    },
     users: {},
     ...overrides,
   };

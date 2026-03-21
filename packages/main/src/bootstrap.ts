@@ -21,6 +21,7 @@ import { TelegramAdapter } from '@ccbuddy/platform-telegram';
 import { ShutdownHandler } from '@ccbuddy/orchestrator';
 import { SchedulerService } from '@ccbuddy/scheduler';
 import { chunkMessage } from '@ccbuddy/gateway';
+import { DashboardServer } from '@ccbuddy/dashboard';
 
 export interface BootstrapResult {
   stop: () => Promise<void>;
@@ -290,6 +291,37 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
 
   // 12. Start gateway (connects Discord/Telegram)
   await gateway.start();
+
+  // 12b. Start dashboard if enabled
+  let dashboardServer: DashboardServer | undefined;
+  if (config.dashboard.enabled) {
+    dashboardServer = new DashboardServer({
+      eventBus,
+      agentService,
+      messageStore,
+      agentEventStore,
+      config,
+      configDir: resolvedConfigDir,
+      logFiles: {
+        stdout: join(config.data_dir, 'ccbuddy.stdout.log'),
+        stderr: join(config.data_dir, 'ccbuddy.stderr.log'),
+        app: join(config.data_dir, 'ccbuddy.log'),
+      },
+    });
+    try {
+      const addr = await dashboardServer.start();
+      console.log(`[Dashboard] Started at ${addr}`);
+    } catch (err) {
+      console.error('[Dashboard] Failed to start:', (err as Error).message);
+      dashboardServer = undefined;
+    }
+  }
+
+  if (dashboardServer) {
+    shutdownHandler.register('dashboard', async () => {
+      await dashboardServer!.stop();
+    });
+  }
 
   // 13. Swap in SDK backend if configured (must happen AFTER discord.js connects —
   //     the SDK module has side effects that suppress discord.js WebSocket events

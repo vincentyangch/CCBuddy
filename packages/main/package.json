@@ -21,7 +21,8 @@
     "@ccbuddy/platform-discord": "*",
     "@ccbuddy/platform-telegram": "*",
     "@ccbuddy/orchestrator": "*",
-    "@ccbuddy/scheduler": "*"
+    "@ccbuddy/scheduler": "*",
+    "@ccbuddy/dashboard": "*"
   },
   "devDependencies": {
     "@types/node": "^22",

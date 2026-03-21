@@ -118,6 +118,13 @@ vi.mock('@ccbuddy/scheduler', () => ({
   },
 }));
 
+vi.mock('@ccbuddy/dashboard', () => ({
+  DashboardServer: vi.fn().mockImplementation(() => ({
+    start: vi.fn().mockResolvedValue('http://127.0.0.1:18801'),
+    stop: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
+
 vi.mock('@ccbuddy/gateway', async (importOriginal) => {
   return {
     Gateway: function (this: unknown, ...args: unknown[]) {
@@ -182,6 +189,10 @@ function makeConfig(overrides: Record<string, unknown> = {}) {
     webhooks: {
       enabled: false,
       port: 18800,
+    },
+    dashboard: {
+      enabled: false,
+      port: 18801,
     },
     media: {
       max_file_size_mb: 10,
