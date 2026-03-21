@@ -73,6 +73,20 @@ export class SdkBackend implements AgentBackend {
         sdkSessionId = request.sdkSessionId;
       }
 
+      // Interactive follow-ups — handle AskUserQuestion via requestUserInput callback
+      if (request.requestUserInput) {
+        options.canUseTool = async (toolName: string, input: Record<string, unknown>, opts: { signal: AbortSignal }) => {
+          if (toolName === 'AskUserQuestion' && request.requestUserInput) {
+            const answers = await request.requestUserInput(input.questions as any, opts.signal);
+            if (!answers) {
+              return { behavior: 'deny', message: 'User did not respond within the timeout period' };
+            }
+            return { behavior: 'allow', updatedInput: { ...input, answers } };
+          }
+          return { behavior: 'allow' };
+        };
+      }
+
       let fullPrompt = request.prompt;
       if (request.memoryContext) {
         fullPrompt = `<memory_context>\n${request.memoryContext}\n</memory_context>\n\n${request.prompt}`;

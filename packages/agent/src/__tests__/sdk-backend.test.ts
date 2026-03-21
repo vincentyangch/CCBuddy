@@ -308,4 +308,68 @@ describe('SdkBackend', () => {
     const complete = events.find(e => e.type === 'complete');
     expect(complete).toBeDefined();
   });
+
+  it('passes canUseTool callback when requestUserInput is provided', async () => {
+    const backend = new SdkBackend();
+    const requestUserInput = vi.fn().mockResolvedValue({ 'Which option?': 'Option A' });
+    for await (const _event of backend.execute(makeRequest({ requestUserInput }))) {}
+
+    const callArg = mockQuery.mock.calls[0][0] as { prompt: string; options: Record<string, unknown> };
+    expect(callArg.options['canUseTool']).toBeDefined();
+    expect(typeof callArg.options['canUseTool']).toBe('function');
+  });
+
+  it('does not set canUseTool when requestUserInput is absent', async () => {
+    const backend = new SdkBackend();
+    for await (const _event of backend.execute(makeRequest())) {}
+
+    const callArg = mockQuery.mock.calls[0][0] as { prompt: string; options: Record<string, unknown> };
+    expect(callArg.options['canUseTool']).toBeUndefined();
+  });
+
+  it('canUseTool calls requestUserInput for AskUserQuestion and returns allow', async () => {
+    const answers = { 'Pick a color': 'Blue' };
+    const requestUserInput = vi.fn().mockResolvedValue(answers);
+    const backend = new SdkBackend();
+    for await (const _event of backend.execute(makeRequest({ requestUserInput }))) {}
+
+    const callArg = mockQuery.mock.calls[0][0] as { prompt: string; options: Record<string, unknown> };
+    const canUseTool = callArg.options['canUseTool'] as Function;
+
+    const questions = [{ question: 'Pick a color', header: 'Colors', options: [{ label: 'Blue', description: 'A blue color' }], multiSelect: false }];
+    const result = await canUseTool('AskUserQuestion', { questions }, { signal: new AbortController().signal });
+
+    expect(requestUserInput).toHaveBeenCalledWith(questions, expect.any(AbortSignal));
+    expect(result).toEqual({
+      behavior: 'allow',
+      updatedInput: { questions, answers },
+    });
+  });
+
+  it('canUseTool returns deny with message when requestUserInput returns null', async () => {
+    const requestUserInput = vi.fn().mockResolvedValue(null);
+    const backend = new SdkBackend();
+    for await (const _event of backend.execute(makeRequest({ requestUserInput }))) {}
+
+    const callArg = mockQuery.mock.calls[0][0] as { prompt: string; options: Record<string, unknown> };
+    const canUseTool = callArg.options['canUseTool'] as Function;
+
+    const result = await canUseTool('AskUserQuestion', { questions: [] }, { signal: new AbortController().signal });
+    expect(result.behavior).toBe('deny');
+    expect(result.message).toBeDefined();
+    expect(typeof result.message).toBe('string');
+  });
+
+  it('canUseTool returns allow for non-AskUserQuestion tools', async () => {
+    const requestUserInput = vi.fn();
+    const backend = new SdkBackend();
+    for await (const _event of backend.execute(makeRequest({ requestUserInput }))) {}
+
+    const callArg = mockQuery.mock.calls[0][0] as { prompt: string; options: Record<string, unknown> };
+    const canUseTool = callArg.options['canUseTool'] as Function;
+
+    const result = await canUseTool('Bash', { command: 'ls' }, { signal: new AbortController().signal });
+    expect(result).toEqual({ behavior: 'allow' });
+    expect(requestUserInput).not.toHaveBeenCalled();
+  });
 });
