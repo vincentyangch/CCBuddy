@@ -63,6 +63,15 @@ export class UserManager {
     return `${userName.toLowerCase()}-${platform.toLowerCase()}-${channelId.toLowerCase()}`;
   }
 
+  /** Register a platform ID for an existing user at runtime (ephemeral, not persisted). */
+  registerPlatformId(platform: string, platformId: string, userName: string): void {
+    const user = this.nameIndex.get(userName.toLowerCase());
+    if (!user) return;
+    const key = `${platform}:${platformId}`;
+    user.platformIds[platform] = platformId;
+    this.index.set(key, user);
+  }
+
   /** Return an immutable snapshot of all managed users. */
   getAllUsers(): ReadonlyArray<User> {
     return this.users;
