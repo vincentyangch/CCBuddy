@@ -18,6 +18,7 @@ export class SchedulerService {
       sendProactiveMessage: deps.sendProactiveMessage,
       runSkill: deps.runSkill,
       timezone: deps.config.scheduler.timezone,
+      defaultModel: deps.defaultModel,
       assembleContext: deps.assembleContext,
       internalJobs: deps.internalJobs,
     });

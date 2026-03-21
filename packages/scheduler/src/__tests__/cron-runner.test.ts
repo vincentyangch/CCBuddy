@@ -131,6 +131,41 @@ describe('CronRunner', () => {
     });
   });
 
+  describe('executeJob — model passthrough', () => {
+    it('passes job.model to AgentRequest when set', async () => {
+      const deps = createMockDeps();
+      const runner = new CronRunner(deps);
+      const job = createMockJob({ model: 'opus' });
+
+      await runner.executeJob(job);
+
+      const request: AgentRequest = (deps.executeAgentRequest as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(request.model).toBe('opus');
+    });
+
+    it('falls back to defaultModel when job has no model', async () => {
+      const deps = createMockDeps({ defaultModel: 'sonnet' });
+      const runner = new CronRunner(deps);
+      const job = createMockJob();
+
+      await runner.executeJob(job);
+
+      const request: AgentRequest = (deps.executeAgentRequest as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(request.model).toBe('sonnet');
+    });
+
+    it('sets model to undefined when neither job nor defaultModel is set', async () => {
+      const deps = createMockDeps();
+      const runner = new CronRunner(deps);
+      const job = createMockJob();
+
+      await runner.executeJob(job);
+
+      const request: AgentRequest = (deps.executeAgentRequest as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(request.model).toBeUndefined();
+    });
+  });
+
   describe('executeJob — memory context', () => {
     it('executePromptJob includes memoryContext from assembleContext', async () => {
       const deps = createMockDeps();

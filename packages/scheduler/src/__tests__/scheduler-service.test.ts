@@ -29,6 +29,7 @@ function createMinimalConfig(overrides: Partial<CCBuddyConfig> = {}): CCBuddyCon
     log_level: 'info',
     agent: {
       backend: 'sdk',
+      model: 'claude-sonnet-4-5',
       max_concurrent_sessions: 3,
       session_timeout_minutes: 30,
       session_timeout_ms: 3_600_000,

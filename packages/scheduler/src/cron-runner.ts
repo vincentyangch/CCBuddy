@@ -14,6 +14,7 @@ export interface CronRunnerOptions {
   runSkill?: (name: string, input: Record<string, unknown>) => Promise<string>;
   assembleContext: (userId: string, sessionId: string) => string;
   timezone: string;
+  defaultModel?: string;
   internalJobs?: Map<string, () => Promise<void>>;
 }
 
@@ -87,6 +88,7 @@ export class CronRunner {
       platform: job.target.platform,
       permissionLevel: job.permissionLevel,
       memoryContext,
+      model: job.model ?? this.opts.defaultModel,
     };
 
     const generator = this.opts.executeAgentRequest(request);

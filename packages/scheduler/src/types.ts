@@ -22,6 +22,7 @@ export interface PromptJob extends BaseJob {
   user: string;
   target: MessageTarget;
   permissionLevel: 'admin' | 'system';
+  model?: string;
 }
 
 export interface SkillJob extends BaseJob {
@@ -30,6 +31,7 @@ export interface SkillJob extends BaseJob {
   user: string;
   target: MessageTarget;
   permissionLevel: 'admin' | 'system';
+  model?: string;
 }
 
 export interface InternalJob extends BaseJob {
@@ -56,6 +58,7 @@ export interface HealthCheckResult {
 export interface SchedulerDeps {
   config: CCBuddyConfig;
   eventBus: EventBus;
+  defaultModel?: string;
   executeAgentRequest: (request: AgentRequest) => AsyncGenerator<AgentEvent>;
   sendProactiveMessage: (target: MessageTarget, text: string) => Promise<void>;
   runSkill?: (name: string, input: Record<string, unknown>) => Promise<string>;
