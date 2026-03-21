@@ -48,7 +48,6 @@ export interface GatewayDeps {
   voiceConfig?: { enabled: boolean; ttsMaxChars: number };
   sessionStore?: SessionStore;
   defaultModel?: string;
-  readModelFile?: (sessionKey: string) => string | null;
   userInputTimeoutMs?: number;
   storeAgentEvent?: (params: { userId: string; sessionId: string; platform: string; eventType: string; content: string; toolInput?: string; toolOutput?: string }) => void;
 }
@@ -162,7 +161,9 @@ export class Gateway {
     let resumeSessionId: string | undefined;
     let isNewSession = true;
     if (this.deps.sessionStore) {
-      const session = this.deps.sessionStore.getOrCreate(sessionKey, isGroupChannel);
+      const session = this.deps.sessionStore.getOrCreate(
+        sessionKey, isGroupChannel, msg.platform, msg.channelId, user.name,
+      );
       isNewSession = session.isNew;
       if (session.isNew) {
         sdkSessionId = session.sdkSessionId;
@@ -173,24 +174,10 @@ export class Gateway {
 
     // 3d. Resolve model for this session
     let sessionModel: string | undefined;
-    if (this.deps.readModelFile) {
-      const fileModel = this.deps.readModelFile(sessionKey);
-      if (fileModel) {
-        sessionModel = fileModel;
-        if (this.deps.sessionStore) {
-          const previousModel = this.deps.sessionStore.getModel(sessionKey);
-          this.deps.sessionStore.setModel(sessionKey, fileModel);
-          if (previousModel && previousModel !== fileModel) {
-            void this.deps.eventBus.publish('session.model_changed', {
-              sessionId,
-              userId: user.name,
-              platform: msg.platform,
-              channelId: msg.channelId,
-              previousModel,
-              newModel: fileModel,
-            });
-          }
-        }
+    if (this.deps.sessionStore) {
+      const storeModel = this.deps.sessionStore.getModel(sessionKey);
+      if (storeModel) {
+        sessionModel = storeModel;
       }
     }
     const effectiveModel = sessionModel ?? this.deps.defaultModel;
@@ -463,8 +450,10 @@ export class Gateway {
       // If this was a session resume that failed, retry as a new session
       if (request.resumeSessionId && sessionKey && this.deps.sessionStore) {
         console.warn(`[Gateway] Resume failed for session ${request.resumeSessionId}, retrying as new session`);
-        this.deps.sessionStore.remove(sessionKey);
-        const newSession = this.deps.sessionStore.getOrCreate(sessionKey, msg.channelType === 'group');
+        this.deps.sessionStore.archive(sessionKey);
+        const newSession = this.deps.sessionStore.getOrCreate(
+          sessionKey, msg.channelType === 'group', msg.platform, msg.channelId, request.userId,
+        );
         const retryRequest: AgentRequest = {
           ...request,
           resumeSessionId: undefined,

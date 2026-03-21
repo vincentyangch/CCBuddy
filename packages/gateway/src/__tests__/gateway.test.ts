@@ -835,25 +835,29 @@ describe('Gateway — model injection', () => {
     };
   }
 
-  it('uses model from readModelFile when provided', async () => {
+  it('uses model from sessionStore when set', async () => {
     const sessionStore = new SessionStore(3_600_000);
-    const deps = createMockDeps({
-      sessionStore,
-      readModelFile: vi.fn().mockReturnValue('opus[1m]'),
-    });
+    const deps = createMockDeps({ sessionStore });
     const gateway = new Gateway(deps);
     const adapter = createMockAdapter();
     gateway.registerAdapter(adapter);
 
+    // First message creates the session
     await adapter.simulateMessage(createDmMessage());
+    // Set model on the session
+    const getModelSpy = vi.spyOn(sessionStore, 'getModel').mockReturnValue('opus[1m]');
 
-    const request = (deps.executeAgentRequest as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentRequest;
-    expect(request.model).toBe('opus[1m]');
+    // Second message should pick up the model
+    await adapter.simulateMessage(createDmMessage({ text: 'Follow up' }));
+
+    const calls = (deps.executeAgentRequest as ReturnType<typeof vi.fn>).mock.calls;
+    const secondRequest = calls[1][0] as AgentRequest;
+    expect(secondRequest.model).toBe('opus[1m]');
+    getModelSpy.mockRestore();
   });
 
-  it('falls back to defaultModel when readModelFile returns null', async () => {
+  it('falls back to defaultModel when sessionStore has no model', async () => {
     const deps = createMockDeps({
-      readModelFile: vi.fn().mockReturnValue(null),
       defaultModel: 'sonnet',
     });
     const gateway = new Gateway(deps);
@@ -866,7 +870,7 @@ describe('Gateway — model injection', () => {
     expect(request.model).toBe('sonnet');
   });
 
-  it('model is undefined when neither readModelFile nor defaultModel is set', async () => {
+  it('model is undefined when neither sessionStore model nor defaultModel is set', async () => {
     const deps = createMockDeps();
     const gateway = new Gateway(deps);
     const adapter = createMockAdapter();
@@ -878,12 +882,12 @@ describe('Gateway — model injection', () => {
     expect(request.model).toBeUndefined();
   });
 
-  it('sets sessionStore model when readModelFile returns a value', async () => {
+  it('uses sessionStore model over defaultModel when both are set', async () => {
     const sessionStore = new SessionStore(3_600_000);
-    const setModelSpy = vi.spyOn(sessionStore, 'setModel');
+    vi.spyOn(sessionStore, 'getModel').mockReturnValue('opus[1m]');
     const deps = createMockDeps({
       sessionStore,
-      readModelFile: vi.fn().mockReturnValue('opus[1m]'),
+      defaultModel: 'sonnet',
     });
     const gateway = new Gateway(deps);
     const adapter = createMockAdapter();
@@ -891,7 +895,8 @@ describe('Gateway — model injection', () => {
 
     await adapter.simulateMessage(createDmMessage());
 
-    expect(setModelSpy).toHaveBeenCalledWith(expect.any(String), 'opus[1m]');
+    const request = (deps.executeAgentRequest as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentRequest;
+    expect(request.model).toBe('opus[1m]');
   });
 
   it('injects model awareness system prompt when effectiveModel is set', async () => {
