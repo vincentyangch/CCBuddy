@@ -27,7 +27,15 @@ export const api = {
     }).then(r => r.ok),
 
   status: () => request<any>('/api/status'),
-  sessions: () => request<{ sessions: any[] }>('/api/sessions'),
+  sessions: (status?: string) => {
+    const params = status ? `?status=${status}` : '';
+    return request<{ sessions: any[] }>(`/api/sessions${params}`);
+  },
+  deleteSession: (key: string) =>
+    fetch(`/api/sessions/${encodeURIComponent(key)}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${getToken()}` },
+    }).then(r => r.json()),
   sessionEvents: (key: string) => request<{ events: any[] }>(`/api/sessions/${encodeURIComponent(key)}/events`),
   conversations: (params: Record<string, string>) => {
     const qs = new URLSearchParams(params).toString();
