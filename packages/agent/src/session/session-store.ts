@@ -15,12 +15,18 @@ export interface SessionInfo {
   model: string | null;
 }
 
+export interface SessionStoreOptions {
+  onExpiry?: (sessionKey: string) => void;
+}
+
 export class SessionStore {
   private readonly entries = new Map<string, SessionEntry>();
   private readonly timeoutMs: number;
+  private readonly onExpiry?: (sessionKey: string) => void;
 
-  constructor(timeoutMs: number) {
+  constructor(timeoutMs: number, options?: SessionStoreOptions) {
     this.timeoutMs = timeoutMs;
+    this.onExpiry = options?.onExpiry;
   }
 
   getOrCreate(sessionKey: string, isGroupChannel: boolean): { sdkSessionId: string; isNew: boolean } {
@@ -56,6 +62,7 @@ export class SessionStore {
     for (const [key, entry] of this.entries) {
       if (now - entry.lastActivity > this.timeoutMs) {
         this.entries.delete(key);
+        this.onExpiry?.(key);
       }
     }
   }

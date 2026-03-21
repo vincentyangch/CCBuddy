@@ -117,4 +117,16 @@ describe('SessionStore model field', () => {
     expect(store.getAll()).toHaveLength(0);
     vi.useRealTimers();
   });
+
+  it('calls onExpiry callback when session expires', () => {
+    vi.useFakeTimers();
+    const expired: string[] = [];
+    const store = new SessionStore(60_000, { onExpiry: (key) => expired.push(key) });
+    store.getOrCreate('key1', false);
+
+    vi.advanceTimersByTime(61_000);
+    store.tick();
+    expect(expired).toEqual(['key1']);
+    vi.useRealTimers();
+  });
 });

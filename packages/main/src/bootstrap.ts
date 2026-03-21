@@ -90,7 +90,14 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
   const backend = new CliBackend();
 
   // 5. Create AgentService
-  const sessionStore = new SessionStore(config.agent.session_timeout_ms);
+  const projectRoot = dirname(resolvedConfigDir);
+  const resolve = (p: string) => join(projectRoot, p);
+  const sessionStore = new SessionStore(config.agent.session_timeout_ms, {
+    onExpiry: (sessionKey) => {
+      const modelFile = join(resolve(config.data_dir), 'sessions', `${sessionKey}.model`);
+      try { unlinkSync(modelFile); } catch { /* file may not exist */ }
+    },
+  });
 
   const agentService = new AgentService({
     backend,
@@ -177,8 +184,6 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
 
   // Build skill MCP server spec
   // All paths must be absolute — the SDK spawns a CLI subprocess that may use a different CWD
-  const projectRoot = dirname(resolvedConfigDir);
-  const resolve = (p: string) => join(projectRoot, p);
   const skillMcpServerPath = config.skills.mcp_server_path ?? MCP_SERVER_PATH;
   const registryDir = dirname(config.skills.generated_dir); // parent dir (e.g., './skills')
   const skillMcpServer = {
@@ -377,6 +382,7 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
   const schedulerService = new SchedulerService({
     config,
     eventBus,
+    defaultModel: config.agent.model,
     executeAgentRequest: (request) => agentService.handleRequest({
       ...request,
       workingDirectory: request.workingDirectory,
