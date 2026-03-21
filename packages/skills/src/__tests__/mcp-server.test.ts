@@ -181,6 +181,18 @@ describe('with --memory-db', () => {
         tokens INTEGER NOT NULL DEFAULT 0,
         timestamp INTEGER NOT NULL
       );
+      CREATE TABLE sessions (
+        session_key TEXT PRIMARY KEY,
+        sdk_session_id TEXT NOT NULL,
+        user_id TEXT,
+        platform TEXT NOT NULL,
+        channel_id TEXT NOT NULL,
+        is_group_channel BOOLEAN NOT NULL DEFAULT 0,
+        model TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+        created_at INTEGER NOT NULL,
+        last_activity INTEGER NOT NULL
+      );
     `);
     db.prepare('INSERT INTO messages (user_id, session_id, platform, content, role, timestamp, tokens) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
       'testuser', 'sess-1', 'discord', 'Hello world', 'user', Date.now(), 10

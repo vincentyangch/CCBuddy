@@ -3,4 +3,3 @@ export { type CCBuddyConfig, type AgentConfig, type MemoryConfig, DEFAULT_CONFIG
 export type * from './schema.js';
 export type { PermissionGateRule, PermissionGateConfig } from './schema.js';
 export { isValidModel, KNOWN_MODEL_ALIASES } from './model-validation.js';
-export { writeModelFile, readModelFile } from './model-file.js';

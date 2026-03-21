@@ -27,9 +27,9 @@ import { SkillGenerator } from './generator.js';
 import { SkillValidator } from './validator.js';
 import { SkillRunner } from './runner.js';
 import type { SkillPermission } from './types.js';
-import { MemoryDatabase, MessageStore, SummaryStore, RetrievalTools, ProfileStore } from '@ccbuddy/memory';
+import { MemoryDatabase, MessageStore, SummaryStore, RetrievalTools, ProfileStore, SessionDatabase } from '@ccbuddy/memory';
 import { SwiftBridge, AppleCalendarService, AppleRemindersService, AppleShortcutsService, JxaBridge, AppleNotesService } from '@ccbuddy/apple';
-import { isValidModel, readModelFile, writeModelFile } from '@ccbuddy/core';
+import { isValidModel } from '@ccbuddy/core';
 
 // ── CLI argument parsing ────────────────────────────────────────────────────
 
@@ -125,6 +125,7 @@ async function main(): Promise<void> {
   let profileStore: ProfileStore | null = null;
   let memoryDatabase: MemoryDatabase | null = null;
   let profileDatabase: MemoryDatabase | null = null;
+  let sessionDb: SessionDatabase | undefined;
   if (args.memoryDbPath) {
     memoryDatabase = new MemoryDatabase(args.memoryDbPath, { readonly: true });
     const messageStore = new MessageStore(memoryDatabase);
@@ -134,6 +135,7 @@ async function main(): Promise<void> {
     // Writable connection for profile updates (WAL mode supports concurrent writers)
     profileDatabase = new MemoryDatabase(args.memoryDbPath);
     profileStore = new ProfileStore(profileDatabase);
+    sessionDb = new SessionDatabase(profileDatabase.raw());
 
     // Register cleanup handlers for database shutdown
     const closeDatabases = () => { memoryDatabase?.close(); profileDatabase?.close(); };
@@ -254,6 +256,11 @@ async function main(): Promise<void> {
       tools.push({
         name: 'get_current_model',
         description: 'Get the model currently configured for this session.',
+        inputSchema: { type: 'object', properties: {} },
+      });
+      tools.push({
+        name: 'pause_session',
+        description: 'Pause the current session so it can be resumed later, even after hours or days. Use when the user says they are stepping away and want to continue later.',
         inputSchema: { type: 'object', properties: {} },
       });
     }
@@ -723,15 +730,25 @@ async function main(): Promise<void> {
         if (!isValidModel(model)) {
           return { content: [{ type: 'text', text: `Invalid model: "${model}". Use an alias (sonnet, opus, haiku, opus[1m], sonnet[1m], opusplan) or a full model ID (e.g., claude-opus-4-6).` }] };
         }
-        const filePath = pathJoin(args.dataDir, 'sessions', `${args.sessionKey}.model`);
-        mkdirSync(pathJoin(args.dataDir, 'sessions'), { recursive: true });
-        writeModelFile(filePath, model);
+        if (sessionDb && args.sessionKey) {
+          sessionDb.updateModel(args.sessionKey, model);
+        }
         return { content: [{ type: 'text', text: `Model switched to ${model}. This takes effect on the next message.` }] };
       }
       case 'get_current_model': {
-        const filePath = pathJoin(args.dataDir, 'sessions', `${args.sessionKey}.model`);
-        const model = readModelFile(filePath);
-        return { content: [{ type: 'text', text: model ? `Current model override: ${model}` : 'No model override — using config default.' }] };
+        if (sessionDb && args.sessionKey) {
+          const row = sessionDb.getByKey(args.sessionKey);
+          const model = row?.model ?? null;
+          return { content: [{ type: 'text', text: model ? `Current model override: ${model}` : 'No model override — using config default.' }] };
+        }
+        return { content: [{ type: 'text', text: 'No model override — using config default.' }] };
+      }
+      case 'pause_session': {
+        if (sessionDb && args.sessionKey) {
+          sessionDb.updateStatus(args.sessionKey, 'paused');
+          return { content: [{ type: 'text', text: 'Session paused. It will be resumed when you send your next message, even after hours or days.' }] };
+        }
+        return { content: [{ type: 'text', text: 'Session pausing is not available (no session key).' }] };
       }
     }
 

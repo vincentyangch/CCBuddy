@@ -47,6 +47,7 @@ function createMinimalConfig(overrides: Partial<CCBuddyConfig> = {}): CCBuddyCon
       pending_input_timeout_minutes: 10,
       graceful_shutdown_timeout_seconds: 30,
       permission_gates: { enabled: true, timeout_ms: 300_000, rules: [] },
+      max_pause_ms: 86_400_000,
     },
     memory: {
       db_path: './data/memory.sqlite',
