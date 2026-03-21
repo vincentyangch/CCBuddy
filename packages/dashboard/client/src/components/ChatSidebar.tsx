@@ -10,6 +10,7 @@ interface Session {
 
 interface ChatSidebarProps {
   activeSessionId: string | null;
+  pendingChannelId?: string | null;
   onSelectSession: (session: { sessionId: string; channelId: string }) => void;
   onNewChat: () => void;
   onDeleteSession?: (sessionId: string) => void;
@@ -23,7 +24,7 @@ function extractChannelId(sessionId: string): string {
   return idx >= 0 ? sessionId.slice(idx + marker.length) : sessionId;
 }
 
-export function ChatSidebar({ activeSessionId, onSelectSession, onNewChat, onDeleteSession, refreshKey }: ChatSidebarProps) {
+export function ChatSidebar({ activeSessionId, pendingChannelId, onSelectSession, onNewChat, onDeleteSession, refreshKey }: ChatSidebarProps) {
   const [sessions, setSessions] = useState<Session[]>([]);
 
   useEffect(() => {
@@ -51,6 +52,14 @@ export function ChatSidebar({ activeSessionId, onSelectSession, onNewChat, onDel
       </button>
       <div className="text-xs text-gray-500 uppercase mb-2 px-1">Sessions</div>
       <div className="flex-1 overflow-auto space-y-1">
+        {pendingChannelId && !sessions.some(s => s.channelId === pendingChannelId) && (
+          <div
+            className="w-full text-left px-3 py-2 rounded-lg text-xs truncate bg-blue-900/30 border border-blue-800 text-white"
+          >
+            <div className="truncate">New conversation</div>
+            <div className="text-gray-600 text-[10px] mt-0.5">now</div>
+          </div>
+        )}
         {sessions.map(s => (
           <div
             key={s.sessionId}

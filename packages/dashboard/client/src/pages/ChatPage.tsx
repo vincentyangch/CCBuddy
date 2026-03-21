@@ -136,7 +136,7 @@ export function ChatPage() {
 
   return (
     <div className="flex h-[calc(100vh-theme(spacing.12))] -m-6">
-      <ChatSidebar activeSessionId={activeSessionId} onSelectSession={handleSelectSession} onNewChat={handleNewChat} onDeleteSession={handleDeleteSession} refreshKey={sidebarRefresh} />
+      <ChatSidebar activeSessionId={activeSessionId} pendingChannelId={activeSessionId ? null : channelId} onSelectSession={handleSelectSession} onNewChat={handleNewChat} onDeleteSession={handleDeleteSession} refreshKey={sidebarRefresh} />
       <div className="flex-1 flex flex-col">
         <div className="px-4 py-3 border-b border-gray-800 flex justify-between items-center">
           <span className="text-sm font-medium">Chat with Po</span>
