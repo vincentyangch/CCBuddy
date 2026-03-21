@@ -1,7 +1,7 @@
 import { join, dirname } from 'node:path';
 import { writeFileSync, renameSync, readFileSync, unlinkSync, existsSync, mkdirSync } from 'node:fs';
 import { execSync } from 'node:child_process';
-import { loadConfig, createEventBus, UserManager, TranscriptionService, SpeechService, readModelFile } from '@ccbuddy/core';
+import { loadConfig, createEventBus, UserManager, TranscriptionService, SpeechService, readModelFile, isValidModel } from '@ccbuddy/core';
 import { AgentService, CliBackend, SessionStore } from '@ccbuddy/agent';
 import {
   MemoryDatabase,
@@ -76,6 +76,16 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
   // 1. Load config
   const resolvedConfigDir = configDir ?? join(process.cwd(), 'config');
   const config = loadConfig(resolvedConfigDir);
+
+  // 1a. Apply runtime model override (from dashboard)
+  const runtimeConfigPath = join(config.data_dir, 'runtime-config.json');
+  try {
+    const runtimeConfig = JSON.parse(readFileSync(runtimeConfigPath, 'utf8'));
+    if (runtimeConfig.model && isValidModel(runtimeConfig.model)) {
+      config.agent.model = runtimeConfig.model;
+      console.log(`[Bootstrap] Runtime model override applied: ${runtimeConfig.model}`);
+    }
+  } catch { /* no runtime config */ }
 
   // 1b. Acquire PID lock — kills any existing CCBuddy process
   const releasePidLock = acquirePidLock(config.data_dir);
