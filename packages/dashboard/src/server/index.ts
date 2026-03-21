@@ -1,8 +1,12 @@
-import { readFileSync, copyFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, copyFileSync, writeFileSync, existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import Fastify from 'fastify';
+import fastifyStatic from '@fastify/static';
 import type { FastifyInstance } from 'fastify';
+import websocket from '@fastify/websocket';
 import yaml from 'js-yaml';
+import { setupWebSocket } from './websocket.js';
 import type { EventBus, CCBuddyConfig } from '@ccbuddy/core';
 import type { SessionInfo } from '@ccbuddy/agent';
 import type { MessageQueryParams, MessageQueryResult, StoredAgentEvent } from '@ccbuddy/memory';
@@ -41,7 +45,30 @@ export class DashboardServer {
       throw new Error(`Dashboard auth token not set: env var '${config.auth_token_env}' is empty`);
     }
 
+    await this.app.register(websocket);
+    setupWebSocket(this.app, this.deps.eventBus, this.token);
+
     this.setupRoutes();
+
+    // Serve built React client as static files
+    const __dirname = dirname(fileURLToPath(import.meta.url));
+    const clientDir = join(__dirname, '..', '..', 'dist-client');
+    if (existsSync(clientDir)) {
+      await this.app.register(fastifyStatic, {
+        root: clientDir,
+        wildcard: false,
+      });
+      // SPA fallback — serve index.html for all non-API, non-WS routes
+      this.app.setNotFoundHandler(async (request, reply) => {
+        if (request.url.startsWith('/api/') || request.url.startsWith('/ws')) {
+          reply.status(404).send({ error: 'Not found' });
+          return;
+        }
+        return reply.sendFile('index.html');
+      });
+    } else {
+      console.warn('[Dashboard] Client build not found at', clientDir, '— API-only mode');
+    }
 
     await this.app.listen({ port: config.port, host: config.host });
     const addr = this.app.server.address();
