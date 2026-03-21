@@ -12,6 +12,7 @@ interface ChatSidebarProps {
   activeChannelId: string;
   onSelectSession: (channelId: string) => void;
   onNewChat: () => void;
+  onDeleteSession?: (channelId: string) => void;
   refreshKey?: number;
 }
 
@@ -22,7 +23,7 @@ function extractChannelId(sessionId: string): string {
   return idx >= 0 ? sessionId.slice(idx + marker.length) : sessionId;
 }
 
-export function ChatSidebar({ activeChannelId, onSelectSession, onNewChat, refreshKey }: ChatSidebarProps) {
+export function ChatSidebar({ activeChannelId, onSelectSession, onNewChat, onDeleteSession, refreshKey }: ChatSidebarProps) {
   const [sessions, setSessions] = useState<Session[]>([]);
 
   useEffect(() => {
@@ -51,18 +52,27 @@ export function ChatSidebar({ activeChannelId, onSelectSession, onNewChat, refre
       <div className="text-xs text-gray-500 uppercase mb-2 px-1">Sessions</div>
       <div className="flex-1 overflow-auto space-y-1">
         {sessions.map(s => (
-          <button
+          <div
             key={s.channelId}
-            onClick={() => onSelectSession(s.channelId)}
-            className={`w-full text-left px-3 py-2 rounded-lg text-xs truncate ${
+            className={`group relative w-full text-left px-3 py-2 rounded-lg text-xs truncate cursor-pointer ${
               s.channelId === activeChannelId
                 ? 'bg-blue-900/30 border border-blue-800 text-white'
                 : 'text-gray-400 hover:bg-gray-800 hover:text-white'
             }`}
+            onClick={() => onSelectSession(s.channelId)}
           >
-            <div className="truncate">{s.lastMessage || 'New conversation'}</div>
+            <div className="truncate pr-5">{s.lastMessage || 'New conversation'}</div>
             <div className="text-gray-600 text-[10px] mt-0.5">{new Date(s.timestamp).toLocaleDateString()}</div>
-          </button>
+            {onDeleteSession && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onDeleteSession(s.channelId); }}
+                className="absolute top-1.5 right-1.5 hidden group-hover:block text-gray-600 hover:text-red-400 text-xs"
+                title="Delete session"
+              >
+                ×
+              </button>
+            )}
+          </div>
         ))}
       </div>
     </div>

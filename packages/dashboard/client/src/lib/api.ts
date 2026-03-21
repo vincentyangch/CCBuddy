@@ -43,6 +43,8 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ config }),
     }),
+  deleteConversation: (sessionId: string) =>
+    request<{ ok: boolean; deleted: number }>(`/api/conversations/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }),
   getModel: () => request<{ model: string; source: string }>('/api/config/model'),
   setModel: (model: string) =>
     request<{ ok: boolean; model: string }>('/api/config/model', {

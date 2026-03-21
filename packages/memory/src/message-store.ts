@@ -168,6 +168,13 @@ export class MessageStore {
     return result.changes;
   }
 
+  deleteBySessionId(sessionId: string): number {
+    const result = this.db.raw().prepare(
+      'DELETE FROM messages WHERE session_id = ?'
+    ).run(sessionId);
+    return result.changes;
+  }
+
   query(params: MessageQueryParams): MessageQueryResult {
     const conditions: string[] = [];
     const values: (string | number)[] = [];

@@ -21,6 +21,7 @@ export interface DashboardDeps {
   };
   messageStore: {
     query(params: MessageQueryParams): MessageQueryResult;
+    deleteBySessionId(sessionId: string): number;
   };
   agentEventStore: {
     getBySession(sessionId: string, pagination?: { limit: number; offset: number }): StoredAgentEvent[];
@@ -152,6 +153,13 @@ export class DashboardServer {
         dateTo: q.dateTo ? parseInt(q.dateTo, 10) : undefined,
       };
       return this.deps.messageStore.query(params);
+    });
+
+    // DELETE /api/conversations/:sessionId — delete all messages for a session
+    this.app.delete('/api/conversations/:sessionId', async (request) => {
+      const { sessionId } = request.params as { sessionId: string };
+      const deleted = this.deps.messageStore.deleteBySessionId(sessionId);
+      return { ok: true, deleted };
     });
 
     // GET /api/logs — recent log lines (tail-read to avoid loading entire file)

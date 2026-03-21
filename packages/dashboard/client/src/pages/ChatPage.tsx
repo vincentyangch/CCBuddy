@@ -5,23 +5,16 @@ import { ChatSidebar } from '../components/ChatSidebar';
 import { api } from '../lib/api';
 import ReactMarkdown from 'react-markdown';
 
-interface ChatMessage {
+interface ChatEntry {
   id: string;
-  role: 'user' | 'assistant';
+  type: 'user' | 'assistant' | 'thinking' | 'tool_use';
   content: string;
   attachments?: Array<{ type: string; data: string; filename?: string }>;
 }
 
-interface AgentProgress {
-  id: string;
-  type: 'thinking' | 'tool_use';
-  content: string;
-}
-
 export function ChatPage() {
   const [channelId, setChannelId] = useState('webchat-main');
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [progress, setProgress] = useState<AgentProgress[]>([]);
+  const [entries, setEntries] = useState<ChatEntry[]>([]);
   const [typing, setTyping] = useState(false);
   const [buttons, setButtons] = useState<{ messageId: string; text: string; buttons: Array<{ id: string; label: string }> } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -30,37 +23,36 @@ export function ChatPage() {
   const handleEvent = useCallback((type: string, data: any) => {
     switch (type) {
       case 'chat.text':
-        setMessages(prev => [...prev, { id: data.messageId, role: 'assistant', content: data.text }]);
-        setProgress([]);
+        setEntries(prev => [...prev, { id: data.messageId, type: 'assistant', content: data.text }]);
         setTyping(false);
         setSidebarRefresh(n => n + 1);
         break;
       case 'chat.edit':
-        setMessages(prev => prev.map(m => m.id === data.messageId ? { ...m, content: data.text } : m));
+        setEntries(prev => prev.map(m => m.id === data.messageId ? { ...m, content: data.text } : m));
         break;
       case 'chat.typing':
         setTyping(data.active);
         break;
       case 'chat.image':
-        setMessages(prev => [...prev, {
+        setEntries(prev => [...prev, {
           id: crypto.randomUUID(),
-          role: 'assistant',
+          type: 'assistant',
           content: '',
           attachments: [{ type: 'image', data: data.data, filename: data.filename }],
         }]);
         break;
       case 'chat.file':
-        setMessages(prev => [...prev, {
+        setEntries(prev => [...prev, {
           id: crypto.randomUUID(),
-          role: 'assistant',
+          type: 'assistant',
           content: `📎 ${data.filename}`,
           attachments: [{ type: 'file', data: data.data, filename: data.filename }],
         }]);
         break;
       case 'chat.voice':
-        setMessages(prev => [...prev, {
+        setEntries(prev => [...prev, {
           id: crypto.randomUUID(),
-          role: 'assistant',
+          type: 'assistant',
           content: '',
           attachments: [{ type: 'voice', data: data.data }],
         }]);
@@ -71,9 +63,9 @@ export function ChatPage() {
       case 'agent.progress':
         if (data.platform === 'webchat') {
           if (data.type === 'thinking') {
-            setProgress(prev => [...prev, { id: crypto.randomUUID(), type: 'thinking', content: data.content }]);
+            setEntries(prev => [...prev, { id: crypto.randomUUID(), type: 'thinking', content: data.content }]);
           } else if (data.type === 'tool_use') {
-            setProgress(prev => [...prev, { id: crypto.randomUUID(), type: 'tool_use', content: data.content }]);
+            setEntries(prev => [...prev, { id: crypto.randomUUID(), type: 'tool_use', content: data.content }]);
           }
         }
         break;
@@ -83,9 +75,9 @@ export function ChatPage() {
   const { connected, send } = useWebSocket({ onEvent: handleEvent, channelId });
 
   const handleSend = useCallback((text: string, attachments: Array<{ data: string; mimeType: string; filename: string }>) => {
-    setMessages(prev => [...prev, {
+    setEntries(prev => [...prev, {
       id: crypto.randomUUID(),
-      role: 'user',
+      type: 'user',
       content: text,
       attachments: attachments.length > 0
         ? attachments.map(a => ({ type: a.mimeType.startsWith('image/') ? 'image' : 'file', data: a.data, filename: a.filename }))
@@ -101,38 +93,52 @@ export function ChatPage() {
 
   const handleSelectSession = useCallback(async (selectedChannelId: string) => {
     setChannelId(selectedChannelId);
-    setProgress([]);
     // Load history from DB
     try {
       const data = await api.conversations({ platform: 'webchat', pageSize: '100' });
-      const sessionMessages = (data.messages ?? [])
+      const sessionEntries = (data.messages ?? [])
         .filter((m: any) => m.sessionId.endsWith(`-webchat-${selectedChannelId}`))
         .sort((a: any, b: any) => a.timestamp - b.timestamp)
         .map((m: any) => ({
           id: String(m.id),
-          role: m.role as 'user' | 'assistant',
+          type: m.role as 'user' | 'assistant',
           content: m.content,
         }));
-      setMessages(sessionMessages);
+      setEntries(sessionEntries);
     } catch {
-      setMessages([]);
+      setEntries([]);
     }
   }, []);
+
+  const handleDeleteSession = useCallback(async (deletedChannelId: string) => {
+    // Find the sessionId for this channelId by convention
+    try {
+      const data = await api.conversations({ platform: 'webchat', pageSize: '100' });
+      const match = (data.messages ?? []).find((m: any) => m.sessionId.endsWith(`-webchat-${deletedChannelId}`));
+      if (match) {
+        await api.deleteConversation(match.sessionId);
+      }
+    } catch { /* ignore */ }
+    // If we deleted the active session, clear the chat
+    if (deletedChannelId === channelId) {
+      setEntries([]);
+    }
+    setSidebarRefresh(n => n + 1);
+  }, [channelId]);
 
   const handleNewChat = useCallback(() => {
     const newId = `webchat-${Date.now()}`;
     setChannelId(newId);
-    setMessages([]);
-    setProgress([]);
+    setEntries([]);
   }, []);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-  }, [messages, progress]);
+  }, [entries]);
 
   return (
     <div className="flex h-[calc(100vh-theme(spacing.12))] -m-6">
-      <ChatSidebar activeChannelId={channelId} onSelectSession={handleSelectSession} onNewChat={handleNewChat} refreshKey={sidebarRefresh} />
+      <ChatSidebar activeChannelId={channelId} onSelectSession={handleSelectSession} onNewChat={handleNewChat} onDeleteSession={handleDeleteSession} refreshKey={sidebarRefresh} />
       <div className="flex-1 flex flex-col">
         <div className="px-4 py-3 border-b border-gray-800 flex justify-between items-center">
           <span className="text-sm font-medium">Chat with Po</span>
@@ -141,34 +147,47 @@ export function ChatPage() {
           </span>
         </div>
         <div ref={scrollRef} className="flex-1 overflow-auto p-4 space-y-3">
-          {messages.map(msg => (
-            <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[75%] rounded-lg px-3 py-2 text-sm ${
-                msg.role === 'user' ? 'bg-blue-900/30 border border-blue-800/50' : 'bg-gray-800 border border-gray-700'
-              }`}>
-                {msg.attachments?.map((a, i) => (
-                  <div key={i} className="mb-2">
-                    {a.type === 'image' && <img src={`data:image/png;base64,${a.data}`} className="max-w-full rounded" />}
-                    {a.type === 'voice' && <audio controls src={`data:audio/webm;base64,${a.data}`} className="max-w-full" />}
-                    {a.type === 'file' && <div className="text-blue-400 text-xs">📎 {a.filename}</div>}
+          {entries.map(entry => {
+            if (entry.type === 'thinking') {
+              return (
+                <div key={entry.id} className="flex justify-start">
+                  <details className="max-w-[75%] rounded-lg px-3 py-2 text-xs bg-gray-900 border border-gray-800 cursor-pointer">
+                    <summary className="text-purple-400">💭 Thinking...</summary>
+                    <pre className="mt-1 text-gray-500 whitespace-pre-wrap text-[11px] max-h-40 overflow-auto">{entry.content}</pre>
+                  </details>
+                </div>
+              );
+            }
+            if (entry.type === 'tool_use') {
+              return (
+                <div key={entry.id} className="flex justify-start">
+                  <div className="max-w-[75%] rounded-lg px-3 py-2 text-xs bg-gray-900 border border-gray-800">
+                    <span className="text-yellow-400">🔧 Using {entry.content}...</span>
                   </div>
-                ))}
-                {msg.content && (
-                  <div className="prose prose-invert prose-sm max-w-none">
-                    <ReactMarkdown>{msg.content}</ReactMarkdown>
-                  </div>
-                )}
+                </div>
+              );
+            }
+            return (
+              <div key={entry.id} className={`flex ${entry.type === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[75%] rounded-lg px-3 py-2 text-sm ${
+                  entry.type === 'user' ? 'bg-blue-900/30 border border-blue-800/50' : 'bg-gray-800 border border-gray-700'
+                }`}>
+                  {entry.attachments?.map((a, i) => (
+                    <div key={i} className="mb-2">
+                      {a.type === 'image' && <img src={`data:image/png;base64,${a.data}`} className="max-w-full rounded" />}
+                      {a.type === 'voice' && <audio controls src={`data:audio/webm;base64,${a.data}`} className="max-w-full" />}
+                      {a.type === 'file' && <div className="text-blue-400 text-xs">📎 {a.filename}</div>}
+                    </div>
+                  ))}
+                  {entry.content && (
+                    <div className="prose prose-invert prose-sm max-w-none">
+                      <ReactMarkdown>{entry.content}</ReactMarkdown>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
-          {progress.map(p => (
-            <div key={p.id} className="flex justify-start">
-              <div className="max-w-[75%] rounded-lg px-3 py-2 text-xs bg-gray-900 border border-gray-800">
-                {p.type === 'thinking' && <span className="text-purple-400">💭 {p.content.slice(0, 200)}{p.content.length > 200 ? '...' : ''}</span>}
-                {p.type === 'tool_use' && <span className="text-yellow-400">🔧 Using {p.content}...</span>}
-              </div>
-            </div>
-          ))}
+            );
+          })}
           {typing && (
             <div className="flex justify-start">
               <div className="rounded-lg px-3 py-2 text-sm bg-gray-800 border border-gray-700 text-gray-500">
