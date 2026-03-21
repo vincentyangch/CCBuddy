@@ -1,10 +1,12 @@
-import type { AgentBackend, AgentRequest, AgentEvent, AgentEventBase } from '@ccbuddy/core';
+import type { AgentBackend, AgentRequest, AgentEvent, AgentEventBase, PermissionGateConfig } from '@ccbuddy/core';
+import { PermissionGateChecker } from '../permission-gate.js';
 import { attachmentsToContentBlocks } from '@ccbuddy/core';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 
 export interface SdkBackendOptions {
   skipPermissions?: boolean;
+  permissionGates?: PermissionGateConfig;
 }
 
 // Known limitation: The SDK `query()` function yields SDKMessage events as an
@@ -14,9 +16,13 @@ export interface SdkBackendOptions {
 
 export class SdkBackend implements AgentBackend {
   private options: SdkBackendOptions;
+  private gateChecker: PermissionGateChecker | null;
 
   constructor(options: SdkBackendOptions = {}) {
     this.options = options;
+    this.gateChecker = options.permissionGates?.rules
+      ? new PermissionGateChecker(options.permissionGates.rules)
+      : null;
   }
 
   async *execute(request: AgentRequest): AsyncGenerator<AgentEvent> {
@@ -77,9 +83,13 @@ export class SdkBackend implements AgentBackend {
         sdkSessionId = request.sdkSessionId;
       }
 
-      // Interactive follow-ups — handle AskUserQuestion via requestUserInput callback
+      // canUseTool — handles AskUserQuestion + permission gates
       if (request.requestUserInput) {
+        const checker = this.gateChecker;
+        const gatesEnabled = this.options.permissionGates?.enabled && !this.options.skipPermissions;
+
         options.canUseTool = async (toolName: string, input: Record<string, unknown>, opts: { signal: AbortSignal }) => {
+          // AskUserQuestion — existing handler
           if (toolName === 'AskUserQuestion' && request.requestUserInput) {
             const answers = await request.requestUserInput(input.questions as any, opts.signal);
             if (!answers) {
@@ -87,6 +97,40 @@ export class SdkBackend implements AgentBackend {
             }
             return { behavior: 'allow', updatedInput: { ...input, answers } };
           }
+
+          // Permission gates — check against rules
+          if (gatesEnabled && checker) {
+            const matched = checker.check(toolName, input);
+            if (matched) {
+              console.info(`[SdkBackend] Permission gate triggered: "${matched.name}" for tool ${toolName} — awaiting approval`);
+
+              const preview = this.getCommandPreview(toolName, input);
+              const answers = await request.requestUserInput!([{
+                question: `Po wants to run:\n\`${preview}\``,
+                header: `⚠️ ${matched.description}`,
+                options: [
+                  { label: 'Allow', description: 'Execute this command' },
+                  { label: 'Deny', description: 'Block this command' },
+                ],
+                multiSelect: false,
+              }], opts.signal);
+
+              if (!answers) {
+                console.info(`[SdkBackend] Permission gate timed out: "${matched.name}"`);
+                return { behavior: 'deny', message: `Approval timed out for: ${matched.description}` };
+              }
+
+              const decision = Object.values(answers)[0];
+              if (decision === 'Allow') {
+                console.info(`[SdkBackend] Permission gate approved: "${matched.name}" by user`);
+                return { behavior: 'allow' };
+              } else {
+                console.info(`[SdkBackend] Permission gate denied: "${matched.name}" by user`);
+                return { behavior: 'deny', message: `User denied: ${matched.description}` };
+              }
+            }
+          }
+
           return { behavior: 'allow' };
         };
       }
@@ -150,6 +194,22 @@ export class SdkBackend implements AgentBackend {
     } catch (err) {
       yield { ...base, type: 'error', error: (err as Error).message };
     }
+  }
+
+  private getCommandPreview(toolName: string, input: Record<string, unknown>): string {
+    let preview: string;
+    switch (toolName) {
+      case 'Bash':
+        preview = typeof input.command === 'string' ? input.command : JSON.stringify(input);
+        break;
+      case 'Write':
+      case 'Edit':
+        preview = typeof input.file_path === 'string' ? `${toolName} ${input.file_path}` : JSON.stringify(input);
+        break;
+      default:
+        preview = `${toolName}: ${JSON.stringify(input)}`;
+    }
+    return preview.length > 200 ? preview.slice(0, 200) + '...' : preview;
   }
 
   async abort(_sessionId: string): Promise<void> {
