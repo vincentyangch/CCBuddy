@@ -297,6 +297,20 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
     gateway.registerAdapter(telegramAdapter);
   }
 
+  // 9b. Create webchat adapter (if dashboard enabled) — must register before gateway.start()
+  let webchatAdapter: any;
+  if (config.dashboard.enabled) {
+    const { WebChatAdapter } = await import('@ccbuddy/dashboard');
+    webchatAdapter = new WebChatAdapter();
+    gateway.registerAdapter(webchatAdapter);
+
+    // Auto-register admin user's webchat identity
+    const adminUser = Object.values(config.users).find(u => u.role === 'admin');
+    if (adminUser) {
+      userManager.registerPlatformId('webchat', 'dashboard', adminUser.name);
+    }
+  }
+
   // 10. Set up SessionManager.tick() interval (every 60 seconds)
   const tickInterval = setInterval(() => {
     agentService.tick();
@@ -335,6 +349,9 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
         app: join(config.data_dir, 'ccbuddy.log'),
       },
     });
+    if (webchatAdapter) {
+      dashboardServer.setWebChatAdapter(webchatAdapter);
+    }
     try {
       const addr = await dashboardServer.start();
       console.log(`[Dashboard] Started at ${addr}`);
