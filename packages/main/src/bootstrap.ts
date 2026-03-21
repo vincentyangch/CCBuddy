@@ -346,6 +346,7 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
         stderr: join(config.data_dir, 'ccbuddy.stderr.log'),
         app: join(config.data_dir, 'ccbuddy.log'),
       },
+      sessionStore,
     });
     if (webchatAdapter) {
       dashboardServer.setWebChatAdapter(webchatAdapter);

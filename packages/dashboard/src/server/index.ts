@@ -29,6 +29,21 @@ export interface DashboardDeps {
   config: CCBuddyConfig;
   configDir: string;
   logFiles: { stdout: string; stderr: string; app: string };
+  sessionStore?: {
+    getHistory(filters?: { status?: string; platform?: string }): Array<{
+      session_key: string;
+      sdk_session_id: string;
+      user_id: string | null;
+      platform: string;
+      channel_id: string;
+      is_group_channel: boolean;
+      model: string | null;
+      status: string;
+      created_at: number;
+      last_activity: number;
+    }>;
+    deleteSession(sessionKey: string): void;
+  };
 }
 
 export class DashboardServer {
@@ -129,8 +144,31 @@ export class DashboardServer {
     });
 
     // GET /api/sessions
-    this.app.get('/api/sessions', async () => {
+    this.app.get('/api/sessions', async (request) => {
+      const q = request.query as Record<string, string>;
+      const status = q.status as string | undefined;
+      const platform = q.platform as string | undefined;
+
+      if (this.deps.sessionStore) {
+        const filters: Record<string, string> = {};
+        if (status) filters.status = status;
+        if (platform) filters.platform = platform;
+        const sessions = this.deps.sessionStore.getHistory(
+          Object.keys(filters).length > 0 ? filters : undefined,
+        );
+        return { sessions };
+      }
+      // Fallback: active-only from AgentService
       return { sessions: this.deps.agentService.getSessionInfo() };
+    });
+
+    // DELETE /api/sessions/:key
+    this.app.delete<{ Params: { key: string } }>('/api/sessions/:key', async (request) => {
+      const { key } = request.params;
+      if (this.deps.sessionStore) {
+        this.deps.sessionStore.deleteSession(key);
+      }
+      return { success: true };
     });
 
     // GET /api/sessions/:key/events — agent events for session replay
