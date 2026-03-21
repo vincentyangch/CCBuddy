@@ -1,7 +1,7 @@
 import { join, dirname } from 'node:path';
 import { writeFileSync, renameSync, readFileSync, unlinkSync, existsSync, mkdirSync } from 'node:fs';
 import { execSync } from 'node:child_process';
-import { loadConfig, createEventBus, UserManager, TranscriptionService, SpeechService } from '@ccbuddy/core';
+import { loadConfig, createEventBus, UserManager, TranscriptionService, SpeechService, readModelFile } from '@ccbuddy/core';
 import { AgentService, CliBackend, SessionStore } from '@ccbuddy/agent';
 import {
   MemoryDatabase,
@@ -260,6 +260,11 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
     speechService,
     voiceConfig: { enabled: config.media.voice_enabled, ttsMaxChars: config.media.tts_max_chars },
     sessionStore,
+    get defaultModel() { return config.agent.model; },
+    readModelFile: (sessionKey: string) => {
+      const filePath = join(resolve(config.data_dir), 'sessions', `${sessionKey}.model`);
+      return readModelFile(filePath);
+    },
     userInputTimeoutMs: config.agent.user_input_timeout_ms,
     storeAgentEvent: (params) => {
       agentEventStore.add({ ...params, timestamp: Date.now() });
