@@ -89,6 +89,8 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
   const backend = new CliBackend();
 
   // 5. Create AgentService
+  const sessionStore = new SessionStore(config.agent.session_timeout_ms);
+
   const agentService = new AgentService({
     backend,
     eventBus,
@@ -102,9 +104,8 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
     queueTimeoutSeconds: config.agent.queue_timeout_seconds,
     sessionTimeoutMinutes: config.agent.session_timeout_minutes,
     sessionCleanupHours: config.agent.session_cleanup_hours,
+    sessionStore,
   });
-
-  const sessionStore = new SessionStore(config.agent.session_timeout_ms);
 
   // 6. Create memory stores
   const database = new MemoryDatabase(config.memory.db_path);

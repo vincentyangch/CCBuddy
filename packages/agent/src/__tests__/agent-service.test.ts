@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AgentService } from '../agent-service.js';
+import { SessionStore } from '../session/session-store.js';
 import { createEventBus } from '@ccbuddy/core';
 import type { AgentBackend, AgentRequest, AgentEvent, AgentEventBase } from '@ccbuddy/core';
 
@@ -208,6 +209,38 @@ describe('AgentService', () => {
       })));
       expect(events2[0].type).toBe('complete');
     });
+  });
+
+  it('getSessionInfo returns combined session data', () => {
+    const sessionStore = new SessionStore(3_600_000);
+    const service = new AgentService({
+      ...defaultOpts,
+      backend: makeBackend('ok'),
+      sessionStore,
+    });
+
+    sessionStore.getOrCreate('dad-discord-ch1', false);
+
+    const info = service.getSessionInfo();
+    expect(info).toHaveLength(1);
+    expect(info[0].sessionKey).toBe('dad-discord-ch1');
+    expect(info[0].sdkSessionId).toBeDefined();
+  });
+
+  it('getSessionInfo returns empty when no sessions', () => {
+    const sessionStore = new SessionStore(3_600_000);
+    const service = new AgentService({
+      ...defaultOpts,
+      backend: makeBackend('ok'),
+      sessionStore,
+    });
+
+    expect(service.getSessionInfo()).toEqual([]);
+  });
+
+  it('getSessionInfo returns empty when no sessionStore provided', () => {
+    const service = new AgentService({ ...defaultOpts, backend: makeBackend('ok') });
+    expect(service.getSessionInfo()).toEqual([]);
   });
 
   it('queue timeout: timed-out item is removed from queue and resolves false', async () => {

@@ -16,6 +16,7 @@ export interface AgentServiceOptions {
   queueTimeoutSeconds: number;
   sessionTimeoutMinutes: number;
   sessionCleanupHours: number;
+  sessionStore?: import('./session/session-store.js').SessionStore;
 }
 
 interface QueuedRequest {
@@ -34,6 +35,7 @@ export class AgentService {
   private readonly maxConcurrent: number;
   private readonly queueTimeoutSeconds: number;
   private activeConcurrent = 0;
+  private readonly sessionStore?: import('./session/session-store.js').SessionStore;
   private readonly directoryLock = new DirectoryLock();
   private readonly directoryQueue = new Map<string, Array<{
     resolve: () => void;
@@ -52,6 +54,7 @@ export class AgentService {
       timeoutMinutes: options.sessionTimeoutMinutes,
       cleanupHours: options.sessionCleanupHours,
     });
+    this.sessionStore = options.sessionStore;
   }
 
   setBackend(backend: AgentBackend): void {
@@ -244,6 +247,10 @@ export class AgentService {
 
   getActiveSessions(): Session[] {
     return this.sessionManager.getActiveSessions();
+  }
+
+  getSessionInfo(): import('./session/session-store.js').SessionInfo[] {
+    return this.sessionStore?.getAll() ?? [];
   }
 
   get queueSize(): number {
