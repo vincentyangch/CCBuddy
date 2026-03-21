@@ -46,6 +46,19 @@ export class MemoryDatabase {
         updated_at INTEGER NOT NULL,
         PRIMARY KEY (user_id, key)
       );
+      CREATE TABLE IF NOT EXISTS agent_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        content TEXT NOT NULL,
+        tool_input TEXT,
+        tool_output TEXT,
+        timestamp INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_agent_events_session ON agent_events(session_id);
+      CREATE INDEX IF NOT EXISTS idx_agent_events_user_ts ON agent_events(user_id, timestamp);
     `);
 
     // Migrations — add consolidation columns if missing
