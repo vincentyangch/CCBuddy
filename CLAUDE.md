@@ -51,6 +51,7 @@ Config loads in order: DEFAULT_CONFIG → `config/default.yaml` → `config/loca
 - **User identity:** Users mapped via `*_id` fields in config (e.g., `discord_id`). UserManager builds O(1) lookup index.
 - **Skills:** Dynamic MCP tools. Generated skills live in `skills/generated/`. The skill MCP server runs as a subprocess of each Claude agent session.
 - **Memory:** LCM-inspired DAG summarization. Messages stored in SQLite, condensed nightly. Context assembled per-user per-session.
+- **Conversation continuity:** SDK sessions are resumed via `query({ resume: uuid })`. SessionStore maps session keys to SDK UUIDs with configurable idle timeout (default 1 hour). DMs use per-user keys; group channels share one key.
 
 ## Commands
 
