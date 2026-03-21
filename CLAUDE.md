@@ -56,6 +56,9 @@ Config loads in order: DEFAULT_CONFIG → `config/default.yaml` → `config/loca
 - **Dashboard:** Fastify server (port 18801) + React SPA. Token auth via `CCBUDDY_DASHBOARD_TOKEN` env var. REST API + WebSocket for real-time events. Enable with `dashboard.enabled: true` in config.
 - **Interactive follow-ups:** Po can ask clarifying questions mid-task via the SDK's `AskUserQuestion` tool. Questions appear as Discord buttons (with "Other" for free-text). Configurable timeout (default 5 min) via `agent.user_input_timeout_ms`.
 - **Streaming responses:** Discord messages are edited progressively as text arrives from the SDK stream (~1s batched edits). Falls back to wait-for-complete when adapter lacks `editMessage` or for voice responses.
+- **Model selection:** Configurable default model (`agent.model`). Po can switch models mid-session via `switch_model` MCP tool. Per-session model state stored in `data/sessions/<key>.model` files. Dashboard has model selector + per-session badges. Runtime override persisted to `data/runtime-config.json`.
+- **Permission gates:** Configurable regex rules intercept dangerous tool calls (rm -rf, destructive git, local config, launchctl, npm publish). When `admin_skip_permissions: false`, the SDK's `canUseTool` callback gates matched tools via Discord/webchat approval buttons. Dashboard has toggle switch.
+- **Web chat:** Dashboard `/chat` route provides browser-based chat with Po. `WebChatAdapter` implements `PlatformAdapter` in the dashboard package. Supports text, images, files, voice, streaming, thinking/tool_use visibility, and session management (new/delete/history).
 
 ## Commands
 
