@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
 import type { Disposable } from '@ccbuddy/core';
+import type { WebChatAdapter } from './webchat-adapter.js';
 
 // EventBus interface (minimal, avoids full import chain)
 interface EventBusLike {
@@ -21,6 +22,7 @@ export function setupWebSocket(
   app: FastifyInstance,
   eventBus: EventBusLike,
   token: string,
+  webchatAdapter?: WebChatAdapter,
 ): void {
   app.get('/ws', { websocket: true }, (socket: WebSocket) => {
     let authenticated = false;
@@ -47,6 +49,13 @@ export function setupWebSocket(
           clearTimeout(authTimeout);
           socket.send(JSON.stringify({ type: 'auth.ok' }));
 
+          // Register with webchat adapter
+          if (webchatAdapter) {
+            const channelId = (msg as any).channelId || 'webchat-main';
+            (socket as any).__channelId = channelId;
+            webchatAdapter.addClient(channelId, socket);
+          }
+
           // Subscribe to event bus and forward to client
           for (const eventType of FORWARDED_EVENTS) {
             const d = eventBus.subscribe(eventType, (payload: any) => {
@@ -64,11 +73,29 @@ export function setupWebSocket(
 
       if (!authenticated) {
         socket.close(4001, 'Not authenticated');
+        return;
+      }
+
+      // Chat message routing
+      if (msg.type === 'chat.message' && webchatAdapter) {
+        const channelId = (socket as any).__channelId;
+        if (channelId) {
+          webchatAdapter.handleClientMessage(channelId, msg as any);
+        }
+        return;
+      }
+
+      if (msg.type === 'chat.button_click' && webchatAdapter) {
+        webchatAdapter.handleButtonClick((msg as any).messageId, (msg as any).buttonLabel);
+        return;
       }
     });
 
     socket.on('close', () => {
       clearTimeout(authTimeout);
+      if (webchatAdapter && (socket as any).__channelId) {
+        webchatAdapter.removeClient((socket as any).__channelId);
+      }
       for (const d of disposables) d.dispose();
     });
   });

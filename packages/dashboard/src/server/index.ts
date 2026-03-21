@@ -7,6 +7,7 @@ import type { FastifyInstance } from 'fastify';
 import websocket from '@fastify/websocket';
 import yaml from 'js-yaml';
 import { setupWebSocket } from './websocket.js';
+import { WebChatAdapter } from './webchat-adapter.js';
 import type { EventBus, CCBuddyConfig } from '@ccbuddy/core';
 import { isValidModel } from '@ccbuddy/core';
 import type { SessionInfo } from '@ccbuddy/agent';
@@ -33,6 +34,11 @@ export class DashboardServer {
   private app: FastifyInstance;
   private deps: DashboardDeps;
   private token: string | undefined;
+  private webchatAdapter?: WebChatAdapter;
+
+  setWebChatAdapter(adapter: WebChatAdapter): void {
+    this.webchatAdapter = adapter;
+  }
 
   constructor(deps: DashboardDeps) {
     this.deps = deps;
@@ -47,7 +53,7 @@ export class DashboardServer {
     }
 
     await this.app.register(websocket);
-    setupWebSocket(this.app, this.deps.eventBus, this.token);
+    setupWebSocket(this.app, this.deps.eventBus, this.token, this.webchatAdapter);
 
     this.setupRoutes();
 
