@@ -8,3 +8,4 @@ export { RetrievalTools, type GrepResult, type ExpandResult, type DescribeResult
 export { ConsolidationService, type ConsolidationStats, type ConsolidationServiceDeps } from './consolidation-service.js';
 export { BackupService, type BackupServiceDeps } from './backup-service.js';
 export { AgentEventStore, type StoredAgentEvent, type AddAgentEventParams } from './agent-event-store.js';
+export { SessionDatabase } from './session-database.js';

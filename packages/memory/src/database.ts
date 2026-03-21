@@ -59,6 +59,22 @@ export class MemoryDatabase {
       );
       CREATE INDEX IF NOT EXISTS idx_agent_events_session ON agent_events(session_id);
       CREATE INDEX IF NOT EXISTS idx_agent_events_user_ts ON agent_events(user_id, timestamp);
+
+      CREATE TABLE IF NOT EXISTS sessions (
+        session_key TEXT PRIMARY KEY,
+        sdk_session_id TEXT NOT NULL,
+        user_id TEXT,
+        platform TEXT NOT NULL,
+        channel_id TEXT NOT NULL,
+        is_group_channel BOOLEAN NOT NULL DEFAULT 0,
+        model TEXT,
+        status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'paused', 'archived')),
+        created_at INTEGER NOT NULL,
+        last_activity INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
+      CREATE INDEX IF NOT EXISTS idx_sessions_last_activity ON sessions(last_activity);
+      CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
     `);
 
     // Migrations — add consolidation columns if missing
