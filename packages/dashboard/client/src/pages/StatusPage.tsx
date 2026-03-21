@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { api } from '../lib/api';
 import { useWebSocket } from '../hooks/useWebSocket';
+import { ModelSelector } from '../components/ModelSelector';
 
 interface StatusData {
   heartbeat: {
@@ -75,6 +76,9 @@ export function StatusPage() {
           <div className="text-sm mb-1">Queue Depth: <span className="text-white font-medium">{data.queueSize}</span></div>
           <div className="text-sm">Uptime: <span className="text-white font-medium">{upH}h {upM}m</span></div>
         </div>
+      </div>
+      <div className="mb-6">
+        <ModelSelector />
       </div>
       {data.sessions.length > 0 && (
         <div className="bg-gray-900 rounded-xl p-4 border border-gray-800">

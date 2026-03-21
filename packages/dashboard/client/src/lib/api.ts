@@ -43,4 +43,10 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ config }),
     }),
+  getModel: () => request<{ model: string; source: string }>('/api/config/model'),
+  setModel: (model: string) =>
+    request<{ ok: boolean; model: string }>('/api/config/model', {
+      method: 'PUT',
+      body: JSON.stringify({ model }),
+    }),
 };

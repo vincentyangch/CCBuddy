@@ -19,6 +19,7 @@ export function SessionsPage() {
               <tr>
                 <th className="px-4 py-3 text-left text-gray-400 font-medium">Session Key</th>
                 <th className="px-4 py-3 text-left text-gray-400 font-medium">Type</th>
+                <th className="px-4 py-3 text-left text-gray-400 font-medium">Model</th>
                 <th className="px-4 py-3 text-left text-gray-400 font-medium">Last Activity</th>
               </tr>
             </thead>
@@ -29,6 +30,13 @@ export function SessionsPage() {
                     <Link to={`/sessions/${encodeURIComponent(s.sessionKey)}`} className="text-blue-400 hover:underline font-mono">{s.sessionKey}</Link>
                   </td>
                   <td className="px-4 py-3 text-gray-400">{s.isGroupChannel ? 'Group' : 'DM'}</td>
+                  <td className="px-4 py-3">
+                    {s.model ? (
+                      <span className="text-xs px-2 py-0.5 rounded bg-blue-900 text-blue-300">{s.model}</span>
+                    ) : (
+                      <span className="text-gray-600">-</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-gray-400">{new Date(s.lastActivity).toLocaleString()}</td>
                 </tr>
               ))}
