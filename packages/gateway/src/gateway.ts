@@ -47,6 +47,7 @@ export interface GatewayDeps {
   speechService?: Synthesizer;
   voiceConfig?: { enabled: boolean; ttsMaxChars: number };
   sessionStore?: SessionStore;
+  userInputTimeoutMs?: number;
   storeAgentEvent?: (params: { userId: string; sessionId: string; platform: string; eventType: string; content: string; toolInput?: string; toolOutput?: string }) => void;
 }
 
@@ -59,6 +60,7 @@ const DEFAULT_CHAR_LIMIT = 2000;
 
 export class Gateway {
   private adapters = new Map<string, PlatformAdapter>();
+  private pendingReplies = new Map<string, (text: string) => void>();
 
   constructor(private deps: GatewayDeps) {
     // Subscribe to session conflict events for user notification
@@ -115,6 +117,14 @@ export class Gateway {
   }
 
   private async handleIncomingMessage(msg: IncomingMessage): Promise<void> {
+    // Check for pending follow-up reply (interactive follow-ups)
+    const replyKey = `${msg.platform}:${msg.channelId}:${msg.platformUserId}`;
+    const pendingReply = this.pendingReplies.get(replyKey);
+    if (pendingReply) {
+      pendingReply(msg.text);
+      return; // Consumed by the pending follow-up, don't process as new message
+    }
+
     // 1. Identify user
     const user = this.deps.findUser(msg.platform, msg.platformUserId);
     if (!user) {
@@ -206,6 +216,9 @@ export class Gateway {
       permissionLevel: user.role === 'admin' ? 'admin' : 'chat',
       sdkSessionId,
       resumeSessionId,
+      requestUserInput: async (questions, signal) => {
+        return this.presentUserQuestions(msg, user, questions, signal);
+      },
     };
 
     // 7b. Transcribe voice attachments
@@ -368,6 +381,90 @@ export class Gateway {
     } catch {
       return new Set();
     }
+  }
+
+  private async presentUserQuestions(
+    msg: IncomingMessage,
+    user: { name: string; role: string },
+    questions: Array<{ question: string; header: string; options: Array<{ label: string; description: string }>; multiSelect: boolean }>,
+    signal?: AbortSignal,
+  ): Promise<Record<string, string> | null> {
+    const adapter = this.adapters.get(msg.platform);
+    if (!adapter) return null;
+
+    const timeoutMs = this.deps.userInputTimeoutMs ?? 300_000;
+    const answers: Record<string, string> = {};
+
+    // Stop typing — Po is waiting for input, not working
+    await adapter.setTypingIndicator(msg.channelId, false);
+
+    for (const q of questions) {
+      const text = `**${q.header}**\n${q.question}`;
+
+      if (adapter.sendButtons && !q.multiSelect) {
+        // Use buttons for single-select questions
+        const buttons = [
+          ...q.options.map((opt, i) => ({ id: `opt_${i}`, label: opt.label })),
+          { id: 'opt_other', label: 'Other' },
+        ];
+        const selected = await adapter.sendButtons(msg.channelId, text, buttons, {
+          timeoutMs,
+          userId: msg.platformUserId,
+          signal,
+        });
+
+        if (selected === null) return null; // timeout or abort
+
+        if (selected === 'Other') {
+          // Ask for free-form text input
+          await adapter.sendText(msg.channelId, 'Type your answer:');
+          const textAnswer = await this.awaitTextReply(msg, timeoutMs, signal);
+          if (textAnswer === null) return null;
+          answers[q.question] = textAnswer;
+        } else {
+          answers[q.question] = selected;
+        }
+      } else {
+        // Fallback: text-based interaction (multiSelect or no sendButtons support)
+        const optionsText = q.options.map((o, i) => `${i + 1}. **${o.label}** — ${o.description}`).join('\n');
+        await adapter.sendText(msg.channelId, `${text}\n\n${optionsText}\n\nReply with your choice:`);
+        const textAnswer = await this.awaitTextReply(msg, timeoutMs, signal);
+        if (textAnswer === null) return null;
+        answers[q.question] = textAnswer;
+      }
+    }
+
+    // Restart typing — agent is resuming
+    await adapter.setTypingIndicator(msg.channelId, true);
+
+    return answers;
+  }
+
+  private awaitTextReply(
+    msg: IncomingMessage,
+    timeoutMs: number,
+    signal?: AbortSignal,
+  ): Promise<string | null> {
+    return new Promise<string | null>((resolve) => {
+      const key = `${msg.platform}:${msg.channelId}:${msg.platformUserId}`;
+      let done = false;
+
+      const finish = (result: string | null) => {
+        if (done) return;
+        done = true;
+        this.pendingReplies.delete(key);
+        clearTimeout(timer);
+        resolve(result);
+      };
+
+      this.pendingReplies.set(key, (text) => finish(text));
+
+      const timer = setTimeout(() => finish(null), timeoutMs);
+
+      if (signal) {
+        signal.addEventListener('abort', () => finish(null), { once: true });
+      }
+    });
   }
 
   private async deliverOutboundMedia(adapter: PlatformAdapter, channelId: string, preExisting: Set<string>): Promise<void> {

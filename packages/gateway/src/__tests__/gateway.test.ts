@@ -777,3 +777,45 @@ describe('Gateway — session continuity', () => {
     expect(executeCall.memoryContext).toBe('memory context');
   });
 });
+
+describe('Gateway — interactive follow-ups', () => {
+  it('attaches requestUserInput callback to AgentRequest', async () => {
+    const deps = createMockDeps();
+    const gateway = new Gateway(deps);
+    const adapter = createMockAdapter();
+    gateway.registerAdapter(adapter);
+
+    await adapter.simulateMessage({
+      platform: 'discord', platformUserId: '123', channelId: 'ch1',
+      channelType: 'dm', text: 'Hello', attachments: [], isMention: false, raw: {},
+    });
+
+    const request = (deps.executeAgentRequest as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentRequest;
+    expect(request.requestUserInput).toBeDefined();
+    expect(typeof request.requestUserInput).toBe('function');
+  });
+
+  it('intercepts pending reply messages instead of processing them normally', async () => {
+    const deps = createMockDeps();
+    const gateway = new Gateway(deps);
+    const adapter = createMockAdapter();
+    gateway.registerAdapter(adapter);
+
+    // Access the pendingReplies map via type assertion
+    const gw = gateway as any;
+    const resolvedText = new Promise<string>((resolve) => {
+      gw.pendingReplies.set('discord:ch1:123', resolve);
+    });
+
+    // This message should be intercepted by the pending reply, not processed normally
+    await adapter.simulateMessage({
+      platform: 'discord', platformUserId: '123', channelId: 'ch1',
+      channelType: 'dm', text: 'My answer', attachments: [], isMention: false, raw: {},
+    });
+
+    const text = await resolvedText;
+    expect(text).toBe('My answer');
+    // executeAgentRequest should NOT have been called for this message
+    expect(deps.executeAgentRequest).not.toHaveBeenCalled();
+  });
+});
