@@ -187,6 +187,29 @@ describe('CliBackend', () => {
     expect(error.platform).toBe('discord');
   });
 
+  it('passes --model flag when model is set', async () => {
+    const proc = makeMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const backend = new CliBackend();
+    const request = makeRequest({ model: 'claude-opus-4-5' });
+
+    const gen = backend.execute(request);
+    const nextPromise = gen.next();
+
+    process.nextTick(() => {
+      proc.stdout.emit('data', Buffer.from('{"type":"result","result":"Hi"}\n'));
+      proc.emit('close', 0);
+    });
+
+    await nextPromise;
+
+    expect(mockSpawn).toHaveBeenCalledOnce();
+    const [, args] = mockSpawn.mock.calls[0];
+    expect(args).toContain('--model');
+    expect(args).toContain('claude-opus-4-5');
+  });
+
   it('aborts the running process on abort()', async () => {
     const proc = makeMockProcess();
     mockSpawn.mockReturnValue(proc);

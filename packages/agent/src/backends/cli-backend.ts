@@ -38,6 +38,10 @@ export class CliBackend implements AgentBackend {
 
     if (request.workingDirectory) args.push('--cwd', request.workingDirectory);
 
+    if (request.model) {
+      args.push('--model', request.model);
+    }
+
     let mcpConfigPath: string | undefined;
     if (request.mcpServers && request.mcpServers.length > 0) {
       mcpConfigPath = this.writeTempMcpConfig(request.mcpServers);
