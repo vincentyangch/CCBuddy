@@ -31,4 +31,6 @@ export interface PlatformAdapter {
     buttons: Array<{ id: string; label: string }>,
     options: { timeoutMs: number; userId?: string; signal?: AbortSignal },
   ): Promise<string | null>;
+  /** Resolve a DM channel ID for a platform user. Returns null if DM cannot be created. */
+  resolveDMChannel?(platformUserId: string): Promise<string | null>;
 }

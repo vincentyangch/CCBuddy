@@ -188,6 +188,16 @@ export class DiscordAdapter implements PlatformAdapter {
     }
   }
 
+  async resolveDMChannel(platformUserId: string): Promise<string | null> {
+    try {
+      const user = await this.client.users.fetch(platformUserId);
+      const dm = await user.createDM();
+      return dm.id;
+    } catch {
+      return null;
+    }
+  }
+
   private async fetchTextChannel(channelId: string): Promise<SendableChannels | null> {
     const channel = await this.client.channels.fetch(channelId);
     if (channel?.isSendable()) return channel;
