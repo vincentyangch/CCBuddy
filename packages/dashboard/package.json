@@ -1,0 +1,29 @@
+{
+  "name": "@ccbuddy/dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@ccbuddy/core": "*",
+    "@ccbuddy/agent": "*",
+    "@ccbuddy/memory": "*",
+    "fastify": "^5",
+    "@fastify/websocket": "^11",
+    "@fastify/static": "^8",
+    "@fastify/cors": "^10",
+    "js-yaml": "^4"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/js-yaml": "^4",
+    "vitest": "^3"
+  }
+}
