@@ -18,14 +18,16 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { readFileSync } from 'node:fs';
+import { readFileSync, copyFileSync, mkdirSync } from 'node:fs';
+import { join as pathJoin, basename, extname } from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 import { SkillRegistry } from './registry.js';
 import { SkillGenerator } from './generator.js';
 import { SkillValidator } from './validator.js';
 import { SkillRunner } from './runner.js';
 import type { SkillPermission } from './types.js';
-import { MemoryDatabase, MessageStore, SummaryStore, RetrievalTools } from '@ccbuddy/memory';
+import { MemoryDatabase, MessageStore, SummaryStore, RetrievalTools, ProfileStore } from '@ccbuddy/memory';
 import { SwiftBridge, AppleCalendarService, AppleRemindersService, AppleShortcutsService, JxaBridge, AppleNotesService } from '@ccbuddy/apple';
 
 // ── CLI argument parsing ────────────────────────────────────────────────────
@@ -107,21 +109,26 @@ async function main(): Promise<void> {
   const registry = new SkillRegistry(args.registryPath);
   await registry.load();
 
-  // 1b. Optionally wire memory retrieval tools
+  // 1b. Optionally wire memory retrieval tools + profile store
   let retrievalTools: RetrievalTools | null = null;
+  let profileStore: ProfileStore | null = null;
   let memoryDatabase: MemoryDatabase | null = null;
+  let profileDatabase: MemoryDatabase | null = null;
   if (args.memoryDbPath) {
     memoryDatabase = new MemoryDatabase(args.memoryDbPath, { readonly: true });
     const messageStore = new MessageStore(memoryDatabase);
     const summaryStore = new SummaryStore(memoryDatabase);
     retrievalTools = new RetrievalTools(messageStore, summaryStore);
 
+    // Writable connection for profile updates (WAL mode supports concurrent writers)
+    profileDatabase = new MemoryDatabase(args.memoryDbPath);
+    profileStore = new ProfileStore(profileDatabase);
+
     // Register cleanup handlers for database shutdown
-    if (memoryDatabase) {
-      process.on('exit', () => memoryDatabase?.close());
-      process.on('SIGTERM', () => { memoryDatabase?.close(); process.exit(0); });
-      process.on('SIGINT', () => { memoryDatabase?.close(); process.exit(0); });
-    }
+    const closeDatabases = () => { memoryDatabase?.close(); profileDatabase?.close(); };
+    process.on('exit', closeDatabases);
+    process.on('SIGTERM', () => { closeDatabases(); process.exit(0); });
+    process.on('SIGINT', () => { closeDatabases(); process.exit(0); });
   }
 
   // 1c. Optionally wire Apple calendar tools
@@ -238,6 +245,60 @@ async function main(): Promise<void> {
         });
       }
     }
+
+    // Profile tools — exposed when --memory-db is provided
+    if (profileStore) {
+      tools.push({
+        name: 'profile_get',
+        description: 'Get all profile entries for a user, or a single key. Profile data is automatically included in every conversation as <user_profile> context. Use this to store user preferences, facts about the user, briefing preferences, personality notes, and anything you learn about the user that should persist across conversations.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string', description: 'The user ID' },
+            key: { type: 'string', description: 'Optional specific key to retrieve. Omit to get all entries.' },
+          },
+          required: ['userId'],
+        },
+      });
+      tools.push({
+        name: 'profile_set',
+        description: 'Set a profile entry for a user. This data persists across conversations and is automatically included in context. Use descriptive keys like "name", "timezone", "briefing_preferences", "interests", "communication_style", etc.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string', description: 'The user ID' },
+            key: { type: 'string', description: 'The profile key (e.g., "name", "timezone", "interests")' },
+            value: { type: 'string', description: 'The value to store' },
+          },
+          required: ['userId', 'key', 'value'],
+        },
+      });
+      tools.push({
+        name: 'profile_delete',
+        description: 'Delete a profile entry for a user.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string', description: 'The user ID' },
+            key: { type: 'string', description: 'The profile key to delete' },
+          },
+          required: ['userId', 'key'],
+        },
+      });
+    }
+
+    // send_file tool — always available
+    tools.push({
+      name: 'send_file',
+      description: 'Send a file to the user via their chat platform (Discord/Telegram). Copies the file to the outbound queue for delivery. Use this whenever you have a file on disk that you want to share with the user — images, documents, audio, etc.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          file_path: { type: 'string', description: 'Absolute path to the file to send' },
+        },
+        required: ['file_path'],
+      },
+    });
 
     // System health tool — exposed when --heartbeat-status-file is provided
     if (args.heartbeatStatusFile) {
@@ -422,6 +483,53 @@ async function main(): Promise<void> {
     if (retrievalTools && name === 'memory_expand') {
       const result = retrievalTools.expand(toolArgs.userId as string, toolArgs.nodeId as number);
       return { content: [{ type: 'text', text: JSON.stringify(result ?? { error: 'Node not found' }) }] };
+    }
+
+    // ── profile_get ─────────────────────────────────────────────────────
+    if (profileStore && name === 'profile_get') {
+      const userId = toolArgs.userId as string;
+      const key = toolArgs.key as string | undefined;
+      if (key) {
+        const value = profileStore.get(userId, key);
+        return { content: [{ type: 'text', text: JSON.stringify({ userId, key, value: value ?? null }) }] };
+      }
+      const all = profileStore.getAll(userId);
+      return { content: [{ type: 'text', text: JSON.stringify({ userId, profile: all }) }] };
+    }
+
+    // ── profile_set ─────────────────────────────────────────────────────
+    if (profileStore && name === 'profile_set') {
+      const userId = toolArgs.userId as string;
+      const key = toolArgs.key as string;
+      const value = toolArgs.value as string;
+      profileStore.set(userId, key, value);
+      return { content: [{ type: 'text', text: JSON.stringify({ success: true, userId, key, value }) }] };
+    }
+
+    // ── profile_delete ──────────────────────────────────────────────────
+    if (profileStore && name === 'profile_delete') {
+      const userId = toolArgs.userId as string;
+      const key = toolArgs.key as string;
+      profileStore.delete(userId, key);
+      return { content: [{ type: 'text', text: JSON.stringify({ success: true, userId, key, deleted: true }) }] };
+    }
+
+    // ── send_file ───────────────────────────────────────────────────────
+    if (name === 'send_file') {
+      const filePath = toolArgs.file_path as string;
+      try {
+        // Verify file exists
+        readFileSync(filePath, { flag: 'r' });
+      } catch {
+        return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: `File not found: ${filePath}` }) }] };
+      }
+      const outDir = pathJoin(process.cwd(), 'data', 'outbound');
+      try { mkdirSync(outDir, { recursive: true }); } catch { /* exists */ }
+      const ext = extname(filePath) || '.bin';
+      const outFilename = `${basename(filePath, ext)}-${randomUUID().slice(0, 8)}${ext}`;
+      const outPath = pathJoin(outDir, outFilename);
+      copyFileSync(filePath, outPath);
+      return { content: [{ type: 'text', text: JSON.stringify({ success: true, message: `File queued for delivery: ${outFilename}` }) }] };
     }
 
     // ── system_health ─────────────────────────────────────────────────────

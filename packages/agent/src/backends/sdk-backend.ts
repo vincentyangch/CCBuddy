@@ -39,9 +39,11 @@ export class SdkBackend implements AgentBackend {
       }
 
       if (request.mcpServers && request.mcpServers.length > 0) {
-        options.mcpServers = Object.fromEntries(
+        // Stdio MCP servers (subprocess) — fallback for CLI backend compatibility
+        const stdioServers = Object.fromEntries(
           request.mcpServers.map(s => [s.name, { type: 'stdio' as const, command: s.command, args: s.args, env: s.env }])
         );
+        options.mcpServers = { ...options.mcpServers, ...stdioServers };
       }
 
       if (request.permissionLevel === 'admin' && this.options.skipPermissions) {

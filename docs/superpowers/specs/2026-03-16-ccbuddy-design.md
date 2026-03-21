@@ -111,6 +111,22 @@ Recovery behavior:
 - Dead children are restarted; surviving children re-establish event bus subscriptions automatically
 - Worst case (full reboot): launchd starts orchestrator, orchestrator starts all modules from scratch. Discord buffers missed messages natively; for Telegram, use long-polling mode (not webhooks) so messages are re-fetched on reconnect.
 
+### PID Lockfile (Singleton Enforcement)
+
+CCBuddy can be started via multiple paths (launchd, manual `node`, or self-restart from a skill). To prevent duplicate instances — which cause duplicate Discord bot connections and double-responses — the bootstrap acquires a PID lockfile at `data/ccbuddy.pid`.
+
+**On startup (`acquirePidLock`):**
+1. If `data/ccbuddy.pid` exists, read the old PID
+2. If the old process is still alive (`kill -0`), send SIGTERM, wait 2s, then SIGKILL if needed
+3. Write the current `process.pid` to the lockfile
+
+**On shutdown:**
+- Remove the lockfile, but only if it still contains our PID (avoids race with a new instance that already overwrote it)
+
+This ensures exactly one CCBuddy process exists at any time, regardless of how it was started.
+
+**Location:** `packages/main/src/bootstrap.ts` — `acquirePidLock()` function, called at the top of `bootstrap()`.
+
 ### Graceful Shutdown
 
 When CCBuddy is intentionally stopped (e.g., for updates):
@@ -119,7 +135,8 @@ When CCBuddy is intentionally stopped (e.g., for updates):
 3. Platform adapters send a "going offline" status indicator where supported
 4. Agent module waits for active Claude Code sessions to complete (or aborts after timeout)
 5. Memory module flushes pending writes and closes SQLite connections
-6. Orchestrator exits cleanly after all modules confirm shutdown
+6. PID lockfile is removed
+7. Orchestrator exits cleanly after all modules confirm shutdown
 
 The orchestrator is kept as thin as possible (start, monitor, stop processes) to minimize crash surface.
 

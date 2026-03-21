@@ -199,15 +199,19 @@ export class Gateway {
 
   private async executeAndRoute(request: AgentRequest, msg: IncomingMessage, voiceInput = false): Promise<void> {
     const adapter = this.adapters.get(msg.platform);
-    if (!adapter) return;
+    if (!adapter) { console.warn('[Gateway] No adapter for platform:', msg.platform); return; }
 
     // Snapshot outbound dir before execution so we only deliver files produced by THIS request
     const preExistingFiles = this.snapshotOutboundDir();
 
+    console.log(`[Gateway] executeAndRoute: channel=${msg.channelId} isMention=${msg.isMention} text="${msg.text.slice(0, 50)}"`);
     await adapter.setTypingIndicator(msg.channelId, true);
 
     try {
+      let eventCount = 0;
       for await (const event of this.deps.executeAgentRequest(request)) {
+        eventCount++;
+        console.log(`[Gateway] Agent event #${eventCount}: type=${event.type} channel=${msg.channelId}`);
         switch (event.type) {
           case 'complete': {
             this.deps.storeMessage({
@@ -281,7 +285,9 @@ export class Gateway {
           // text and tool_use progress events are published by AgentService directly
         }
       }
-    } catch {
+      console.log(`[Gateway] Agent done: ${eventCount} events for channel=${msg.channelId}`);
+    } catch (err) {
+      console.error(`[Gateway] executeAndRoute error: channel=${msg.channelId}`, err);
       await adapter.sendText(
         msg.channelId,
         'Sorry, something went wrong processing your message.',

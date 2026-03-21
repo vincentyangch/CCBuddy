@@ -24,8 +24,14 @@ export class CliBackend implements AgentBackend {
       }).join('\n') + '\n\n';
     }
 
+    // Build full prompt with memory context prefix
+    let fullPrompt = request.prompt;
+    if (request.memoryContext) {
+      fullPrompt = `<memory_context>\n${request.memoryContext}\n</memory_context>\n\n${fullPrompt}`;
+    }
+
     const args: string[] = [
-      '-p', attachmentNote + request.prompt,
+      '-p', attachmentNote + fullPrompt,
       '--output-format', 'stream-json',
       '--verbose',
     ];
@@ -38,12 +44,17 @@ export class CliBackend implements AgentBackend {
       args.push('--mcp-config', mcpConfigPath);
     }
 
+    // Admin/system users bypass permissions (unattended, no terminal to approve)
+    if (request.permissionLevel === 'admin' || request.permissionLevel === 'system') {
+      args.push('--dangerously-skip-permissions', '--allow-dangerously-skip-permissions');
+    }
+
     // Pass system prompt for admin/system users (needed for skill nudge)
     if (request.systemPrompt && request.permissionLevel !== 'chat') {
       args.push('--system-prompt', request.systemPrompt);
     }
 
-    // System-level requests (scheduler) run unattended — no tool restrictions needed
+    // Chat users get text-only responses — no tool access
     if (request.permissionLevel === 'chat') {
       args.push('--allowedTools', '');
       // Restrict to text-only responses for chat users via system prompt

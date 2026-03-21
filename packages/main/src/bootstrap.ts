@@ -1,5 +1,6 @@
 import { join, dirname } from 'node:path';
-import { writeFileSync, renameSync } from 'node:fs';
+import { writeFileSync, renameSync, readFileSync, unlinkSync, existsSync, mkdirSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 import { loadConfig, createEventBus, UserManager, TranscriptionService, SpeechService } from '@ccbuddy/core';
 import { AgentService, CliBackend } from '@ccbuddy/agent';
 import {
@@ -24,10 +25,58 @@ export interface BootstrapResult {
   stop: () => Promise<void>;
 }
 
+/**
+ * Acquire a PID lockfile, killing any stale CCBuddy process first.
+ * Returns a cleanup function that removes the lockfile on shutdown.
+ */
+function acquirePidLock(dataDir: string): () => void {
+  const lockPath = join(dataDir, 'ccbuddy.pid');
+
+  if (existsSync(lockPath)) {
+    const oldPid = parseInt(readFileSync(lockPath, 'utf8').trim(), 10);
+    if (oldPid && oldPid !== process.pid) {
+      // Check if the old process is still alive
+      try {
+        process.kill(oldPid, 0); // signal 0 = existence check
+        console.log(`[PID Lock] Killing stale CCBuddy process (PID ${oldPid})`);
+        process.kill(oldPid, 'SIGTERM');
+        // Give it a moment to shut down gracefully, then force kill
+        try {
+          execSync(`sleep 2 && kill -0 ${oldPid} 2>/dev/null && kill -9 ${oldPid}`, {
+            stdio: 'ignore',
+            timeout: 5000,
+          });
+        } catch {
+          // Process already exited — good
+        }
+      } catch {
+        // Old process no longer exists — stale lockfile
+      }
+    }
+  }
+
+  mkdirSync(dataDir, { recursive: true });
+  writeFileSync(lockPath, String(process.pid), 'utf8');
+
+  return () => {
+    try {
+      // Only remove if it's still our PID (avoid race with a new instance)
+      if (existsSync(lockPath) && readFileSync(lockPath, 'utf8').trim() === String(process.pid)) {
+        unlinkSync(lockPath);
+      }
+    } catch {
+      // Non-fatal
+    }
+  };
+}
+
 export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
   // 1. Load config
   const resolvedConfigDir = configDir ?? join(process.cwd(), 'config');
   const config = loadConfig(resolvedConfigDir);
+
+  // 1b. Acquire PID lock — kills any existing CCBuddy process
+  const releasePidLock = acquirePidLock(config.data_dir);
 
   // 2. Create event bus
   const eventBus = createEventBus();
@@ -121,29 +170,35 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
   }
 
   // Build skill MCP server spec
+  // All paths must be absolute — the SDK spawns a CLI subprocess that may use a different CWD
+  const projectRoot = dirname(resolvedConfigDir);
+  const resolve = (p: string) => join(projectRoot, p);
   const skillMcpServerPath = config.skills.mcp_server_path ?? MCP_SERVER_PATH;
   const registryDir = dirname(config.skills.generated_dir); // parent dir (e.g., './skills')
   const skillMcpServer = {
     name: 'ccbuddy-skills',
-    command: 'node',
+    command: process.execPath, // Use the exact same Node.js binary as the parent process
     args: [
-      skillMcpServerPath,
-      '--registry', registryPath,
-      '--skills-dir', registryDir,
+      skillMcpServerPath, // already absolute (from import.meta.url)
+      '--registry', resolve(registryPath),
+      '--skills-dir', resolve(registryDir),
       ...(config.skills.require_admin_approval_for_elevated ? [] : ['--no-approval']),
       ...(config.skills.auto_git_commit ? [] : ['--no-git-commit']),
-      '--memory-db', config.memory.db_path,
-      '--heartbeat-status-file', join(config.data_dir, 'heartbeat-status.json'),
+      '--memory-db', resolve(config.memory.db_path),
+      '--heartbeat-status-file', resolve(join(config.data_dir, 'heartbeat-status.json')),
     ],
   };
 
-  // 7b. Wire Apple Calendar if enabled
+  // 7b. Wire Apple helper path into MCP server args if enabled
   if (config.apple.enabled) {
-    const projectRoot = dirname(resolvedConfigDir);
     const helperPath = config.apple.helper_path
       ?? join(projectRoot, 'swift-helper', '.build', 'release', 'ccbuddy-helper');
     skillMcpServer.args.push('--apple-helper', helperPath);
   }
+
+  const identityPrompt = `You are CCBuddy — a personal AI assistant belonging to flyingchickens. You run 24/7 on a Mac Mini and are reachable via Discord. Your name is CCBuddy (or just "Buddy"). When asked who you are, introduce yourself as CCBuddy. You are powered by Claude under the hood, but your identity, personality, and purpose are CCBuddy's. You are helpful, concise, and proactive. You know your own codebase (this project) and can improve yourself when asked.
+
+You have profile tools (profile_get, profile_set, profile_delete) to remember things about users across conversations. When you learn something about a user — their preferences, interests, timezone, communication style, or anything worth remembering — save it with profile_set. This data automatically appears in your context for every future conversation. Proactively use these tools; don't wait to be asked.`;
 
   const skillNudge = 'You have access to reusable skills (prefixed skill_) and can create new ones with create_skill. When you solve a novel problem that could be reusable, consider creating a skill for it.\n\nFor image generation requests, use the skill_generate_image tool directly with a descriptive prompt. Do not deliberate — just call the tool.';
 
@@ -167,8 +222,10 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
       userManager.buildSessionId(userName, platform, channelId),
     executeAgentRequest: (request) => agentService.handleRequest({
       ...request,
+      workingDirectory: request.workingDirectory,
       mcpServers: [skillMcpServer],
-      systemPrompt: [request.systemPrompt, skillNudge].filter(Boolean).join('\n\n'),
+
+      systemPrompt: [identityPrompt, request.systemPrompt, skillNudge].filter(Boolean).join('\n\n'),
     }),
     assembleContext: (userId, sessionId) => {
       const context = contextAssembler.assemble(userId, sessionId);
@@ -268,8 +325,10 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
     eventBus,
     executeAgentRequest: (request) => agentService.handleRequest({
       ...request,
+      workingDirectory: request.workingDirectory,
       mcpServers: [skillMcpServer],
-      systemPrompt: [request.systemPrompt, skillNudge].filter(Boolean).join('\n\n'),
+
+      systemPrompt: [identityPrompt, request.systemPrompt, skillNudge].filter(Boolean).join('\n\n'),
     }),
     sendProactiveMessage,
     runSkill: undefined, // skill-type jobs use the agent prompt path; direct skill execution deferred
@@ -316,6 +375,7 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
     stop: async () => {
       clearInterval(tickInterval);
       await shutdownHandler.execute();
+      releasePidLock();
     },
   };
 }
