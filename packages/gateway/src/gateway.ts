@@ -262,22 +262,22 @@ export class Gateway {
 
     // Streaming state — progressively edit Discord message as text arrives
     let streamBuffer = '';
+    let toolSuffix = ''; // Transient tool indicator — replaced on next tool, cleared on text
     let streamMessageId: string | undefined;
     let streamInterval: ReturnType<typeof setInterval> | undefined;
     const canStream = !!adapter.editMessage && !voiceInput;
     const charLimit = PLATFORM_CHAR_LIMITS[msg.platform] ?? DEFAULT_CHAR_LIMIT;
 
     const flushStream = async () => {
-      if (!streamBuffer || !adapter.editMessage) return;
+      const display = streamBuffer + toolSuffix;
+      if (!display || !adapter.editMessage) return;
       try {
         if (streamMessageId) {
-          // Only edit if under the char limit (leave room for overflow on complete)
-          if (streamBuffer.length <= charLimit - 100) {
-            await adapter.editMessage(msg.channelId, streamMessageId, streamBuffer);
+          if (display.length <= charLimit - 100) {
+            await adapter.editMessage(msg.channelId, streamMessageId, display);
           }
         } else {
-          // First chunk — send initial message
-          const id = await adapter.sendText(msg.channelId, streamBuffer);
+          const id = await adapter.sendText(msg.channelId, display);
           if (typeof id === 'string') streamMessageId = id;
         }
       } catch (err) {
@@ -293,17 +293,18 @@ export class Gateway {
         switch (event.type) {
           case 'text': {
             if (canStream) {
+              toolSuffix = ''; // Clear tool indicator — text is arriving
               streamBuffer += event.content;
               if (!streamInterval) {
                 streamInterval = setInterval(flushStream, 1000);
-                await flushStream(); // Send first chunk immediately
+                await flushStream();
               }
             }
             break;
           }
           case 'thinking': {
             if (canStream) {
-              // Show thinking content with a visual prefix
+              toolSuffix = ''; // Clear tool indicator
               streamBuffer += `*💭 Thinking...*\n${event.content}\n\n`;
               if (!streamInterval) {
                 streamInterval = setInterval(flushStream, 1000);
@@ -314,11 +315,12 @@ export class Gateway {
           }
           case 'tool_use': {
             if (canStream) {
-              streamBuffer += `*🔧 Using ${event.tool}...*\n`;
+              // Transient indicator — shows current tool, gets replaced by next tool or cleared by text
+              toolSuffix = `\n*🔧 Using ${event.tool}...*`;
               if (!streamInterval) {
                 streamInterval = setInterval(flushStream, 1000);
-                await flushStream();
               }
+              await flushStream();
             }
             break;
           }
@@ -370,7 +372,8 @@ export class Gateway {
               if (streamInterval) clearInterval(streamInterval);
 
               if (streamMessageId && adapter.editMessage) {
-                // Was streaming — do a final flush of the buffer (keeps thinking/tool_use visible)
+                // Was streaming — final flush without tool suffix
+                toolSuffix = '';
                 await flushStream();
                 // If buffer overflowed the char limit, send remaining as new messages
                 if (streamBuffer.length > charLimit - 100) {
