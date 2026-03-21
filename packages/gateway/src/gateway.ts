@@ -167,6 +167,14 @@ export class Gateway {
       isNewSession = session.isNew;
       if (session.isNew) {
         sdkSessionId = session.sdkSessionId;
+        // Publish session.started event for notifications
+        void this.deps.eventBus.publish('session.started', {
+          userId: user.name,
+          platform: msg.platform,
+          channelId: msg.channelId,
+          sessionKey,
+          timestamp: Date.now(),
+        });
       } else {
         resumeSessionId = session.sdkSessionId;
       }
@@ -447,6 +455,14 @@ export class Gateway {
     } catch (err) {
       if (streamInterval) clearInterval(streamInterval);
       console.error(`[Gateway] executeAndRoute error: channel=${msg.channelId}`, err);
+      // Publish agent.error event for notifications
+      void this.deps.eventBus.publish('agent.error', {
+        userId: request.userId,
+        platform: msg.platform,
+        channelId: msg.channelId,
+        error: (err as Error).message ?? String(err),
+        timestamp: Date.now(),
+      });
       // If this was a session resume that failed, retry as a new session
       if (request.resumeSessionId && sessionKey && this.deps.sessionStore) {
         console.warn(`[Gateway] Resume failed for session ${request.resumeSessionId}, retrying as new session`);
