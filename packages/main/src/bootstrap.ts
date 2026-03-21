@@ -2,7 +2,7 @@ import { join, dirname } from 'node:path';
 import { writeFileSync, renameSync, readFileSync, unlinkSync, existsSync, mkdirSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { loadConfig, createEventBus, UserManager, TranscriptionService, SpeechService } from '@ccbuddy/core';
-import { AgentService, CliBackend } from '@ccbuddy/agent';
+import { AgentService, CliBackend, SessionStore } from '@ccbuddy/agent';
 import {
   MemoryDatabase,
   MessageStore,
@@ -102,6 +102,8 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
     sessionTimeoutMinutes: config.agent.session_timeout_minutes,
     sessionCleanupHours: config.agent.session_cleanup_hours,
   });
+
+  const sessionStore = new SessionStore(config.agent.session_timeout_ms);
 
   // 6. Create memory stores
   const database = new MemoryDatabase(config.memory.db_path);
@@ -247,6 +249,7 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
     transcriptionService,
     speechService,
     voiceConfig: { enabled: config.media.voice_enabled, ttsMaxChars: config.media.tts_max_chars },
+    sessionStore,
   });
 
   // 9. Create and register platform adapters based on config
@@ -263,6 +266,7 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
   // 10. Set up SessionManager.tick() interval (every 60 seconds)
   const tickInterval = setInterval(() => {
     agentService.tick();
+    sessionStore.tick();
   }, 60_000);
 
   // 11. Create shutdown handler

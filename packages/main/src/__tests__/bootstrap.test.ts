@@ -18,6 +18,7 @@ vi.mock('@ccbuddy/core', () => ({
 const mockSdkBackend = vi.fn();
 const mockCliBackend = vi.fn();
 const mockAgentService = vi.fn();
+const mockSessionStore = vi.fn().mockReturnValue({ tick: vi.fn() });
 
 vi.mock('@ccbuddy/agent', () => ({
   SdkBackend: function (this: unknown, ...args: unknown[]) {
@@ -28,6 +29,9 @@ vi.mock('@ccbuddy/agent', () => ({
   },
   AgentService: function (this: unknown, ...args: unknown[]) {
     return mockAgentService(...args);
+  },
+  SessionStore: function (this: unknown, ...args: unknown[]) {
+    return mockSessionStore(...args);
   },
 }));
 
