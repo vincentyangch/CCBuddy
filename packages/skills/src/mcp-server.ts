@@ -29,6 +29,7 @@ import { SkillRunner } from './runner.js';
 import type { SkillPermission } from './types.js';
 import { MemoryDatabase, MessageStore, SummaryStore, RetrievalTools, ProfileStore } from '@ccbuddy/memory';
 import { SwiftBridge, AppleCalendarService, AppleRemindersService, AppleShortcutsService, JxaBridge, AppleNotesService } from '@ccbuddy/apple';
+import { isValidModel, readModelFile, writeModelFile } from '@ccbuddy/core';
 
 // ── CLI argument parsing ────────────────────────────────────────────────────
 
@@ -40,6 +41,8 @@ function parseArgs(argv: string[]): {
   memoryDbPath: string;
   heartbeatStatusFile: string;
   appleHelperPath: string;
+  sessionKey: string;
+  dataDir: string;
 } {
   let registryPath = '';
   let skillsDir = '';
@@ -48,6 +51,8 @@ function parseArgs(argv: string[]): {
   let memoryDbPath = '';
   let heartbeatStatusFile = '';
   let appleHelperPath = '';
+  let sessionKey = '';
+  let dataDir = '';
 
   for (let i = 0; i < argv.length; i++) {
     switch (argv[i]) {
@@ -72,6 +77,12 @@ function parseArgs(argv: string[]): {
       case '--apple-helper':
         appleHelperPath = argv[++i] ?? '';
         break;
+      case '--session-key':
+        sessionKey = argv[++i] ?? '';
+        break;
+      case '--data-dir':
+        dataDir = argv[++i] ?? '';
+        break;
     }
   }
 
@@ -84,7 +95,7 @@ function parseArgs(argv: string[]): {
     process.exit(1);
   }
 
-  return { registryPath, skillsDir, requireApproval, autoGitCommit, memoryDbPath, heartbeatStatusFile, appleHelperPath };
+  return { registryPath, skillsDir, requireApproval, autoGitCommit, memoryDbPath, heartbeatStatusFile, appleHelperPath, sessionKey, dataDir };
 }
 
 // ── Elevated permission check ───────────────────────────────────────────────
@@ -224,6 +235,28 @@ async function main(): Promise<void> {
         required: ['name', 'description', 'code', 'input_schema'],
       },
     });
+
+    if (args.sessionKey) {
+      tools.push({
+        name: 'switch_model',
+        description: 'Switch the AI model for subsequent messages in this session. Use when the current task needs more capability (e.g., opus[1m] for complex work) or to switch back to the default for simpler tasks.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            model: {
+              type: 'string',
+              description: 'Model alias (sonnet, opus, haiku, opus[1m], sonnet[1m], opusplan) or full model ID (e.g., claude-opus-4-6)',
+            },
+          },
+          required: ['model'],
+        },
+      });
+      tools.push({
+        name: 'get_current_model',
+        description: 'Get the model currently configured for this session.',
+        inputSchema: { type: 'object', properties: {} },
+      });
+    }
 
     // Dynamic tools — one per enabled registered skill
     for (const { definition } of registry.list()) {
@@ -681,6 +714,25 @@ async function main(): Promise<void> {
     if (notesService && name === 'apple_notes_delete') {
       await notesService.deleteNote(toolArgs.name as string);
       return { content: [{ type: 'text', text: JSON.stringify({ success: true }) }] };
+    }
+
+    // ── switch_model ──────────────────────────────────────────────────────
+    switch (name) {
+      case 'switch_model': {
+        const { model } = toolArgs as { model: string };
+        if (!isValidModel(model)) {
+          return { content: [{ type: 'text', text: `Invalid model: "${model}". Use an alias (sonnet, opus, haiku, opus[1m], sonnet[1m], opusplan) or a full model ID (e.g., claude-opus-4-6).` }] };
+        }
+        const filePath = pathJoin(args.dataDir, 'sessions', `${args.sessionKey}.model`);
+        mkdirSync(pathJoin(args.dataDir, 'sessions'), { recursive: true });
+        writeModelFile(filePath, model);
+        return { content: [{ type: 'text', text: `Model switched to ${model}. This takes effect on the next message.` }] };
+      }
+      case 'get_current_model': {
+        const filePath = pathJoin(args.dataDir, 'sessions', `${args.sessionKey}.model`);
+        const model = readModelFile(filePath);
+        return { content: [{ type: 'text', text: model ? `Current model override: ${model}` : 'No model override — using config default.' }] };
+      }
     }
 
     // ── Unknown tool ──────────────────────────────────────────────────────
