@@ -56,6 +56,7 @@ export interface GatewayDeps {
 const PLATFORM_CHAR_LIMITS: Record<string, number> = {
   discord: 2000,
   telegram: 4096,
+  webchat: 100000,
 };
 
 const DEFAULT_CHAR_LIMIT = 2000;
