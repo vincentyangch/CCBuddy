@@ -84,8 +84,8 @@ export function ChatPage() {
         ? attachments.map(a => ({ type: a.mimeType.startsWith('image/') ? 'image' : 'file', data: a.data, filename: a.filename }))
         : undefined,
     }]);
-    send({ type: 'chat.message', text, attachments: attachments.length > 0 ? attachments : undefined });
-  }, [send]);
+    send({ type: 'chat.message', text, channelId, attachments: attachments.length > 0 ? attachments : undefined });
+  }, [send, channelId]);
 
   const handleButtonClick = useCallback((messageId: string, buttonLabel: string) => {
     send({ type: 'chat.button_click', messageId, buttonLabel });

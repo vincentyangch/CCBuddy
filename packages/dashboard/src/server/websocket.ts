@@ -78,8 +78,16 @@ export function setupWebSocket(
 
       // Chat message routing
       if (msg.type === 'chat.message' && webchatAdapter) {
-        const channelId = (socket as any).__channelId;
+        // Use channelId from message if provided (handles new-chat before WS reconnect)
+        const channelId = (msg as any).channelId || (socket as any).__channelId;
         if (channelId) {
+          // Update the stored channelId and re-register the client
+          if (channelId !== (socket as any).__channelId) {
+            const oldId = (socket as any).__channelId;
+            if (oldId) webchatAdapter.removeClient(oldId);
+            (socket as any).__channelId = channelId;
+            webchatAdapter.addClient(channelId, socket);
+          }
           webchatAdapter.handleClientMessage(channelId, msg as any);
         }
         return;
