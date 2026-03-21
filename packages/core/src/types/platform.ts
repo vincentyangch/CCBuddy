@@ -22,4 +22,11 @@ export interface PlatformAdapter {
   sendFile(channelId: string, file: Buffer, filename: string): Promise<void>;
   sendVoice?(channelId: string, audio: Buffer): Promise<void>;
   setTypingIndicator(channelId: string, active: boolean): Promise<void>;
+  /** Send a message with button options. Returns the selected label, or null on timeout. */
+  sendButtons?(
+    channelId: string,
+    text: string,
+    buttons: Array<{ id: string; label: string }>,
+    options: { timeoutMs: number; userId?: string; signal?: AbortSignal },
+  ): Promise<string | null>;
 }
