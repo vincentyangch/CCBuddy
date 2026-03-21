@@ -110,7 +110,7 @@ describe('HeartbeatMonitor', () => {
   });
 
   describe('state transitions — healthy to down', () => {
-    it('sends alert and publishes alert.health on transition from healthy to down', async () => {
+    it('publishes alert.health on transition from healthy to down (no direct sendProactiveMessage)', async () => {
       const deps = createMockDeps();
       const monitor = new HeartbeatMonitor(deps);
 
@@ -121,10 +121,10 @@ describe('HeartbeatMonitor', () => {
       // Make database fail
       (deps.checkDatabase as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('db down'));
 
-      // Second check: database down — should alert
+      // Second check: database down — should publish event (not direct send)
       await monitor.runChecks();
 
-      expect(deps.sendProactiveMessage).toHaveBeenCalledTimes(1);
+      expect(deps.sendProactiveMessage).not.toHaveBeenCalled();
       expect(deps.eventBus.publish).toHaveBeenCalledWith(
         'alert.health',
         expect.objectContaining({
@@ -138,45 +138,67 @@ describe('HeartbeatMonitor', () => {
   });
 
   describe('state transitions — no repeated alerts', () => {
-    it('only sends one alert when module stays down across multiple checks', async () => {
+    it('only publishes one alert.health event when module stays down across multiple checks', async () => {
       const deps = createMockDeps({
         checkDatabase: vi.fn(async () => { throw new Error('db down'); }),
       });
       const monitor = new HeartbeatMonitor(deps);
 
-      // First check: transition healthy->down, should alert
+      // First check: transition healthy->down, should publish alert
       await monitor.runChecks();
-      expect(deps.sendProactiveMessage).toHaveBeenCalledTimes(1);
+      const alertCalls1 = (deps.eventBus.publish as ReturnType<typeof vi.fn>).mock.calls.filter(
+        (call: unknown[]) => call[0] === 'alert.health',
+      );
+      expect(alertCalls1).toHaveLength(1);
 
       // Second check: stays down, no new alert
       await monitor.runChecks();
-      expect(deps.sendProactiveMessage).toHaveBeenCalledTimes(1);
+      const alertCalls2 = (deps.eventBus.publish as ReturnType<typeof vi.fn>).mock.calls.filter(
+        (call: unknown[]) => call[0] === 'alert.health',
+      );
+      expect(alertCalls2).toHaveLength(1);
 
       // Third check: still down, still no new alert
       await monitor.runChecks();
-      expect(deps.sendProactiveMessage).toHaveBeenCalledTimes(1);
+      const alertCalls3 = (deps.eventBus.publish as ReturnType<typeof vi.fn>).mock.calls.filter(
+        (call: unknown[]) => call[0] === 'alert.health',
+      );
+      expect(alertCalls3).toHaveLength(1);
+
+      // sendProactiveMessage should never be called for transition alerts
+      expect(deps.sendProactiveMessage).not.toHaveBeenCalled();
     });
   });
 
   describe('state transitions — recovery', () => {
-    it('sends recovery message when module goes from down to healthy', async () => {
+    it('publishes alert.health with status recovered when module goes from down to healthy', async () => {
       const checkDatabase = vi.fn<() => Promise<boolean>>().mockRejectedValue(new Error('db down'));
       const deps = createMockDeps({ checkDatabase });
       const monitor = new HeartbeatMonitor(deps);
 
-      // First check: down
+      // First check: down — should publish degradation alert
       await monitor.runChecks();
-      expect(deps.sendProactiveMessage).toHaveBeenCalledTimes(1);
+      const alertCallsAfterDown = (deps.eventBus.publish as ReturnType<typeof vi.fn>).mock.calls.filter(
+        (call: unknown[]) => call[0] === 'alert.health',
+      );
+      expect(alertCallsAfterDown).toHaveLength(1);
 
       // Recover
       checkDatabase.mockResolvedValue(true);
 
-      // Second check: healthy again
+      // Second check: healthy again — should publish recovery event
       await monitor.runChecks();
-      expect(deps.sendProactiveMessage).toHaveBeenCalledTimes(2);
+      const alertCallsAfterRecovery = (deps.eventBus.publish as ReturnType<typeof vi.fn>).mock.calls.filter(
+        (call: unknown[]) => call[0] === 'alert.health',
+      );
+      expect(alertCallsAfterRecovery).toHaveLength(2);
 
-      const recoveryMessage = (deps.sendProactiveMessage as ReturnType<typeof vi.fn>).mock.calls[1][1] as string;
-      expect(recoveryMessage.toLowerCase()).toContain('recovered');
+      const recoveryCall = alertCallsAfterRecovery[1][1] as { status: string; message: string };
+      expect(recoveryCall.status).toBe('recovered');
+      expect(recoveryCall.message.toLowerCase()).toContain('recovered');
+
+      // sendProactiveMessage should never be called for transition alerts
+      expect(deps.sendProactiveMessage).not.toHaveBeenCalled();
     });
   });
 

@@ -185,14 +185,6 @@ export class HeartbeatMonitor {
         (previousStatus === 'degraded' && currentStatus === 'down');
 
       if (isDegrading) {
-        // Send alert
-        if (this.opts.alertTarget) {
-          await this.opts.sendProactiveMessage(
-            this.opts.alertTarget,
-            `[Alert] Module "${module}" is ${currentStatus}.`,
-          );
-        }
-        // Publish alert.health event
         await this.opts.eventBus.publish('alert.health', {
           module,
           status: currentStatus as 'degraded' | 'down',
@@ -207,12 +199,12 @@ export class HeartbeatMonitor {
         currentStatus === 'healthy';
 
       if (isRecovery) {
-        if (this.opts.alertTarget) {
-          await this.opts.sendProactiveMessage(
-            this.opts.alertTarget,
-            `[Recovered] Module "${module}" has recovered and is now healthy.`,
-          );
-        }
+        await this.opts.eventBus.publish('alert.health', {
+          module,
+          status: 'recovered' as 'degraded' | 'down',
+          message: `Module "${module}" has recovered`,
+          timestamp: Date.now(),
+        });
       }
     }
   }
