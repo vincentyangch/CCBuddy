@@ -150,6 +150,7 @@ function makeConfig(overrides: Record<string, unknown> = {}) {
       session_cleanup_hours: 24,
       pending_input_timeout_minutes: 10,
       graceful_shutdown_timeout_seconds: 30,
+      session_timeout_ms: 3_600_000,
     },
     memory: {
       db_path: './data/memory.sqlite',

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { api } from '../lib/api';
 
 export function ConversationsPage() {
@@ -7,18 +7,29 @@ export function ConversationsPage() {
   const [page, setPage] = useState(1);
   const [filters, setFilters] = useState({ user: '', platform: '', search: '' });
   const pageSize = 50;
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
-  const load = useCallback(async () => {
-    const params: Record<string, string> = { page: String(page), pageSize: String(pageSize) };
-    if (filters.user) params.user = filters.user;
-    if (filters.platform) params.platform = filters.platform;
-    if (filters.search) params.search = filters.search;
+  const load = useCallback(async (p: number, f: typeof filters) => {
+    const params: Record<string, string> = { page: String(p), pageSize: String(pageSize) };
+    if (f.user) params.user = f.user;
+    if (f.platform) params.platform = f.platform;
+    if (f.search) params.search = f.search;
     const data = await api.conversations(params);
     setMessages(data.messages);
     setTotal(data.total);
-  }, [page, filters]);
+  }, []);
 
-  useEffect(() => { load(); }, [load]);
+  // Debounce filter changes by 400ms, but load immediately on page change
+  useEffect(() => {
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => load(page, filters), 400);
+    return () => clearTimeout(debounceRef.current);
+  }, [page, filters, load]);
+
+  const updateFilter = (key: string, value: string) => {
+    setFilters(f => ({ ...f, [key]: value }));
+    setPage(1);
+  };
 
   const totalPages = Math.ceil(total / pageSize);
 
@@ -27,13 +38,13 @@ export function ConversationsPage() {
       <h2 className="text-2xl font-bold mb-6">Conversations</h2>
       <div className="flex gap-3 mb-4">
         <input placeholder="Filter user" value={filters.user}
-          onChange={e => { setFilters(f => ({ ...f, user: e.target.value })); setPage(1); }}
+          onChange={e => updateFilter('user', e.target.value)}
           className="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg text-sm w-40" />
         <input placeholder="Filter platform" value={filters.platform}
-          onChange={e => { setFilters(f => ({ ...f, platform: e.target.value })); setPage(1); }}
+          onChange={e => updateFilter('platform', e.target.value)}
           className="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg text-sm w-40" />
         <input placeholder="Search..." value={filters.search}
-          onChange={e => { setFilters(f => ({ ...f, search: e.target.value })); setPage(1); }}
+          onChange={e => updateFilter('search', e.target.value)}
           className="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg text-sm flex-1" />
       </div>
       <div className="text-sm text-gray-400 mb-3">{total} messages</div>

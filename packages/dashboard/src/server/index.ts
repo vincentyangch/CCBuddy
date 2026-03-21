@@ -1,4 +1,4 @@
-import { readFileSync, copyFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, copyFileSync, writeFileSync, existsSync, openSync, readSync, closeSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Fastify from 'fastify';
@@ -91,6 +91,7 @@ export class DashboardServer {
       const auth = request.headers.authorization;
       if (!auth || !auth.startsWith('Bearer ') || auth.slice(7) !== this.token) {
         reply.status(401).send({ error: 'Unauthorized' });
+        return;
       }
     });
 
@@ -146,18 +147,25 @@ export class DashboardServer {
       return this.deps.messageStore.query(params);
     });
 
-    // GET /api/logs — recent log lines
+    // GET /api/logs — recent log lines (tail-read to avoid loading entire file)
     this.app.get('/api/logs', async (request) => {
       const q = request.query as Record<string, string>;
       const file = (q.file ?? 'stdout') as 'stdout' | 'stderr' | 'app';
-      const lines = parseInt(q.lines ?? '500', 10);
+      const lineCount = parseInt(q.lines ?? '500', 10);
       const logPath = this.deps.logFiles[file];
       if (!logPath) return { lines: [], file };
 
       try {
-        const content = readFileSync(logPath, 'utf8');
+        const stat = statSync(logPath);
+        // Read last ~64KB (enough for ~500 lines) instead of entire file
+        const readBytes = Math.min(stat.size, lineCount * 150);
+        const buffer = Buffer.alloc(readBytes);
+        const fd = openSync(logPath, 'r');
+        readSync(fd, buffer, 0, readBytes, Math.max(0, stat.size - readBytes));
+        closeSync(fd);
+        const content = buffer.toString('utf8');
         const allLines = content.split('\n').filter(Boolean);
-        return { lines: allLines.slice(-lines), file };
+        return { lines: allLines.slice(-lineCount), file };
       } catch {
         return { lines: [], file };
       }
@@ -166,12 +174,16 @@ export class DashboardServer {
     // GET /api/config — current config with secrets redacted
     this.app.get('/api/config', async () => {
       const config = JSON.parse(JSON.stringify(this.deps.config));
-      if (config.platforms?.discord?.token) config.platforms.discord.token = '••••••';
-      if (config.platforms?.telegram?.token) config.platforms.telegram.token = '••••••';
+      // Redact all platform tokens (not just Discord/Telegram)
+      if (config.platforms) {
+        for (const key of Object.keys(config.platforms)) {
+          if (config.platforms[key]?.token) config.platforms[key].token = '••••••';
+        }
+      }
       return { config };
     });
 
-    // PUT /api/config — update config/local.yaml
+    // PUT /api/config — update config/local.yaml with validation
     this.app.put('/api/config', async (request, reply) => {
       const body = request.body as { config: Record<string, unknown> } | null;
       if (!body?.config) {
@@ -181,9 +193,31 @@ export class DashboardServer {
       const localPath = join(this.deps.configDir, 'local.yaml');
       const backupPath = localPath + '.bak';
 
+      // Restore redacted platform tokens from current config
+      const incoming = body.config as any;
+      const current = this.deps.config as any;
+      if (incoming.platforms && current.platforms) {
+        for (const key of Object.keys(incoming.platforms)) {
+          if (incoming.platforms[key]?.token === '••••••' && current.platforms[key]?.token) {
+            incoming.platforms[key].token = current.platforms[key].token;
+          }
+        }
+      }
+
+      // Validate: ensure the config is valid YAML by round-tripping
+      try {
+        const yamlContent = yaml.dump({ ccbuddy: incoming }, { lineWidth: 120 });
+        const parsed = yaml.load(yamlContent) as any;
+        if (!parsed?.ccbuddy) {
+          return reply.status(400).send({ error: 'Invalid config structure' });
+        }
+      } catch (err) {
+        return reply.status(400).send({ error: `Invalid config: ${(err as Error).message}` });
+      }
+
       try {
         try { copyFileSync(localPath, backupPath); } catch { /* no existing file */ }
-        const yamlContent = yaml.dump({ ccbuddy: body.config }, { lineWidth: 120 });
+        const yamlContent = yaml.dump({ ccbuddy: incoming }, { lineWidth: 120 });
         writeFileSync(localPath, yamlContent, 'utf8');
         return { ok: true, backup: backupPath };
       } catch (err) {

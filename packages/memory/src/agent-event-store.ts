@@ -64,6 +64,13 @@ export class AgentEventStore {
     return rows.map((r: any) => this.toEvent(r));
   }
 
+  pruneOlderThan(beforeTimestamp: number): number {
+    const result = this.db.raw().prepare(
+      'DELETE FROM agent_events WHERE timestamp < ?'
+    ).run(beforeTimestamp);
+    return result.changes;
+  }
+
   private toEvent(row: any): StoredAgentEvent {
     return {
       id: row.id,
