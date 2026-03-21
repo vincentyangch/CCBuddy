@@ -40,7 +40,7 @@ export interface SessionConflictEvent {
 
 export interface HealthAlertEvent {
   module: string;
-  status: 'degraded' | 'down';
+  status: 'degraded' | 'down' | 'recovered';
   message: string;
   timestamp: number;
 }
@@ -108,6 +108,22 @@ export interface SessionModelChangedEvent {
   newModel: string;
 }
 
+export interface AgentErrorEvent {
+  userId: string;
+  platform: string;
+  channelId: string;
+  error: string;
+  timestamp: number;
+}
+
+export interface SessionStartedEvent {
+  userId: string;
+  platform: string;
+  channelId: string;
+  sessionKey: string;
+  timestamp: number;
+}
+
 export interface EventMap {
   'message.incoming': IncomingMessageEvent;
   'message.outgoing': OutgoingMessageEvent;
@@ -121,6 +137,8 @@ export interface EventMap {
   'backup.complete': BackupCompleteEvent;
   'backup.integrity_failed': BackupIntegrityFailedEvent;
   'session.model_changed': SessionModelChangedEvent;
+  'agent.error': AgentErrorEvent;
+  'session.started': SessionStartedEvent;
 }
 
 export interface EventBus {
