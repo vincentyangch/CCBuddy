@@ -111,6 +111,12 @@ function createMinimalConfig(overrides: Partial<CCBuddyConfig> = {}): CCBuddyCon
       host: '127.0.0.1',
       auth_token_env: 'CCBUDDY_DASHBOARD_TOKEN',
     },
+    notifications: {
+      enabled: false,
+      default_target: { platform: 'discord', channel: 'dm' },
+      quiet_hours: { start: '22:00', end: '08:00', timezone: 'UTC' },
+      types: { health: true, memory: true, errors: true, sessions: true },
+    },
     users: {},
     ...overrides,
   };

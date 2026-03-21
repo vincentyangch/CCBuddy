@@ -16,6 +16,10 @@ export type { CronRunnerOptions } from './cron-runner.js';
 export { HeartbeatMonitor } from './heartbeat.js';
 export type { HeartbeatOptions } from './heartbeat.js';
 
+export { NotificationService } from './notification-service.js';
+export type { NotificationPreferences, NotificationServiceDeps } from './notification-service.js';
+export { resolvePreferences } from './resolve-preferences.js';
+
 export { WebhookServer } from './webhook-server.js';
 export type { WebhookServerOptions, WebhookEndpoint } from './webhook-server.js';
 
