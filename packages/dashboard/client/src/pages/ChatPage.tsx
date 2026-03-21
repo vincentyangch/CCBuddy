@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { ChatInput } from '../components/ChatInput';
 import { ChatSidebar } from '../components/ChatSidebar';
+import { api } from '../lib/api';
 import ReactMarkdown from 'react-markdown';
 
 interface ChatMessage {
@@ -98,6 +99,26 @@ export function ChatPage() {
     setButtons(null);
   }, [send]);
 
+  const handleSelectSession = useCallback(async (selectedChannelId: string) => {
+    setChannelId(selectedChannelId);
+    setProgress([]);
+    // Load history from DB
+    try {
+      const data = await api.conversations({ platform: 'webchat', pageSize: '100' });
+      const sessionMessages = (data.messages ?? [])
+        .filter((m: any) => m.sessionId.endsWith(`-webchat-${selectedChannelId}`))
+        .sort((a: any, b: any) => a.timestamp - b.timestamp)
+        .map((m: any) => ({
+          id: String(m.id),
+          role: m.role as 'user' | 'assistant',
+          content: m.content,
+        }));
+      setMessages(sessionMessages);
+    } catch {
+      setMessages([]);
+    }
+  }, []);
+
   const handleNewChat = useCallback(() => {
     const newId = `webchat-${Date.now()}`;
     setChannelId(newId);
@@ -111,7 +132,7 @@ export function ChatPage() {
 
   return (
     <div className="flex h-[calc(100vh-theme(spacing.12))] -m-6">
-      <ChatSidebar activeSession={channelId} onSelectSession={setChannelId} onNewChat={handleNewChat} refreshKey={sidebarRefresh} />
+      <ChatSidebar activeChannelId={channelId} onSelectSession={handleSelectSession} onNewChat={handleNewChat} refreshKey={sidebarRefresh} />
       <div className="flex-1 flex flex-col">
         <div className="px-4 py-3 border-b border-gray-800 flex justify-between items-center">
           <span className="text-sm font-medium">Chat with Po</span>

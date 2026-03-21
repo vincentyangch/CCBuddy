@@ -3,27 +3,37 @@ import { api } from '../lib/api';
 
 interface Session {
   sessionId: string;
+  channelId: string;
   lastMessage: string;
   timestamp: number;
 }
 
 interface ChatSidebarProps {
-  activeSession: string;
-  onSelectSession: (sessionId: string) => void;
+  activeChannelId: string;
+  onSelectSession: (channelId: string) => void;
   onNewChat: () => void;
   refreshKey?: number;
 }
 
-export function ChatSidebar({ activeSession, onSelectSession, onNewChat, refreshKey }: ChatSidebarProps) {
+/** Extract original channelId from sessionId (format: {user}-webchat-{channelId}) */
+function extractChannelId(sessionId: string): string {
+  const marker = '-webchat-';
+  const idx = sessionId.indexOf(marker);
+  return idx >= 0 ? sessionId.slice(idx + marker.length) : sessionId;
+}
+
+export function ChatSidebar({ activeChannelId, onSelectSession, onNewChat, refreshKey }: ChatSidebarProps) {
   const [sessions, setSessions] = useState<Session[]>([]);
 
   useEffect(() => {
     api.conversations({ platform: 'webchat', pageSize: '50' }).then(data => {
       const grouped = new Map<string, Session>();
       for (const msg of (data.messages ?? [])) {
-        if (!grouped.has(msg.sessionId) || msg.timestamp > grouped.get(msg.sessionId)!.timestamp) {
-          grouped.set(msg.sessionId, {
+        const channelId = extractChannelId(msg.sessionId);
+        if (!grouped.has(channelId) || msg.timestamp > grouped.get(channelId)!.timestamp) {
+          grouped.set(channelId, {
             sessionId: msg.sessionId,
+            channelId,
             lastMessage: msg.content?.slice(0, 50) ?? '',
             timestamp: msg.timestamp,
           });
@@ -42,10 +52,10 @@ export function ChatSidebar({ activeSession, onSelectSession, onNewChat, refresh
       <div className="flex-1 overflow-auto space-y-1">
         {sessions.map(s => (
           <button
-            key={s.sessionId}
-            onClick={() => onSelectSession(s.sessionId)}
+            key={s.channelId}
+            onClick={() => onSelectSession(s.channelId)}
             className={`w-full text-left px-3 py-2 rounded-lg text-xs truncate ${
-              s.sessionId === activeSession
+              s.channelId === activeChannelId
                 ? 'bg-blue-900/30 border border-blue-800 text-white'
                 : 'text-gray-400 hover:bg-gray-800 hover:text-white'
             }`}
