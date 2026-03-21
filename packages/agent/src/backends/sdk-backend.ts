@@ -123,7 +123,7 @@ export class SdkBackend implements AgentBackend {
               const decision = Object.values(answers)[0];
               if (decision === 'Allow') {
                 console.info(`[SdkBackend] Permission gate approved: "${matched.name}" by user`);
-                return { behavior: 'allow' };
+                return { behavior: 'allow', updatedInput: input };
               } else {
                 console.info(`[SdkBackend] Permission gate denied: "${matched.name}" by user`);
                 return { behavior: 'deny', message: `User denied: ${matched.description}` };
@@ -131,7 +131,7 @@ export class SdkBackend implements AgentBackend {
             }
           }
 
-          return { behavior: 'allow' };
+          return { behavior: 'allow', updatedInput: input };
         };
       }
 
