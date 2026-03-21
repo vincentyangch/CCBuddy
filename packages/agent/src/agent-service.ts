@@ -119,16 +119,28 @@ export class AgentService {
     try {
       for await (const event of this.backend.execute(request)) {
         // Publish progress events to the event bus
-        if (this.eventBus !== undefined && (event.type === 'text' || event.type === 'tool_use')) {
-          const progressPayload = {
-            userId: event.userId,
-            sessionId: event.sessionId,
-            channelId: event.channelId,
-            platform: event.platform,
-            type: event.type as 'text' | 'tool_use',
-            content: event.type === 'text' ? event.content : event.tool,
-          };
-          void this.eventBus.publish('agent.progress', progressPayload);
+        if (this.eventBus !== undefined) {
+          if (event.type === 'text' || event.type === 'tool_use' || event.type === 'thinking') {
+            void this.eventBus.publish('agent.progress', {
+              userId: event.userId,
+              sessionId: event.sessionId,
+              channelId: event.channelId,
+              platform: event.platform,
+              type: event.type,
+              content: event.type === 'tool_use' ? event.tool : event.content,
+            });
+          } else if (event.type === 'tool_result') {
+            void this.eventBus.publish('agent.progress', {
+              userId: event.userId,
+              sessionId: event.sessionId,
+              channelId: event.channelId,
+              platform: event.platform,
+              type: 'tool_result',
+              content: event.tool,
+              toolInput: event.toolInput,
+              toolOutput: event.toolOutput,
+            });
+          }
         }
         yield event;
       }
