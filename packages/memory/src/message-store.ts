@@ -24,6 +24,23 @@ export interface AddMessageParams {
   tokens?: number;
 }
 
+export interface MessageQueryParams {
+  user?: string;
+  platform?: string;
+  dateFrom?: number;
+  dateTo?: number;
+  search?: string;
+  page: number;
+  pageSize: number;
+}
+
+export interface MessageQueryResult {
+  messages: StoredMessage[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 export class MessageStore {
   private db: MemoryDatabase;
 
@@ -149,6 +166,51 @@ export class MessageStore {
       'DELETE FROM messages WHERE summarized_at IS NOT NULL AND summarized_at < ?'
     ).run(beforeTimestamp);
     return result.changes;
+  }
+
+  query(params: MessageQueryParams): MessageQueryResult {
+    const conditions: string[] = [];
+    const values: (string | number)[] = [];
+
+    if (params.user) {
+      conditions.push('user_id = ?');
+      values.push(params.user);
+    }
+    if (params.platform) {
+      conditions.push('platform = ?');
+      values.push(params.platform);
+    }
+    if (params.dateFrom !== undefined) {
+      conditions.push('timestamp >= ?');
+      values.push(params.dateFrom);
+    }
+    if (params.dateTo !== undefined) {
+      conditions.push('timestamp <= ?');
+      values.push(params.dateTo);
+    }
+    if (params.search) {
+      const escaped = params.search.replace(/[%_\\]/g, '\\$&');
+      conditions.push("content LIKE ? ESCAPE '\\'");
+      values.push(`%${escaped}%`);
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const countRow = this.db.raw().prepare(
+      `SELECT COUNT(*) as count FROM messages ${where}`
+    ).get(...values) as { count: number };
+
+    const offset = (params.page - 1) * params.pageSize;
+    const rows = this.db.raw().prepare(
+      `SELECT * FROM messages ${where} ORDER BY timestamp ASC, id ASC LIMIT ? OFFSET ?`
+    ).all(...values, params.pageSize, offset);
+
+    return {
+      messages: rows.map((r: any) => this.toMessage(r)),
+      total: countRow.count,
+      page: params.page,
+      pageSize: params.pageSize,
+    };
   }
 
   private toMessage(row: any): StoredMessage {

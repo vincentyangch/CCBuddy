@@ -302,4 +302,66 @@ describe('MessageStore', () => {
       expect(store.getById(id1)).toBeTruthy();
     });
   });
+
+  describe('query() — paginated search', () => {
+    beforeEach(() => {
+      for (let i = 0; i < 20; i++) {
+        store.add({
+          userId: i < 10 ? 'u1' : 'u2',
+          sessionId: 's1',
+          platform: i % 2 === 0 ? 'discord' : 'telegram',
+          content: `message-${i}`,
+          role: i % 3 === 0 ? 'user' : 'assistant',
+          timestamp: 1000 + i,
+        });
+      }
+    });
+
+    it('returns paginated results', () => {
+      const page1 = store.query({ page: 1, pageSize: 5 });
+      expect(page1.messages).toHaveLength(5);
+      expect(page1.total).toBe(20);
+      expect(page1.messages[0].content).toBe('message-0');
+    });
+
+    it('returns second page', () => {
+      const page2 = store.query({ page: 2, pageSize: 5 });
+      expect(page2.messages).toHaveLength(5);
+      expect(page2.messages[0].content).toBe('message-5');
+    });
+
+    it('filters by userId', () => {
+      const result = store.query({ user: 'u1', page: 1, pageSize: 50 });
+      expect(result.total).toBe(10);
+      expect(result.messages.every(m => m.userId === 'u1')).toBe(true);
+    });
+
+    it('filters by platform', () => {
+      const result = store.query({ platform: 'discord', page: 1, pageSize: 50 });
+      expect(result.total).toBe(10);
+      expect(result.messages.every(m => m.platform === 'discord')).toBe(true);
+    });
+
+    it('filters by date range', () => {
+      const result = store.query({ dateFrom: 1005, dateTo: 1010, page: 1, pageSize: 50 });
+      expect(result.total).toBe(6);
+    });
+
+    it('filters by search text', () => {
+      const result = store.query({ search: 'message-1', page: 1, pageSize: 50 });
+      // matches: message-1, message-10..message-19
+      expect(result.total).toBe(11);
+    });
+
+    it('combines multiple filters', () => {
+      const result = store.query({ user: 'u1', platform: 'discord', page: 1, pageSize: 50 });
+      expect(result.total).toBe(5); // u1 (0-9), discord (even) = 0,2,4,6,8
+    });
+
+    it('returns empty for out-of-range page', () => {
+      const result = store.query({ page: 100, pageSize: 5 });
+      expect(result.messages).toHaveLength(0);
+      expect(result.total).toBe(20);
+    });
+  });
 });

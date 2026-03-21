@@ -1,6 +1,6 @@
 export { MemoryDatabase } from './database.js';
 export { estimateTokens } from './token-counter.js';
-export { MessageStore, type StoredMessage, type AddMessageParams } from './message-store.js';
+export { MessageStore, type StoredMessage, type AddMessageParams, type MessageQueryParams, type MessageQueryResult } from './message-store.js';
 export { SummaryStore, type SummaryNode, type AddSummaryParams } from './summary-store.js';
 export { ProfileStore } from './profile-store.js';
 export { ContextAssembler, type ContextAssemblerConfig, type AssembledContext } from './context-assembler.js';
