@@ -254,6 +254,7 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
     speechService,
     voiceConfig: { enabled: config.media.voice_enabled, ttsMaxChars: config.media.tts_max_chars },
     sessionStore,
+    userInputTimeoutMs: config.agent.user_input_timeout_ms,
     storeAgentEvent: (params) => {
       agentEventStore.add({ ...params, timestamp: Date.now() });
     },

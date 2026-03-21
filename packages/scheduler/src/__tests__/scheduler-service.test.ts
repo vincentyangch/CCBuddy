@@ -32,6 +32,7 @@ function createMinimalConfig(overrides: Partial<CCBuddyConfig> = {}): CCBuddyCon
       max_concurrent_sessions: 3,
       session_timeout_minutes: 30,
       session_timeout_ms: 3_600_000,
+      user_input_timeout_ms: 300_000,
       queue_max_depth: 10,
       queue_timeout_seconds: 120,
       rate_limits: {

@@ -54,6 +54,7 @@ Config loads in order: DEFAULT_CONFIG → `config/default.yaml` → `config/loca
 - **Memory:** LCM-inspired DAG summarization. Messages stored in SQLite, condensed nightly. Context assembled per-user per-session.
 - **Conversation continuity:** SDK sessions are resumed via `query({ resume: uuid })`. SessionStore maps session keys to SDK UUIDs with configurable idle timeout (default 1 hour). DMs use per-user keys; group channels share one key.
 - **Dashboard:** Fastify server (port 18801) + React SPA. Token auth via `CCBUDDY_DASHBOARD_TOKEN` env var. REST API + WebSocket for real-time events. Enable with `dashboard.enabled: true` in config.
+- **Interactive follow-ups:** Po can ask clarifying questions mid-task via the SDK's `AskUserQuestion` tool. Questions appear as Discord buttons (with "Other" for free-text). Configurable timeout (default 5 min) via `agent.user_input_timeout_ms`.
 
 ## Commands
 
