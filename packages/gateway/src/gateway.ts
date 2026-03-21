@@ -47,6 +47,7 @@ export interface GatewayDeps {
   speechService?: Synthesizer;
   voiceConfig?: { enabled: boolean; ttsMaxChars: number };
   sessionStore?: SessionStore;
+  storeAgentEvent?: (params: { userId: string; sessionId: string; platform: string; eventType: string; content: string; toolInput?: string; toolOutput?: string }) => void;
 }
 
 const PLATFORM_CHAR_LIMITS: Record<string, number> = {
@@ -70,6 +71,21 @@ export class Gateway {
         });
       }
     });
+
+    // Store agent progress events for dashboard historical replay
+    if (deps.storeAgentEvent) {
+      deps.eventBus.subscribe('agent.progress', (event) => {
+        deps.storeAgentEvent!({
+          userId: event.userId,
+          sessionId: event.sessionId,
+          platform: event.platform,
+          eventType: event.type,
+          content: event.content,
+          toolInput: event.toolInput ? JSON.stringify(event.toolInput) : undefined,
+          toolOutput: event.toolOutput,
+        });
+      });
+    }
   }
 
   registerAdapter(adapter: PlatformAdapter): void {

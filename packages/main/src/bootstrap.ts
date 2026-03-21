@@ -12,6 +12,7 @@ import {
   RetrievalTools,
   ConsolidationService,
   BackupService,
+  AgentEventStore,
 } from '@ccbuddy/memory';
 import { SkillRegistry, MCP_SERVER_PATH } from '@ccbuddy/skills';
 import { Gateway } from '@ccbuddy/gateway';
@@ -110,6 +111,7 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
   database.init();
 
   const messageStore = new MessageStore(database);
+  const agentEventStore = new AgentEventStore(database);
   const summaryStore = new SummaryStore(database);
   const profileStore = new ProfileStore(database);
 
@@ -250,6 +252,9 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
     speechService,
     voiceConfig: { enabled: config.media.voice_enabled, ttsMaxChars: config.media.tts_max_chars },
     sessionStore,
+    storeAgentEvent: (params) => {
+      agentEventStore.add({ ...params, timestamp: Date.now() });
+    },
   });
 
   // 9. Create and register platform adapters based on config

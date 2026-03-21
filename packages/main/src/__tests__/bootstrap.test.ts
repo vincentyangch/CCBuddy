@@ -37,6 +37,7 @@ vi.mock('@ccbuddy/agent', () => ({
 
 const mockMemoryDatabase = vi.fn();
 const mockMessageStore = vi.fn();
+const mockAgentEventStore = vi.fn();
 const mockSummaryStore = vi.fn();
 const mockProfileStore = vi.fn();
 const mockContextAssembler = vi.fn();
@@ -50,6 +51,9 @@ vi.mock('@ccbuddy/memory', () => ({
   },
   MessageStore: function (this: unknown, ...args: unknown[]) {
     return mockMessageStore(...args);
+  },
+  AgentEventStore: function (this: unknown, ...args: unknown[]) {
+    return mockAgentEventStore(...args);
   },
   SummaryStore: function (this: unknown, ...args: unknown[]) {
     return mockSummaryStore(...args);
@@ -295,6 +299,7 @@ describe('bootstrap', () => {
     mockAgentService.mockReturnValue(fakeAgentServiceInstance);
     mockMemoryDatabase.mockReturnValue(fakeDatabaseInstance);
     mockMessageStore.mockReturnValue(fakeMessageStoreInstance);
+    mockAgentEventStore.mockReturnValue({ add: vi.fn() });
     mockSummaryStore.mockReturnValue(fakeSummaryStoreInstance);
     mockProfileStore.mockReturnValue(fakeProfileStoreInstance);
     mockContextAssembler.mockReturnValue(fakeContextAssemblerInstance);
