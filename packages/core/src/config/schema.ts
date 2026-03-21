@@ -2,6 +2,7 @@ import type { MessageTarget } from '../types/events.js';
 
 export interface AgentConfig {
   backend: 'sdk' | 'cli';
+  model: string;
   max_concurrent_sessions: number;
   session_timeout_minutes: number;
   queue_max_depth: number;
@@ -119,6 +120,7 @@ export interface ScheduledJobConfig {
   enabled?: boolean;
   permission_level?: 'admin' | 'system';
   timezone?: string;
+  model?: string;
 }
 
 export interface SchedulerConfig {
@@ -167,6 +169,7 @@ export const DEFAULT_CONFIG: CCBuddyConfig = {
   log_level: 'info',
   agent: {
     backend: 'sdk',
+    model: 'sonnet',
     max_concurrent_sessions: 3,
     session_timeout_minutes: 30,
     queue_max_depth: 10,
