@@ -14,6 +14,7 @@ interface ChatEntry {
 
 export function ChatPage() {
   const [channelId, setChannelId] = useState('webchat-main');
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [entries, setEntries] = useState<ChatEntry[]>([]);
   const [typing, setTyping] = useState(false);
   const [buttons, setButtons] = useState<{ messageId: string; text: string; buttons: Array<{ id: string; label: string }> } | null>(null);
@@ -91,13 +92,14 @@ export function ChatPage() {
     setButtons(null);
   }, [send]);
 
-  const handleSelectSession = useCallback(async (selectedChannelId: string) => {
-    setChannelId(selectedChannelId);
-    // Load history from DB
+  const handleSelectSession = useCallback(async (session: { sessionId: string; channelId: string }) => {
+    setChannelId(session.channelId);
+    setActiveSessionId(session.sessionId);
+    // Load history by exact sessionId
     try {
-      const data = await api.conversations({ platform: 'webchat', pageSize: '100' });
+      const data = await api.conversations({ platform: 'webchat', pageSize: '200' });
       const sessionEntries = (data.messages ?? [])
-        .filter((m: any) => m.sessionId.endsWith(`-webchat-${selectedChannelId}`))
+        .filter((m: any) => m.sessionId === session.sessionId)
         .sort((a: any, b: any) => a.timestamp - b.timestamp)
         .map((m: any) => ({
           id: String(m.id),
@@ -110,25 +112,21 @@ export function ChatPage() {
     }
   }, []);
 
-  const handleDeleteSession = useCallback(async (deletedChannelId: string) => {
-    // Find the sessionId for this channelId by convention
+  const handleDeleteSession = useCallback(async (sessionId: string) => {
     try {
-      const data = await api.conversations({ platform: 'webchat', pageSize: '100' });
-      const match = (data.messages ?? []).find((m: any) => m.sessionId.endsWith(`-webchat-${deletedChannelId}`));
-      if (match) {
-        await api.deleteConversation(match.sessionId);
-      }
+      await api.deleteConversation(sessionId);
     } catch { /* ignore */ }
-    // If we deleted the active session, clear the chat
-    if (deletedChannelId === channelId) {
+    if (sessionId === activeSessionId) {
       setEntries([]);
+      setActiveSessionId(null);
     }
     setSidebarRefresh(n => n + 1);
-  }, [channelId]);
+  }, [activeSessionId]);
 
   const handleNewChat = useCallback(() => {
     const newId = `webchat-${Date.now()}`;
     setChannelId(newId);
+    setActiveSessionId(null);
     setEntries([]);
   }, []);
 
@@ -138,7 +136,7 @@ export function ChatPage() {
 
   return (
     <div className="flex h-[calc(100vh-theme(spacing.12))] -m-6">
-      <ChatSidebar activeChannelId={channelId} onSelectSession={handleSelectSession} onNewChat={handleNewChat} onDeleteSession={handleDeleteSession} refreshKey={sidebarRefresh} />
+      <ChatSidebar activeSessionId={activeSessionId} onSelectSession={handleSelectSession} onNewChat={handleNewChat} onDeleteSession={handleDeleteSession} refreshKey={sidebarRefresh} />
       <div className="flex-1 flex flex-col">
         <div className="px-4 py-3 border-b border-gray-800 flex justify-between items-center">
           <span className="text-sm font-medium">Chat with Po</span>

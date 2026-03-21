@@ -9,10 +9,10 @@ interface Session {
 }
 
 interface ChatSidebarProps {
-  activeChannelId: string;
-  onSelectSession: (channelId: string) => void;
+  activeSessionId: string | null;
+  onSelectSession: (session: { sessionId: string; channelId: string }) => void;
   onNewChat: () => void;
-  onDeleteSession?: (channelId: string) => void;
+  onDeleteSession?: (sessionId: string) => void;
   refreshKey?: number;
 }
 
@@ -23,18 +23,18 @@ function extractChannelId(sessionId: string): string {
   return idx >= 0 ? sessionId.slice(idx + marker.length) : sessionId;
 }
 
-export function ChatSidebar({ activeChannelId, onSelectSession, onNewChat, onDeleteSession, refreshKey }: ChatSidebarProps) {
+export function ChatSidebar({ activeSessionId, onSelectSession, onNewChat, onDeleteSession, refreshKey }: ChatSidebarProps) {
   const [sessions, setSessions] = useState<Session[]>([]);
 
   useEffect(() => {
-    api.conversations({ platform: 'webchat', pageSize: '50' }).then(data => {
+    api.conversations({ platform: 'webchat', pageSize: '200' }).then(data => {
+      // Group by exact sessionId
       const grouped = new Map<string, Session>();
       for (const msg of (data.messages ?? [])) {
-        const channelId = extractChannelId(msg.sessionId);
-        if (!grouped.has(channelId) || msg.timestamp > grouped.get(channelId)!.timestamp) {
-          grouped.set(channelId, {
+        if (!grouped.has(msg.sessionId) || msg.timestamp > grouped.get(msg.sessionId)!.timestamp) {
+          grouped.set(msg.sessionId, {
             sessionId: msg.sessionId,
-            channelId,
+            channelId: extractChannelId(msg.sessionId),
             lastMessage: msg.content?.slice(0, 50) ?? '',
             timestamp: msg.timestamp,
           });
@@ -53,19 +53,19 @@ export function ChatSidebar({ activeChannelId, onSelectSession, onNewChat, onDel
       <div className="flex-1 overflow-auto space-y-1">
         {sessions.map(s => (
           <div
-            key={s.channelId}
+            key={s.sessionId}
             className={`group relative w-full text-left px-3 py-2 rounded-lg text-xs truncate cursor-pointer ${
-              s.channelId === activeChannelId
+              s.sessionId === activeSessionId
                 ? 'bg-blue-900/30 border border-blue-800 text-white'
                 : 'text-gray-400 hover:bg-gray-800 hover:text-white'
             }`}
-            onClick={() => onSelectSession(s.channelId)}
+            onClick={() => onSelectSession(s)}
           >
             <div className="truncate pr-5">{s.lastMessage || 'New conversation'}</div>
             <div className="text-gray-600 text-[10px] mt-0.5">{new Date(s.timestamp).toLocaleDateString()}</div>
             {onDeleteSession && (
               <button
-                onClick={(e) => { e.stopPropagation(); onDeleteSession(s.channelId); }}
+                onClick={(e) => { e.stopPropagation(); onDeleteSession(s.sessionId); }}
                 className="absolute top-1.5 right-1.5 hidden group-hover:block text-gray-600 hover:text-red-400 text-xs"
                 title="Delete session"
               >
