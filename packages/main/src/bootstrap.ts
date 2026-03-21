@@ -355,7 +355,10 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
   //     if imported before the connection is established)
   if (config.agent.backend === 'sdk') {
     const { SdkBackend } = await import('@ccbuddy/agent');
-    agentService.setBackend(new SdkBackend({ skipPermissions: config.agent.admin_skip_permissions }));
+    agentService.setBackend(new SdkBackend({
+      skipPermissions: config.agent.admin_skip_permissions,
+      permissionGates: config.agent.permission_gates,
+    }));
   }
 
   // 14. Create proactive sender closure
