@@ -2,13 +2,28 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 
 type EventHandler = (type: string, data: any) => void;
 
-export function useWebSocket(onEvent: EventHandler) {
+interface UseWebSocketOptions {
+  onEvent: EventHandler;
+  channelId?: string;
+}
+
+export function useWebSocket(onEventOrOptions: EventHandler | UseWebSocketOptions) {
+  const opts = typeof onEventOrOptions === 'function'
+    ? { onEvent: onEventOrOptions }
+    : onEventOrOptions;
+
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const delayRef = useRef(3000);
   const [connected, setConnected] = useState(false);
-  const onEventRef = useRef(onEvent);
-  onEventRef.current = onEvent;
+  const onEventRef = useRef(opts.onEvent);
+  onEventRef.current = opts.onEvent;
+
+  const send = useCallback((data: Record<string, unknown>) => {
+    if (wsRef.current?.readyState === 1) {
+      wsRef.current.send(JSON.stringify(data));
+    }
+  }, []);
 
   const connect = useCallback(() => {
     const token = localStorage.getItem('dashboard_token');
@@ -19,26 +34,25 @@ export function useWebSocket(onEvent: EventHandler) {
     wsRef.current = ws;
 
     ws.onopen = () => {
-      ws.send(JSON.stringify({ type: 'auth', token }));
+      ws.send(JSON.stringify({ type: 'auth', token, channelId: opts.channelId }));
     };
 
     ws.onmessage = (e) => {
       const msg = JSON.parse(e.data);
       if (msg.type === 'auth.ok') {
         setConnected(true);
-        delayRef.current = 3000; // Reset backoff on successful auth
+        delayRef.current = 3000;
         return;
       }
-      onEventRef.current(msg.type, msg.data);
+      onEventRef.current(msg.type, msg.data ?? msg);
     };
 
     ws.onclose = () => {
       setConnected(false);
-      // Exponential backoff: 3s, 6s, 12s, capped at 30s
       reconnectTimerRef.current = setTimeout(connect, delayRef.current);
       delayRef.current = Math.min(delayRef.current * 2, 30000);
     };
-  }, []);
+  }, [opts.channelId]);
 
   useEffect(() => {
     connect();
@@ -48,5 +62,5 @@ export function useWebSocket(onEvent: EventHandler) {
     };
   }, [connect]);
 
-  return { connected };
+  return { connected, send };
 }
