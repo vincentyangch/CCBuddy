@@ -17,6 +17,7 @@ ccbuddy:
   # --- Agent ---
   agent:
     backend: "sdk"
+    model: "sonnet"
     max_concurrent_sessions: 3
     session_timeout_minutes: 30
     queue_max_depth: 10
