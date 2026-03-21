@@ -192,6 +192,7 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
       ...(config.skills.auto_git_commit ? [] : ['--no-git-commit']),
       '--memory-db', resolve(config.memory.db_path),
       '--heartbeat-status-file', resolve(join(config.data_dir, 'heartbeat-status.json')),
+      '--data-dir', resolve(config.data_dir),
     ],
   };
 
@@ -226,13 +227,18 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
     findUser: (platform, platformId) => userManager.findByPlatformId(platform, platformId),
     buildSessionId: (userName, platform, channelId) =>
       userManager.buildSessionId(userName, platform, channelId),
-    executeAgentRequest: (request) => agentService.handleRequest({
-      ...request,
-      workingDirectory: request.workingDirectory,
-      mcpServers: [skillMcpServer],
-
-      systemPrompt: [identityPrompt, request.systemPrompt, skillNudge].filter(Boolean).join('\n\n'),
-    }),
+    executeAgentRequest: (request) => {
+      const mcpServer = {
+        ...skillMcpServer,
+        args: [...skillMcpServer.args, '--session-key', request.sessionId],
+      };
+      return agentService.handleRequest({
+        ...request,
+        workingDirectory: request.workingDirectory,
+        mcpServers: [mcpServer],
+        systemPrompt: [identityPrompt, request.systemPrompt, skillNudge].filter(Boolean).join('\n\n'),
+      });
+    },
     assembleContext: (userId, sessionId) => {
       const context = contextAssembler.assemble(userId, sessionId);
       return contextAssembler.formatAsPrompt(context);
