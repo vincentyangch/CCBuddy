@@ -6,9 +6,11 @@ import { SessionDetailPage } from './pages/SessionDetailPage';
 import { ConversationsPage } from './pages/ConversationsPage';
 import { LogsPage } from './pages/LogsPage';
 import { ConfigPage } from './pages/ConfigPage';
+import { ChatPage } from './pages/ChatPage';
 
 const navItems = [
   { to: '/', label: 'Status' },
+  { to: '/chat', label: 'Chat' },
   { to: '/sessions', label: 'Sessions' },
   { to: '/conversations', label: 'Conversations' },
   { to: '/logs', label: 'Logs' },
@@ -56,6 +58,7 @@ export default function App() {
             <Route path="/conversations" element={<ConversationsPage />} />
             <Route path="/logs" element={<LogsPage />} />
             <Route path="/config" element={<ConfigPage />} />
+            <Route path="/chat" element={<ChatPage />} />
           </Routes>
         </Layout>
       </BrowserRouter>
