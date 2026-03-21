@@ -1,7 +1,7 @@
 import { join, dirname } from 'node:path';
 import { writeFileSync, renameSync, readFileSync, unlinkSync, existsSync, mkdirSync } from 'node:fs';
 import { execSync } from 'node:child_process';
-import { loadConfig, createEventBus, UserManager, TranscriptionService, SpeechService, readModelFile, isValidModel } from '@ccbuddy/core';
+import { loadConfig, createEventBus, UserManager, TranscriptionService, SpeechService, isValidModel } from '@ccbuddy/core';
 import { AgentService, CliBackend, SessionStore } from '@ccbuddy/agent';
 import {
   MemoryDatabase,
@@ -13,6 +13,7 @@ import {
   ConsolidationService,
   BackupService,
   AgentEventStore,
+  SessionDatabase,
 } from '@ccbuddy/memory';
 import { SkillRegistry, MCP_SERVER_PATH } from '@ccbuddy/skills';
 import { Gateway } from '@ccbuddy/gateway';
@@ -99,15 +100,18 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
   // 4. Create agent backend with CLI (SDK loaded lazily after Discord connects)
   const backend = new CliBackend();
 
-  // 5. Create AgentService
+  // 5. Create memory database first (SessionDatabase depends on it)
   const projectRoot = dirname(resolvedConfigDir);
   const resolve = (p: string) => join(projectRoot, p);
+  const database = new MemoryDatabase(config.memory.db_path);
+  database.init();
+
+  const sessionDb = new SessionDatabase(database.raw());
   const sessionStore = new SessionStore(config.agent.session_timeout_ms, {
-    onExpiry: (sessionKey) => {
-      const modelFile = join(resolve(config.data_dir), 'sessions', `${sessionKey}.model`);
-      try { unlinkSync(modelFile); } catch { /* file may not exist */ }
-    },
+    persistence: sessionDb,
+    maxPauseMs: config.agent.max_pause_ms,
   });
+  sessionStore.hydrate();
 
   const agentService = new AgentService({
     backend,
@@ -126,8 +130,6 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
   });
 
   // 6. Create memory stores
-  const database = new MemoryDatabase(config.memory.db_path);
-  database.init();
 
   const messageStore = new MessageStore(database);
   const agentEventStore = new AgentEventStore(database);
@@ -276,10 +278,6 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
     voiceConfig: { enabled: config.media.voice_enabled, ttsMaxChars: config.media.tts_max_chars },
     sessionStore,
     get defaultModel() { return config.agent.model; },
-    readModelFile: (sessionKey: string) => {
-      const filePath = join(resolve(config.data_dir), 'sessions', `${sessionKey}.model`);
-      return readModelFile(filePath);
-    },
     userInputTimeoutMs: config.agent.user_input_timeout_ms,
     storeAgentEvent: (params) => {
       agentEventStore.add({ ...params, timestamp: Date.now() });
