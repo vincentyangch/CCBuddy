@@ -17,6 +17,7 @@ export interface AgentConfig {
   pending_input_timeout_minutes: number;
   graceful_shutdown_timeout_seconds: number;
   session_timeout_ms: number;
+  user_input_timeout_ms: number;
 }
 
 export interface MemoryConfig {
@@ -181,6 +182,7 @@ export const DEFAULT_CONFIG: CCBuddyConfig = {
     pending_input_timeout_minutes: 10,
     graceful_shutdown_timeout_seconds: 30,
     session_timeout_ms: 3_600_000, // 1 hour
+    user_input_timeout_ms: 300_000, // 5 minutes
   },
   memory: {
     db_path: './data/memory.sqlite',
