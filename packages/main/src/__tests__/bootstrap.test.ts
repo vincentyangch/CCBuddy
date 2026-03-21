@@ -18,7 +18,7 @@ vi.mock('@ccbuddy/core', () => ({
 const mockSdkBackend = vi.fn();
 const mockCliBackend = vi.fn();
 const mockAgentService = vi.fn();
-const mockSessionStore = vi.fn().mockReturnValue({ tick: vi.fn() });
+const mockSessionStore = vi.fn().mockReturnValue({ tick: vi.fn(), hydrate: vi.fn() });
 
 vi.mock('@ccbuddy/agent', () => ({
   SdkBackend: function (this: unknown, ...args: unknown[]) {
@@ -44,6 +44,7 @@ const mockContextAssembler = vi.fn();
 const mockRetrievalTools = vi.fn();
 const mockConsolidationService = vi.fn();
 const mockBackupService = vi.fn();
+const mockSessionDatabase = vi.fn();
 
 vi.mock('@ccbuddy/memory', () => ({
   MemoryDatabase: function (this: unknown, ...args: unknown[]) {
@@ -72,6 +73,9 @@ vi.mock('@ccbuddy/memory', () => ({
   },
   BackupService: function (this: unknown, ...args: unknown[]) {
     return mockBackupService(...args);
+  },
+  SessionDatabase: function (this: unknown, ...args: unknown[]) {
+    return mockSessionDatabase(...args);
   },
 }));
 
@@ -228,6 +232,7 @@ describe('bootstrap', () => {
   let fakeDatabaseInstance: {
     init: ReturnType<typeof vi.fn>;
     close: ReturnType<typeof vi.fn>;
+    raw: ReturnType<typeof vi.fn>;
   };
   let fakeMessageStoreInstance: { add: ReturnType<typeof vi.fn>; getById: ReturnType<typeof vi.fn> };
   let fakeSummaryStoreInstance: object;
@@ -272,6 +277,7 @@ describe('bootstrap', () => {
     fakeDatabaseInstance = {
       init: vi.fn(),
       close: vi.fn(),
+      raw: vi.fn().mockReturnValue({}),
     };
     fakeMessageStoreInstance = { add: vi.fn(), getById: vi.fn() };
     fakeSummaryStoreInstance = {};
