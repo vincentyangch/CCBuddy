@@ -819,3 +819,105 @@ describe('Gateway — interactive follow-ups', () => {
     expect(deps.executeAgentRequest).not.toHaveBeenCalled();
   });
 });
+
+describe('Gateway — model injection', () => {
+  function createDmMessage(overrides: Partial<IncomingMessage> = {}): IncomingMessage {
+    return {
+      platform: 'discord',
+      platformUserId: '123',
+      channelId: 'ch1',
+      channelType: 'dm',
+      text: 'Hello',
+      attachments: [],
+      isMention: false,
+      raw: {},
+      ...overrides,
+    };
+  }
+
+  it('uses model from readModelFile when provided', async () => {
+    const sessionStore = new SessionStore(3_600_000);
+    const deps = createMockDeps({
+      sessionStore,
+      readModelFile: vi.fn().mockReturnValue('opus[1m]'),
+    });
+    const gateway = new Gateway(deps);
+    const adapter = createMockAdapter();
+    gateway.registerAdapter(adapter);
+
+    await adapter.simulateMessage(createDmMessage());
+
+    const request = (deps.executeAgentRequest as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentRequest;
+    expect(request.model).toBe('opus[1m]');
+  });
+
+  it('falls back to defaultModel when readModelFile returns null', async () => {
+    const deps = createMockDeps({
+      readModelFile: vi.fn().mockReturnValue(null),
+      defaultModel: 'sonnet',
+    });
+    const gateway = new Gateway(deps);
+    const adapter = createMockAdapter();
+    gateway.registerAdapter(adapter);
+
+    await adapter.simulateMessage(createDmMessage());
+
+    const request = (deps.executeAgentRequest as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentRequest;
+    expect(request.model).toBe('sonnet');
+  });
+
+  it('model is undefined when neither readModelFile nor defaultModel is set', async () => {
+    const deps = createMockDeps();
+    const gateway = new Gateway(deps);
+    const adapter = createMockAdapter();
+    gateway.registerAdapter(adapter);
+
+    await adapter.simulateMessage(createDmMessage());
+
+    const request = (deps.executeAgentRequest as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentRequest;
+    expect(request.model).toBeUndefined();
+  });
+
+  it('sets sessionStore model when readModelFile returns a value', async () => {
+    const sessionStore = new SessionStore(3_600_000);
+    const setModelSpy = vi.spyOn(sessionStore, 'setModel');
+    const deps = createMockDeps({
+      sessionStore,
+      readModelFile: vi.fn().mockReturnValue('opus[1m]'),
+    });
+    const gateway = new Gateway(deps);
+    const adapter = createMockAdapter();
+    gateway.registerAdapter(adapter);
+
+    await adapter.simulateMessage(createDmMessage());
+
+    expect(setModelSpy).toHaveBeenCalledWith(expect.any(String), 'opus[1m]');
+  });
+
+  it('injects model awareness system prompt when effectiveModel is set', async () => {
+    const deps = createMockDeps({
+      defaultModel: 'sonnet',
+    });
+    const gateway = new Gateway(deps);
+    const adapter = createMockAdapter();
+    gateway.registerAdapter(adapter);
+
+    await adapter.simulateMessage(createDmMessage());
+
+    const request = (deps.executeAgentRequest as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentRequest;
+    expect(request.systemPrompt).toContain('You are currently running on model: sonnet');
+    expect(request.systemPrompt).toContain('switch_model');
+  });
+
+  it('does not inject system prompt when no model is set', async () => {
+    const deps = createMockDeps();
+    const gateway = new Gateway(deps);
+    const adapter = createMockAdapter();
+    gateway.registerAdapter(adapter);
+
+    await adapter.simulateMessage(createDmMessage());
+
+    const request = (deps.executeAgentRequest as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentRequest;
+    expect(request.systemPrompt).toBeUndefined();
+  });
+});

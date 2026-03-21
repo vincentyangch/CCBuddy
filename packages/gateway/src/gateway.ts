@@ -47,6 +47,8 @@ export interface GatewayDeps {
   speechService?: Synthesizer;
   voiceConfig?: { enabled: boolean; ttsMaxChars: number };
   sessionStore?: SessionStore;
+  defaultModel?: string;
+  readModelFile?: (sessionKey: string) => string | null;
   userInputTimeoutMs?: number;
   storeAgentEvent?: (params: { userId: string; sessionId: string; platform: string; eventType: string; content: string; toolInput?: string; toolOutput?: string }) => void;
 }
@@ -168,6 +170,19 @@ export class Gateway {
       }
     }
 
+    // 3d. Resolve model for this session
+    let sessionModel: string | undefined;
+    if (this.deps.readModelFile) {
+      const fileModel = this.deps.readModelFile(sessionKey);
+      if (fileModel) {
+        sessionModel = fileModel;
+        if (this.deps.sessionStore) {
+          this.deps.sessionStore.setModel(sessionKey, fileModel);
+        }
+      }
+    }
+    const effectiveModel = sessionModel ?? this.deps.defaultModel;
+
     // 4. Publish incoming event
     await this.deps.eventBus.publish('message.incoming', {
       userId: user.name,
@@ -210,6 +225,7 @@ export class Gateway {
       sessionId,
       channelId: msg.channelId,
       platform: msg.platform,
+      model: effectiveModel,
       memoryContext,
       attachments: msg.attachments.length > 0 ? msg.attachments : undefined,
       // UserConfig only allows 'admin' | 'chat' roles; 'system' is internal-only
@@ -221,7 +237,13 @@ export class Gateway {
       },
     };
 
-    // 7b. Transcribe voice attachments
+    // 7b. Build model awareness system prompt
+    if (effectiveModel) {
+      const modelPrompt = `You are currently running on model: ${effectiveModel}.\n\nYou have access to \`switch_model\` and \`get_current_model\` tools.\n\nWhen to switch to a more powerful model (e.g., opus[1m]):\n- Multi-file refactors or architectural changes\n- Complex debugging requiring deep reasoning\n- Tasks involving unfamiliar or intricate code patterns\n- When you feel uncertain about your approach\n\nWhen to switch back to the default model (e.g., sonnet):\n- After completing the complex portion of work\n- For simple questions, status checks, casual conversation\n\nYou may also be asked by the user to switch models — just call switch_model.`;
+      request.systemPrompt = modelPrompt;
+    }
+
+    // 7c. Transcribe voice attachments
     let voiceInput = false;
     if (this.deps.transcriptionService && msg.attachments.some(a => a.type === 'voice')) {
       for (const att of msg.attachments) {
