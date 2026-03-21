@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Gateway, type GatewayDeps } from '../gateway.js';
 import type { IncomingMessage, PlatformAdapter, AgentEvent, AgentRequest } from '@ccbuddy/core';
+import { SessionStore } from '@ccbuddy/agent';
 
 // ── Test Helpers ──────────────────────────────────────────────────────────────
 
@@ -580,5 +581,199 @@ describe('Gateway', () => {
       expect(voiceAdapter.sendVoice).not.toHaveBeenCalled();
       expect(voiceAdapter.sendText).toHaveBeenCalledWith('ch1', 'Short reply');
     });
+  });
+});
+
+describe('Gateway — session continuity', () => {
+  function createDmMessage(overrides: Partial<IncomingMessage> = {}): IncomingMessage {
+    return {
+      platform: 'discord',
+      platformUserId: '123',
+      channelId: 'ch1',
+      channelType: 'dm',
+      text: 'Hello',
+      attachments: [],
+      isMention: false,
+      raw: {},
+      ...overrides,
+    };
+  }
+
+  function createGroupMessage(overrides: Partial<IncomingMessage> = {}): IncomingMessage {
+    return {
+      ...createDmMessage(overrides),
+      channelType: 'group',
+      isMention: true,
+      ...overrides,
+    };
+  }
+
+  it('passes sdkSessionId on first message (new session)', async () => {
+    const sessionStore = new SessionStore(3_600_000);
+    const deps = createMockDeps({ sessionStore });
+    const gateway = new Gateway(deps);
+    const adapter = createMockAdapter();
+    gateway.registerAdapter(adapter);
+
+    await adapter.simulateMessage(createDmMessage());
+
+    const executeCall = (deps.executeAgentRequest as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentRequest;
+    expect(executeCall.sdkSessionId).toBeDefined();
+    expect(executeCall.resumeSessionId).toBeUndefined();
+    expect(executeCall.memoryContext).toBe('memory context');
+  });
+
+  it('passes resumeSessionId on second message (existing session)', async () => {
+    const sessionStore = new SessionStore(3_600_000);
+    const deps = createMockDeps({ sessionStore });
+    const gateway = new Gateway(deps);
+    const adapter = createMockAdapter();
+    gateway.registerAdapter(adapter);
+
+    await adapter.simulateMessage(createDmMessage());
+    await adapter.simulateMessage(createDmMessage({ text: 'Follow up' }));
+
+    const calls = (deps.executeAgentRequest as ReturnType<typeof vi.fn>).mock.calls;
+    const firstCall = calls[0][0] as AgentRequest;
+    const secondCall = calls[1][0] as AgentRequest;
+
+    expect(firstCall.sdkSessionId).toBeDefined();
+    expect(firstCall.resumeSessionId).toBeUndefined();
+    expect(firstCall.memoryContext).toBe('memory context');
+
+    expect(secondCall.resumeSessionId).toBe(firstCall.sdkSessionId);
+    expect(secondCall.sdkSessionId).toBeUndefined();
+    expect(secondCall.memoryContext).toBeUndefined();
+  });
+
+  it('uses shared session key for group channels', async () => {
+    const sessionStore = new SessionStore(3_600_000);
+    let callCount = 0;
+    const deps = createMockDeps({
+      sessionStore,
+      findUser: vi.fn().mockImplementation(() => {
+        callCount++;
+        return callCount === 1
+          ? { name: 'Dad', role: 'admin' }
+          : { name: 'Son', role: 'chat' };
+      }),
+    });
+    const gateway = new Gateway(deps);
+    const adapter = createMockAdapter();
+    gateway.registerAdapter(adapter);
+
+    await adapter.simulateMessage(createGroupMessage({ platformUserId: '123' }));
+    await adapter.simulateMessage(createGroupMessage({ platformUserId: '456' }));
+
+    const calls = (deps.executeAgentRequest as ReturnType<typeof vi.fn>).mock.calls;
+    const firstCall = calls[0][0] as AgentRequest;
+    const secondCall = calls[1][0] as AgentRequest;
+
+    expect(secondCall.resumeSessionId).toBe(firstCall.sdkSessionId);
+  });
+
+  it('uses per-user session key for DMs', async () => {
+    const sessionStore = new SessionStore(3_600_000);
+    let callCount = 0;
+    const deps = createMockDeps({
+      sessionStore,
+      findUser: vi.fn().mockImplementation(() => {
+        callCount++;
+        return callCount === 1
+          ? { name: 'Dad', role: 'admin' }
+          : { name: 'Son', role: 'chat' };
+      }),
+    });
+    const gateway = new Gateway(deps);
+    const adapter = createMockAdapter();
+    gateway.registerAdapter(adapter);
+
+    await adapter.simulateMessage(createDmMessage({ platformUserId: '123' }));
+    await adapter.simulateMessage(createDmMessage({ platformUserId: '456' }));
+
+    const calls = (deps.executeAgentRequest as ReturnType<typeof vi.fn>).mock.calls;
+    const firstCall = calls[0][0] as AgentRequest;
+    const secondCall = calls[1][0] as AgentRequest;
+
+    expect(secondCall.sdkSessionId).toBeDefined();
+    expect(secondCall.sdkSessionId).not.toBe(firstCall.sdkSessionId);
+    expect(secondCall.resumeSessionId).toBeUndefined();
+  });
+
+  it('retries as new session when resume fails', async () => {
+    const sessionStore = new SessionStore(3_600_000);
+    let callCount = 0;
+    const deps = createMockDeps({
+      sessionStore,
+      executeAgentRequest: vi.fn().mockImplementation(async function* (req: AgentRequest) {
+        callCount++;
+        if (callCount === 2 && req.resumeSessionId) {
+          throw new Error('Session not found');
+        }
+        yield {
+          type: 'complete' as const,
+          response: 'Hello!',
+          sessionId: req.sessionId,
+          userId: req.userId,
+          channelId: req.channelId,
+          platform: req.platform,
+        } satisfies AgentEvent;
+      }),
+    });
+    const gateway = new Gateway(deps);
+    const adapter = createMockAdapter();
+    gateway.registerAdapter(adapter);
+
+    await adapter.simulateMessage(createDmMessage());
+    await adapter.simulateMessage(createDmMessage({ text: 'Follow up' }));
+
+    const calls = (deps.executeAgentRequest as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls).toHaveLength(3);
+    const retryCall = calls[2][0] as AgentRequest;
+    expect(retryCall.resumeSessionId).toBeUndefined();
+    expect(retryCall.sdkSessionId).toBeDefined();
+    expect(retryCall.memoryContext).toBe('memory context');
+  });
+
+  it('creates new session after timeout', async () => {
+    vi.useFakeTimers();
+    const sessionStore = new SessionStore(3_600_000);
+    const deps = createMockDeps({ sessionStore });
+    const gateway = new Gateway(deps);
+    const adapter = createMockAdapter();
+    gateway.registerAdapter(adapter);
+
+    await adapter.simulateMessage(createDmMessage());
+
+    vi.advanceTimersByTime(3_600_001);
+    sessionStore.tick();
+
+    await adapter.simulateMessage(createDmMessage({ text: 'After timeout' }));
+
+    const calls = (deps.executeAgentRequest as ReturnType<typeof vi.fn>).mock.calls;
+    const firstCall = calls[0][0] as AgentRequest;
+    const secondCall = calls[1][0] as AgentRequest;
+
+    expect(firstCall.sdkSessionId).toBeDefined();
+    expect(secondCall.sdkSessionId).toBeDefined();
+    expect(secondCall.sdkSessionId).not.toBe(firstCall.sdkSessionId);
+    expect(secondCall.resumeSessionId).toBeUndefined();
+    expect(secondCall.memoryContext).toBe('memory context');
+
+    vi.useRealTimers();
+  });
+
+  it('works without sessionStore (backwards compatible)', async () => {
+    const deps = createMockDeps();
+    const gateway = new Gateway(deps);
+    const adapter = createMockAdapter();
+    gateway.registerAdapter(adapter);
+
+    await adapter.simulateMessage(createDmMessage());
+
+    const executeCall = (deps.executeAgentRequest as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentRequest;
+    expect(executeCall.sdkSessionId).toBeUndefined();
+    expect(executeCall.resumeSessionId).toBeUndefined();
+    expect(executeCall.memoryContext).toBe('memory context');
   });
 });

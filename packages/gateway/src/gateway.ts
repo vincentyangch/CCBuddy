@@ -10,6 +10,7 @@ import type {
   PlatformConfig,
   GatewayConfig,
 } from '@ccbuddy/core';
+import type { SessionStore } from '@ccbuddy/agent';
 
 /** Minimal transcription interface — satisfied by TranscriptionService from @ccbuddy/core */
 export interface Transcriber {
@@ -45,6 +46,7 @@ export interface GatewayDeps {
   transcriptionService?: Transcriber;
   speechService?: Synthesizer;
   voiceConfig?: { enabled: boolean; ttsMaxChars: number };
+  sessionStore?: SessionStore;
 }
 
 const PLATFORM_CHAR_LIMITS: Record<string, number> = {
@@ -120,6 +122,26 @@ export class Gateway {
     // 3. Build routing info
     const sessionId = this.deps.buildSessionId(user.name, msg.platform, msg.channelId);
 
+    // 3b. Compute session key for SDK session lookup (shared for groups, per-user for DMs)
+    const isGroupChannel = msg.channelType === 'group';
+    const sessionKey = isGroupChannel
+      ? `${msg.platform}-${msg.channelId}`
+      : `${user.name}-${msg.platform}-${msg.channelId}`;
+
+    // 3c. Look up or create SDK session
+    let sdkSessionId: string | undefined;
+    let resumeSessionId: string | undefined;
+    let isNewSession = true;
+    if (this.deps.sessionStore) {
+      const session = this.deps.sessionStore.getOrCreate(sessionKey, isGroupChannel);
+      isNewSession = session.isNew;
+      if (session.isNew) {
+        sdkSessionId = session.sdkSessionId;
+      } else {
+        resumeSessionId = session.sdkSessionId;
+      }
+    }
+
     // 4. Publish incoming event
     await this.deps.eventBus.publish('message.incoming', {
       userId: user.name,
@@ -152,8 +174,8 @@ export class Gateway {
       attachments: attachmentMeta,
     });
 
-    // 6. Assemble memory context
-    const memoryContext = this.deps.assembleContext(user.name, sessionId);
+    // 6. Assemble memory context (only for new sessions — resumed sessions already have conversation history)
+    const memoryContext = isNewSession ? this.deps.assembleContext(user.name, sessionId) : undefined;
 
     // 7. Build agent request
     const request: AgentRequest = {
@@ -166,6 +188,8 @@ export class Gateway {
       attachments: msg.attachments.length > 0 ? msg.attachments : undefined,
       // UserConfig only allows 'admin' | 'chat' roles; 'system' is internal-only
       permissionLevel: user.role === 'admin' ? 'admin' : 'chat',
+      sdkSessionId,
+      resumeSessionId,
     };
 
     // 7b. Transcribe voice attachments
@@ -194,10 +218,10 @@ export class Gateway {
     }
 
     // 8. Execute and route response
-    await this.executeAndRoute(request, msg, voiceInput);
+    await this.executeAndRoute(request, msg, voiceInput, sessionKey);
   }
 
-  private async executeAndRoute(request: AgentRequest, msg: IncomingMessage, voiceInput = false): Promise<void> {
+  private async executeAndRoute(request: AgentRequest, msg: IncomingMessage, voiceInput = false, sessionKey?: string): Promise<void> {
     const adapter = this.adapters.get(msg.platform);
     if (!adapter) { console.warn('[Gateway] No adapter for platform:', msg.platform); return; }
 
@@ -286,8 +310,31 @@ export class Gateway {
         }
       }
       console.log(`[Gateway] Agent done: ${eventCount} events for channel=${msg.channelId}`);
+      // Touch SDK session on success
+      if (sessionKey && this.deps.sessionStore) {
+        this.deps.sessionStore.touch(sessionKey);
+      }
     } catch (err) {
       console.error(`[Gateway] executeAndRoute error: channel=${msg.channelId}`, err);
+      // If this was a session resume that failed, retry as a new session
+      if (request.resumeSessionId && sessionKey && this.deps.sessionStore) {
+        console.warn(`[Gateway] Resume failed for session ${request.resumeSessionId}, retrying as new session`);
+        this.deps.sessionStore.remove(sessionKey);
+        const newSession = this.deps.sessionStore.getOrCreate(sessionKey, msg.channelType === 'group');
+        const retryRequest: AgentRequest = {
+          ...request,
+          resumeSessionId: undefined,
+          sdkSessionId: newSession.sdkSessionId,
+          memoryContext: this.deps.assembleContext(request.userId, request.sessionId),
+        };
+        try {
+          await this.executeAndRoute(retryRequest, msg, voiceInput, sessionKey);
+          return;
+        } catch (retryErr) {
+          console.error(`[Gateway] Retry also failed:`, retryErr);
+          // Fall through to error message below
+        }
+      }
       await adapter.sendText(
         msg.channelId,
         'Sorry, something went wrong processing your message.',
