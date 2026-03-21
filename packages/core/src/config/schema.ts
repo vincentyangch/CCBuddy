@@ -161,6 +161,25 @@ export interface DashboardConfig {
   auth_token_env: string;
 }
 
+export interface NotificationConfig {
+  enabled: boolean;
+  default_target: {
+    platform: string;
+    channel: string;
+  };
+  quiet_hours: {
+    start: string;
+    end: string;
+    timezone: string;
+  };
+  types: {
+    health: boolean;
+    memory: boolean;
+    errors: boolean;
+    sessions: boolean;
+  };
+}
+
 export interface CCBuddyConfig {
   data_dir: string;
   log_level: 'debug' | 'info' | 'warn' | 'error';
@@ -176,6 +195,7 @@ export interface CCBuddyConfig {
   skills: SkillsConfig;
   apple: AppleConfig;
   dashboard: DashboardConfig;
+  notifications: NotificationConfig;
   users: Record<string, UserConfig>;
 }
 
@@ -271,6 +291,24 @@ export const DEFAULT_CONFIG: CCBuddyConfig = {
     port: 18801,
     host: '127.0.0.1',
     auth_token_env: 'CCBUDDY_DASHBOARD_TOKEN',
+  },
+  notifications: {
+    enabled: true,
+    default_target: {
+      platform: 'discord',
+      channel: 'DM',
+    },
+    quiet_hours: {
+      start: '23:00',
+      end: '07:00',
+      timezone: 'America/Chicago',
+    },
+    types: {
+      health: true,
+      memory: true,
+      errors: true,
+      sessions: true,
+    },
   },
   users: {},
 };
