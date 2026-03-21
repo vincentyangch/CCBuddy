@@ -12,6 +12,7 @@ export interface AgentRequest {
   sessionId: string;
   channelId: string;
   platform: string;
+  model?: string;
   workingDirectory?: string;
   allowedTools?: string[];
   systemPrompt?: string;
