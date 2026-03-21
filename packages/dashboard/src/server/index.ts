@@ -1,4 +1,4 @@
-import { readFileSync, copyFileSync, writeFileSync, existsSync, openSync, readSync, closeSync, statSync } from 'node:fs';
+import { readFileSync, copyFileSync, writeFileSync, existsSync, openSync, readSync, closeSync, statSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Fastify from 'fastify';
@@ -8,6 +8,7 @@ import websocket from '@fastify/websocket';
 import yaml from 'js-yaml';
 import { setupWebSocket } from './websocket.js';
 import type { EventBus, CCBuddyConfig } from '@ccbuddy/core';
+import { isValidModel } from '@ccbuddy/core';
 import type { SessionInfo } from '@ccbuddy/agent';
 import type { MessageQueryParams, MessageQueryResult, StoredAgentEvent } from '@ccbuddy/memory';
 
@@ -223,6 +224,48 @@ export class DashboardServer {
       } catch (err) {
         return reply.status(500).send({ error: (err as Error).message });
       }
+    });
+
+    // GET /api/config/model — current default model
+    this.app.get('/api/config/model', async () => {
+      const runtimePath = join(this.deps.config.data_dir, 'runtime-config.json');
+      let runtimeModel: string | null = null;
+      try {
+        const data = JSON.parse(readFileSync(runtimePath, 'utf8'));
+        runtimeModel = data.model ?? null;
+      } catch { /* no runtime override */ }
+
+      return {
+        model: runtimeModel ?? this.deps.config.agent.model,
+        source: runtimeModel ? 'runtime_override' : 'config',
+      };
+    });
+
+    // PUT /api/config/model — set runtime model override
+    this.app.put('/api/config/model', async (request, reply) => {
+      const body = request.body as { model: string } | null;
+      if (!body?.model) {
+        return reply.status(400).send({ error: 'Missing model in request body' });
+      }
+
+      if (!isValidModel(body.model)) {
+        return reply.status(400).send({ error: `Invalid model: "${body.model}"` });
+      }
+
+      const runtimePath = join(this.deps.config.data_dir, 'runtime-config.json');
+      let runtimeConfig: Record<string, unknown> = {};
+      try {
+        runtimeConfig = JSON.parse(readFileSync(runtimePath, 'utf8'));
+      } catch { /* no existing file */ }
+
+      runtimeConfig.model = body.model;
+      mkdirSync(dirname(runtimePath), { recursive: true });
+      writeFileSync(runtimePath, JSON.stringify(runtimeConfig, null, 2), 'utf8');
+
+      // Live-update config so gateway picks up the change immediately
+      this.deps.config.agent.model = body.model;
+
+      return { ok: true, model: body.model };
     });
   }
 }
