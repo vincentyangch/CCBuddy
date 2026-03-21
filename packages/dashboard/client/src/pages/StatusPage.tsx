@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { api } from '../lib/api';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { ModelSelector } from '../components/ModelSelector';
+import { PermissionGatesToggle } from '../components/PermissionGatesToggle';
 
 interface StatusData {
   heartbeat: {
@@ -79,6 +80,9 @@ export function StatusPage() {
       </div>
       <div className="mb-6">
         <ModelSelector />
+        <div className="mt-4">
+          <PermissionGatesToggle />
+        </div>
       </div>
       {data.sessions.length > 0 && (
         <div className="bg-gray-900 rounded-xl p-4 border border-gray-800">
