@@ -64,4 +64,22 @@ describe('SessionStore', () => {
     const result = store.getOrCreate('dad-discord-ch1', false);
     expect(result.isNew).toBe(false);
   });
+
+  it('getAll returns all active sessions', () => {
+    const store = new SessionStore(3_600_000);
+    store.getOrCreate('dad-discord-ch1', false);
+    store.getOrCreate('discord-ch2', true);
+
+    const all = store.getAll();
+    expect(all).toHaveLength(2);
+    expect(all[0].sessionKey).toBe('dad-discord-ch1');
+    expect(all[0].isGroupChannel).toBe(false);
+    expect(all[1].sessionKey).toBe('discord-ch2');
+    expect(all[1].isGroupChannel).toBe(true);
+  });
+
+  it('getAll returns empty array when no sessions', () => {
+    const store = new SessionStore(3_600_000);
+    expect(store.getAll()).toEqual([]);
+  });
 });

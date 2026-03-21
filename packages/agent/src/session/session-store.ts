@@ -6,6 +6,13 @@ interface SessionEntry {
   isGroupChannel: boolean;
 }
 
+export interface SessionInfo {
+  sessionKey: string;
+  sdkSessionId: string;
+  lastActivity: number;
+  isGroupChannel: boolean;
+}
+
 export class SessionStore {
   private readonly entries = new Map<string, SessionEntry>();
   private readonly timeoutMs: number;
@@ -48,5 +55,14 @@ export class SessionStore {
         this.entries.delete(key);
       }
     }
+  }
+
+  getAll(): SessionInfo[] {
+    return Array.from(this.entries.entries()).map(([key, entry]) => ({
+      sessionKey: key,
+      sdkSessionId: entry.sdkSessionId,
+      lastActivity: entry.lastActivity,
+      isGroupChannel: entry.isGroupChannel,
+    }));
   }
 }
