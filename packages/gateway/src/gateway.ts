@@ -301,6 +301,27 @@ export class Gateway {
             }
             break;
           }
+          case 'thinking': {
+            if (canStream) {
+              // Show thinking content with a visual prefix
+              streamBuffer += `*💭 Thinking...*\n${event.content}\n\n`;
+              if (!streamInterval) {
+                streamInterval = setInterval(flushStream, 1000);
+                await flushStream();
+              }
+            }
+            break;
+          }
+          case 'tool_use': {
+            if (canStream) {
+              streamBuffer += `*🔧 Using ${event.tool}...*\n`;
+              if (!streamInterval) {
+                streamInterval = setInterval(flushStream, 1000);
+                await flushStream();
+              }
+            }
+            break;
+          }
           case 'complete': {
             this.deps.storeMessage({
               userId: request.userId,
@@ -349,13 +370,13 @@ export class Gateway {
               if (streamInterval) clearInterval(streamInterval);
 
               if (streamMessageId && adapter.editMessage) {
-                // Was streaming — do final edit with authoritative response
-                const chunks = chunkMessage(event.response, charLimit);
-                // Edit the existing message with the first chunk
-                await adapter.editMessage(msg.channelId, streamMessageId, chunks[0]);
-                // Send any overflow as new messages
-                for (let ci = 1; ci < chunks.length; ci++) {
-                  await adapter.sendText(msg.channelId, chunks[ci]);
+                // Was streaming — do a final flush of the buffer (keeps thinking/tool_use visible)
+                await flushStream();
+                // If buffer overflowed the char limit, send remaining as new messages
+                if (streamBuffer.length > charLimit - 100) {
+                  const overflow = streamBuffer.slice(charLimit - 100);
+                  const chunks = chunkMessage(overflow, charLimit);
+                  for (const chunk of chunks) await adapter.sendText(msg.channelId, chunk);
                 }
               } else {
                 // Not streaming — send full response as before
