@@ -339,22 +339,28 @@ export class Gateway {
           case 'thinking': {
             if (canStream) {
               toolSuffix = ''; // Clear tool indicator
-              streamBuffer += `*💭 Thinking...*\n${event.content}\n\n`;
+              // Webchat handles thinking via agent.progress events — don't mix into stream buffer
+              if (msg.platform !== 'webchat') {
+                streamBuffer += `*💭 Thinking...*\n${event.content}\n\n`;
+              }
               if (!streamInterval) {
                 streamInterval = setInterval(flushStream, 1000);
-                await flushStream();
+                // Only flush if we have content (webchat may skip thinking)
+                if (streamBuffer) await flushStream();
               }
             }
             break;
           }
           case 'tool_use': {
             if (canStream) {
-              // Transient indicator — shows current tool, gets replaced by next tool or cleared by text
-              toolSuffix = `\n*🔧 Using ${event.tool}...*`;
+              // Webchat handles tool_use via agent.progress events — don't mix into stream buffer
+              if (msg.platform !== 'webchat') {
+                toolSuffix = `\n*🔧 Using ${event.tool}...*`;
+              }
               if (!streamInterval) {
                 streamInterval = setInterval(flushStream, 1000);
               }
-              await flushStream();
+              if (msg.platform !== 'webchat') await flushStream();
             }
             break;
           }
