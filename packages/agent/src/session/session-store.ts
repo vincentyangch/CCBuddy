@@ -4,6 +4,7 @@ interface SessionEntry {
   sdkSessionId: string;
   lastActivity: number;
   isGroupChannel: boolean;
+  model: string | null;
 }
 
 export interface SessionInfo {
@@ -11,6 +12,7 @@ export interface SessionInfo {
   sdkSessionId: string;
   lastActivity: number;
   isGroupChannel: boolean;
+  model: string | null;
 }
 
 export class SessionStore {
@@ -32,6 +34,7 @@ export class SessionStore {
       sdkSessionId: randomUUID(),
       lastActivity: Date.now(),
       isGroupChannel,
+      model: null,
     };
     this.entries.set(sessionKey, entry);
     return { sdkSessionId: entry.sdkSessionId, isNew: true };
@@ -63,6 +66,18 @@ export class SessionStore {
       sdkSessionId: entry.sdkSessionId,
       lastActivity: entry.lastActivity,
       isGroupChannel: entry.isGroupChannel,
+      model: entry.model,
     }));
+  }
+
+  setModel(sessionKey: string, model: string): void {
+    const entry = this.entries.get(sessionKey);
+    if (entry) {
+      entry.model = model;
+    }
+  }
+
+  getModel(sessionKey: string): string | null {
+    return this.entries.get(sessionKey)?.model ?? null;
   }
 }

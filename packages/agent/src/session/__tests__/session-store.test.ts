@@ -83,3 +83,38 @@ describe('SessionStore', () => {
     expect(store.getAll()).toEqual([]);
   });
 });
+
+describe('SessionStore model field', () => {
+  it('returns null model for new sessions', () => {
+    const store = new SessionStore(60_000);
+    store.getOrCreate('key1', false);
+    const info = store.getAll();
+    expect(info[0].model).toBeNull();
+  });
+
+  it('setModel updates model for existing session', () => {
+    const store = new SessionStore(60_000);
+    store.getOrCreate('key1', false);
+    store.setModel('key1', 'opus[1m]');
+    const info = store.getAll();
+    expect(info[0].model).toBe('opus[1m]');
+  });
+
+  it('getModel returns null for unknown session', () => {
+    const store = new SessionStore(60_000);
+    expect(store.getModel('nonexistent')).toBeNull();
+  });
+
+  it('tick() clears model when session expires', () => {
+    vi.useFakeTimers();
+    const store = new SessionStore(60_000);
+    store.getOrCreate('key1', false);
+    store.setModel('key1', 'opus');
+
+    vi.advanceTimersByTime(61_000);
+    store.tick();
+    expect(store.getModel('key1')).toBeNull();
+    expect(store.getAll()).toHaveLength(0);
+    vi.useRealTimers();
+  });
+});
