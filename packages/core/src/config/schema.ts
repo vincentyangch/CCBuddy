@@ -32,6 +32,7 @@ export interface AgentConfig {
   graceful_shutdown_timeout_seconds: number;
   session_timeout_ms: number;
   user_input_timeout_ms: number;
+  max_pause_ms: number;
   permission_gates: PermissionGateConfig;
 }
 
@@ -200,6 +201,7 @@ export const DEFAULT_CONFIG: CCBuddyConfig = {
     graceful_shutdown_timeout_seconds: 30,
     session_timeout_ms: 3_600_000, // 1 hour
     user_input_timeout_ms: 300_000, // 5 minutes
+    max_pause_ms: 604_800_000, // 7 days
     permission_gates: {
       enabled: true,
       timeout_ms: 300_000,
