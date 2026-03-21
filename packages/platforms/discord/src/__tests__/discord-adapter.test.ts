@@ -5,7 +5,7 @@ const { mockFetchAttachment, mockValidateAttachment } = vi.hoisted(() => ({
   mockValidateAttachment: vi.fn(),
 }));
 
-const mockSend = vi.fn().mockResolvedValue(undefined);
+const mockSend = vi.fn().mockResolvedValue({ id: 'mock-msg-id' });
 const mockSendTyping = vi.fn().mockResolvedValue(undefined);
 const mockChannel = {
   isTextBased: () => true,
@@ -247,8 +247,9 @@ describe('DiscordAdapter', () => {
 
   describe('sending', () => {
     it('sends text to channel', async () => {
-      await adapter.sendText('ch1', 'Reply');
+      const id = await adapter.sendText('ch1', 'Reply');
       expect(mockSend).toHaveBeenCalledWith('Reply');
+      expect(id).toBe('mock-msg-id');
     });
 
     it('sends image with caption', async () => {

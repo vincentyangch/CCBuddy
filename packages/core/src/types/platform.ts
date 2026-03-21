@@ -17,11 +17,13 @@ export interface PlatformAdapter {
   start(): Promise<void>;
   stop(): Promise<void>;
   onMessage(handler: (msg: IncomingMessage) => void): void;
-  sendText(channelId: string, text: string): Promise<void>;
+  sendText(channelId: string, text: string): Promise<string | void>;
   sendImage(channelId: string, image: Buffer, caption?: string): Promise<void>;
   sendFile(channelId: string, file: Buffer, filename: string): Promise<void>;
   sendVoice?(channelId: string, audio: Buffer): Promise<void>;
   setTypingIndicator(channelId: string, active: boolean): Promise<void>;
+  /** Edit a previously sent message. */
+  editMessage?(channelId: string, messageId: string, text: string): Promise<void>;
   /** Send a message with button options. Returns the selected label, or null on timeout. */
   sendButtons?(
     channelId: string,

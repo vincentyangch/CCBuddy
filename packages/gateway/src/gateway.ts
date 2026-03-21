@@ -260,12 +260,47 @@ export class Gateway {
     console.log(`[Gateway] executeAndRoute: channel=${msg.channelId} isMention=${msg.isMention} text="${msg.text.slice(0, 50)}"`);
     await adapter.setTypingIndicator(msg.channelId, true);
 
+    // Streaming state — progressively edit Discord message as text arrives
+    let streamBuffer = '';
+    let streamMessageId: string | undefined;
+    let streamInterval: ReturnType<typeof setInterval> | undefined;
+    const canStream = !!adapter.editMessage && !voiceInput;
+    const charLimit = PLATFORM_CHAR_LIMITS[msg.platform] ?? DEFAULT_CHAR_LIMIT;
+
+    const flushStream = async () => {
+      if (!streamBuffer || !adapter.editMessage) return;
+      try {
+        if (streamMessageId) {
+          // Only edit if under the char limit (leave room for overflow on complete)
+          if (streamBuffer.length <= charLimit - 100) {
+            await adapter.editMessage(msg.channelId, streamMessageId, streamBuffer);
+          }
+        } else {
+          // First chunk — send initial message
+          const id = await adapter.sendText(msg.channelId, streamBuffer);
+          if (typeof id === 'string') streamMessageId = id;
+        }
+      } catch (err) {
+        console.warn('[Gateway] Stream flush error:', (err as Error).message);
+      }
+    };
+
     try {
       let eventCount = 0;
       for await (const event of this.deps.executeAgentRequest(request)) {
         eventCount++;
         console.log(`[Gateway] Agent event #${eventCount}: type=${event.type} channel=${msg.channelId}`);
         switch (event.type) {
+          case 'text': {
+            if (canStream) {
+              streamBuffer += event.content;
+              if (!streamInterval) {
+                streamInterval = setInterval(flushStream, 1000);
+                await flushStream(); // Send first chunk immediately
+              }
+            }
+            break;
+          }
           case 'complete': {
             this.deps.storeMessage({
               userId: request.userId,
@@ -310,9 +345,24 @@ export class Gateway {
                 for (const chunk of chunks) await adapter.sendText(msg.channelId, chunk);
               }
             } else {
-              const limit = PLATFORM_CHAR_LIMITS[msg.platform] ?? DEFAULT_CHAR_LIMIT;
-              const chunks = chunkMessage(event.response, limit);
-              for (const chunk of chunks) await adapter.sendText(msg.channelId, chunk);
+              // Clear streaming interval
+              if (streamInterval) clearInterval(streamInterval);
+
+              if (streamMessageId && adapter.editMessage) {
+                // Was streaming — do final edit with authoritative response
+                const chunks = chunkMessage(event.response, charLimit);
+                // Edit the existing message with the first chunk
+                await adapter.editMessage(msg.channelId, streamMessageId, chunks[0]);
+                // Send any overflow as new messages
+                for (let ci = 1; ci < chunks.length; ci++) {
+                  await adapter.sendText(msg.channelId, chunks[ci]);
+                }
+              } else {
+                // Not streaming — send full response as before
+                const limit = PLATFORM_CHAR_LIMITS[msg.platform] ?? DEFAULT_CHAR_LIMIT;
+                const chunks = chunkMessage(event.response, limit);
+                for (const chunk of chunks) await adapter.sendText(msg.channelId, chunk);
+              }
             }
 
             // Deliver any outbound media files (written by skills to data/outbound/)
@@ -344,6 +394,7 @@ export class Gateway {
         this.deps.sessionStore.touch(sessionKey);
       }
     } catch (err) {
+      if (streamInterval) clearInterval(streamInterval);
       console.error(`[Gateway] executeAndRoute error: channel=${msg.channelId}`, err);
       // If this was a session resume that failed, retry as a new session
       if (request.resumeSessionId && sessionKey && this.deps.sessionStore) {

@@ -54,9 +54,22 @@ export class DiscordAdapter implements PlatformAdapter {
     this.client.destroy();
   }
 
-  async sendText(channelId: string, text: string): Promise<void> {
+  async sendText(channelId: string, text: string): Promise<string | undefined> {
     const channel = await this.fetchTextChannel(channelId);
-    if (channel) await channel.send(text);
+    if (!channel) return undefined;
+    const msg = await channel.send(text);
+    return msg.id;
+  }
+
+  async editMessage(channelId: string, messageId: string, text: string): Promise<void> {
+    const channel = await this.fetchTextChannel(channelId);
+    if (!channel) return;
+    try {
+      const message = await channel.messages.fetch(messageId);
+      await message.edit(text);
+    } catch {
+      // Message may have been deleted
+    }
   }
 
   async sendImage(channelId: string, image: Buffer, caption?: string): Promise<void> {
