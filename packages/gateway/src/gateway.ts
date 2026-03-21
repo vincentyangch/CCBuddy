@@ -177,7 +177,18 @@ export class Gateway {
       if (fileModel) {
         sessionModel = fileModel;
         if (this.deps.sessionStore) {
+          const previousModel = this.deps.sessionStore.getModel(sessionKey);
           this.deps.sessionStore.setModel(sessionKey, fileModel);
+          if (previousModel && previousModel !== fileModel) {
+            void this.deps.eventBus.publish('session.model_changed', {
+              sessionId,
+              userId: user.name,
+              platform: msg.platform,
+              channelId: msg.channelId,
+              previousModel,
+              newModel: fileModel,
+            });
+          }
         }
       }
     }

@@ -99,6 +99,15 @@ export interface BackupIntegrityFailedEvent {
   error: string;
 }
 
+export interface SessionModelChangedEvent {
+  sessionId: string;
+  userId: string;
+  platform: string;
+  channelId: string;
+  previousModel: string;
+  newModel: string;
+}
+
 export interface EventMap {
   'message.incoming': IncomingMessageEvent;
   'message.outgoing': OutgoingMessageEvent;
@@ -111,6 +120,7 @@ export interface EventMap {
   'consolidation.complete': ConsolidationStats;
   'backup.complete': BackupCompleteEvent;
   'backup.integrity_failed': BackupIntegrityFailedEvent;
+  'session.model_changed': SessionModelChangedEvent;
 }
 
 export interface EventBus {
