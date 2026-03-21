@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, ChannelType, Partials } from 'discord.js';
+import { Client, GatewayIntentBits, ChannelType, Partials, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } from 'discord.js';
 import type { Message, SendableChannels } from 'discord.js';
 import type { PlatformAdapter, IncomingMessage, Attachment, MediaConfig } from '@ccbuddy/core';
 import { fetchAttachment, validateAttachment } from '@ccbuddy/core';
@@ -91,6 +91,88 @@ export class DiscordAdapter implements PlatformAdapter {
     if (!active) return;
     const channel = await this.fetchTextChannel(channelId);
     if (channel) await channel.sendTyping();
+  }
+
+  async sendButtons(
+    channelId: string,
+    text: string,
+    buttons: Array<{ id: string; label: string }>,
+    options: { timeoutMs: number; userId?: string; signal?: AbortSignal },
+  ): Promise<string | null> {
+    const channel = await this.fetchTextChannel(channelId);
+    if (!channel) return null;
+
+    // Build button rows (max 5 buttons per row, max 5 rows = 25 buttons)
+    const rows: ActionRowBuilder<ButtonBuilder>[] = [];
+    for (let i = 0; i < Math.min(buttons.length, 25); i += 5) {
+      const row = new ActionRowBuilder<ButtonBuilder>();
+      const slice = buttons.slice(i, i + 5);
+      for (const btn of slice) {
+        row.addComponents(
+          new ButtonBuilder()
+            .setCustomId(btn.id)
+            .setLabel(btn.label.slice(0, 80))
+            .setStyle(ButtonStyle.Primary),
+        );
+      }
+      rows.push(row);
+    }
+
+    const message = await channel.send({ content: text, components: rows });
+
+    // Helper to disable all buttons
+    const disableButtons = async () => {
+      try {
+        await message.edit({
+          components: rows.map(r => {
+            const disabled = ActionRowBuilder.from<ButtonBuilder>(r);
+            disabled.components.forEach(c => c.setDisabled(true));
+            return disabled;
+          }),
+        });
+      } catch { /* message may have been deleted */ }
+    };
+
+    try {
+      // Set up abort signal listener
+      let abortHandler: (() => void) | undefined;
+      const abortPromise = options.signal ? new Promise<never>((_, reject) => {
+        abortHandler = () => reject(new Error('aborted'));
+        options.signal!.addEventListener('abort', abortHandler, { once: true });
+      }) : null;
+
+      const componentPromise = message.awaitMessageComponent({
+        componentType: ComponentType.Button,
+        time: options.timeoutMs,
+        filter: (i) => !options.userId || i.user.id === options.userId,
+      });
+
+      const interaction = await (abortPromise
+        ? Promise.race([componentPromise, abortPromise])
+        : componentPromise);
+
+      // Clean up abort listener
+      if (abortHandler && options.signal) {
+        options.signal.removeEventListener('abort', abortHandler);
+      }
+
+      // Acknowledge the interaction and disable buttons
+      await interaction.update({
+        components: rows.map(r => {
+          const disabled = ActionRowBuilder.from<ButtonBuilder>(r);
+          disabled.components.forEach(c => c.setDisabled(true));
+          return disabled;
+        }),
+      });
+
+      // Find the label for the clicked button
+      const clicked = buttons.find(b => b.id === interaction.customId);
+      return clicked?.label ?? null;
+    } catch {
+      // Timeout or abort — disable buttons
+      await disableButtons();
+      return null;
+    }
   }
 
   private async fetchTextChannel(channelId: string): Promise<SendableChannels | null> {
