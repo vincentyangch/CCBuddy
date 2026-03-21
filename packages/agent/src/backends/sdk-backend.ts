@@ -63,6 +63,16 @@ export class SdkBackend implements AgentBackend {
           : chatRestriction;
       }
 
+      // Session continuity — mutually exclusive: resume OR sessionId, never both
+      let sdkSessionId: string | undefined;
+      if (request.resumeSessionId) {
+        options.resume = request.resumeSessionId;
+        sdkSessionId = request.resumeSessionId;
+      } else if (request.sdkSessionId) {
+        options.sessionId = request.sdkSessionId;
+        sdkSessionId = request.sdkSessionId;
+      }
+
       let fullPrompt = request.prompt;
       if (request.memoryContext) {
         fullPrompt = `<memory_context>\n${request.memoryContext}\n</memory_context>\n\n${request.prompt}`;
@@ -104,7 +114,7 @@ export class SdkBackend implements AgentBackend {
         }
       }
 
-      yield { ...base, type: 'complete', response: responseText };
+      yield { ...base, type: 'complete', response: responseText, sdkSessionId };
     } catch (err) {
       yield { ...base, type: 'error', error: (err as Error).message };
     }

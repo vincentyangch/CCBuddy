@@ -174,4 +174,49 @@ describe('SdkBackend', () => {
     expect(typeof callArg.prompt).toBe('string');
     expect(callArg.prompt).toBe('Hello');
   });
+
+  it('passes sessionId option for new sessions', async () => {
+    const backend = new SdkBackend();
+    const events = [];
+    for await (const event of backend.execute(makeRequest({ sdkSessionId: 'test-uuid-123' }))) {
+      events.push(event);
+    }
+
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('complete');
+    if (events[0].type === 'complete') {
+      expect(events[0].sdkSessionId).toBe('test-uuid-123');
+    }
+
+    const callArg = mockQuery.mock.calls[0][0] as { prompt: string; options: Record<string, unknown> };
+    expect(callArg.options['sessionId']).toBe('test-uuid-123');
+    expect(callArg.options['resume']).toBeUndefined();
+  });
+
+  it('passes resume option for existing sessions', async () => {
+    const backend = new SdkBackend();
+    const events = [];
+    for await (const event of backend.execute(makeRequest({ resumeSessionId: 'existing-uuid-456' }))) {
+      events.push(event);
+    }
+
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('complete');
+    if (events[0].type === 'complete') {
+      expect(events[0].sdkSessionId).toBe('existing-uuid-456');
+    }
+
+    const callArg = mockQuery.mock.calls[0][0] as { prompt: string; options: Record<string, unknown> };
+    expect(callArg.options['resume']).toBe('existing-uuid-456');
+    expect(callArg.options['sessionId']).toBeUndefined();
+  });
+
+  it('does not set sessionId or resume when neither is provided', async () => {
+    const backend = new SdkBackend();
+    for await (const _event of backend.execute(makeRequest())) {}
+
+    const callArg = mockQuery.mock.calls[0][0] as { prompt: string; options: Record<string, unknown> };
+    expect(callArg.options['sessionId']).toBeUndefined();
+    expect(callArg.options['resume']).toBeUndefined();
+  });
 });
