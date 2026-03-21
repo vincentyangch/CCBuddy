@@ -115,11 +115,19 @@ vi.mock('@ccbuddy/orchestrator', () => ({
 }));
 
 const mockSchedulerService = vi.fn();
+const mockNotificationService = vi.fn().mockReturnValue({ start: vi.fn(), stop: vi.fn(), tick: vi.fn() });
+const mockResolvePreferences = vi.fn().mockReturnValue({
+  enabled: true, types: {}, target: { platform: 'discord', channel: 'DM' }, quietHours: null, muteUntil: null,
+});
 
 vi.mock('@ccbuddy/scheduler', () => ({
   SchedulerService: function (this: unknown, ...args: unknown[]) {
     return mockSchedulerService(...args);
   },
+  NotificationService: function (this: unknown, ...args: unknown[]) {
+    return mockNotificationService(...args);
+  },
+  resolvePreferences: (...args: unknown[]) => mockResolvePreferences(...args),
 }));
 
 vi.mock('@ccbuddy/dashboard', () => ({
