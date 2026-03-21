@@ -20,7 +20,7 @@ import { Gateway } from '@ccbuddy/gateway';
 import { DiscordAdapter } from '@ccbuddy/platform-discord';
 import { TelegramAdapter } from '@ccbuddy/platform-telegram';
 import { ShutdownHandler } from '@ccbuddy/orchestrator';
-import { SchedulerService } from '@ccbuddy/scheduler';
+import { SchedulerService, NotificationService, resolvePreferences } from '@ccbuddy/scheduler';
 import { chunkMessage } from '@ccbuddy/gateway';
 import { DashboardServer } from '@ccbuddy/dashboard';
 
@@ -310,9 +310,11 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
   }
 
   // 10. Set up SessionManager.tick() interval (every 60 seconds)
+  let notificationService: NotificationService | undefined;
   const tickInterval = setInterval(() => {
     agentService.tick();
     sessionStore.tick();
+    notificationService?.tick();
   }, 60_000);
 
   // 11. Create shutdown handler
@@ -446,6 +448,10 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
     await schedulerService.stop();
   });
 
+  shutdownHandler.register('notifications', async () => {
+    notificationService?.stop();
+  });
+
   // Heartbeat status file — atomic write for MCP server reads
   const heartbeatStatusPath = join(config.data_dir, 'heartbeat-status.json');
   eventBus.subscribe('heartbeat.status', (data: unknown) => {
@@ -459,6 +465,19 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
   });
 
   await schedulerService.start();
+
+  // 16. Create and start notification service
+  notificationService = new NotificationService({
+    eventBus,
+    sendProactiveMessage,
+    getPreferences: (userId) => resolvePreferences(config.notifications, profileStore, userId),
+    getUsers: () => userManager.getAllUsers(),
+    resolveDMChannel: async (platform, platformUserId) => {
+      const adapter = gateway.getAdapter(platform);
+      return adapter?.resolveDMChannel?.(platformUserId) ?? null;
+    },
+  });
+  notificationService.start();
 
   return {
     stop: async () => {
