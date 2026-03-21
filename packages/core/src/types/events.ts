@@ -68,8 +68,10 @@ export interface AgentProgressEvent {
   sessionId: string;
   channelId: string;
   platform: string;
-  type: 'text' | 'tool_use';
+  type: 'text' | 'tool_use' | 'thinking' | 'tool_result';
   content: string;
+  toolInput?: Record<string, unknown>;
+  toolOutput?: string;
 }
 
 export interface SchedulerJobCompleteEvent {
