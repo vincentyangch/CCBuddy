@@ -1,5 +1,18 @@
 import type { MessageTarget } from '../types/events.js';
 
+export interface PermissionGateRule {
+  name: string;
+  pattern: string;
+  tool: string;
+  description: string;
+}
+
+export interface PermissionGateConfig {
+  enabled: boolean;
+  timeout_ms: number;
+  rules: PermissionGateRule[];
+}
+
 export interface AgentConfig {
   backend: 'sdk' | 'cli';
   model: string;
@@ -19,6 +32,7 @@ export interface AgentConfig {
   graceful_shutdown_timeout_seconds: number;
   session_timeout_ms: number;
   user_input_timeout_ms: number;
+  permission_gates: PermissionGateConfig;
 }
 
 export interface MemoryConfig {
@@ -186,6 +200,17 @@ export const DEFAULT_CONFIG: CCBuddyConfig = {
     graceful_shutdown_timeout_seconds: 30,
     session_timeout_ms: 3_600_000, // 1 hour
     user_input_timeout_ms: 300_000, // 5 minutes
+    permission_gates: {
+      enabled: true,
+      timeout_ms: 300_000,
+      rules: [
+        { name: 'destructive-rm', pattern: 'rm\\s+-(r|rf|fr)\\s+(?!/tmp)', tool: 'Bash', description: 'Recursive delete on non-temp paths' },
+        { name: 'destructive-git', pattern: 'git\\s+(reset\\s+--hard|checkout\\s+\\.|clean\\s+-f)', tool: 'Bash', description: 'Destructive git operations' },
+        { name: 'local-config', pattern: 'config/local\\.yaml', tool: '*', description: 'Modify local config (contains secrets)' },
+        { name: 'launchctl', pattern: 'launchctl', tool: 'Bash', description: 'LaunchAgent operations' },
+        { name: 'npm-publish', pattern: 'npm\\s+publish', tool: 'Bash', description: 'Package publishing' },
+      ],
+    },
   },
   memory: {
     db_path: './data/memory.sqlite',
