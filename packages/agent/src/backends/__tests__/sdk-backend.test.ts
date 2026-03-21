@@ -64,6 +64,18 @@ describe('SdkBackend', () => {
     expect(error.error).toContain('SDK connection failed');
   });
 
+  it('passes model option to Claude Agent SDK', async () => {
+    mockQuery.mockReturnValueOnce(
+      makeAsyncGen({ type: 'result', subtype: 'success', result: 'reply' }) as any,
+    );
+    const backend = new SdkBackend({ skipPermissions: true });
+    const request = makeRequest({ model: 'claude-opus-4-5' });
+    const events: any[] = [];
+    for await (const event of backend.execute(request)) { events.push(event); }
+    const lastCall = mockQuery.mock.calls[mockQuery.mock.calls.length - 1];
+    expect(lastCall[0].options).toMatchObject({ model: 'claude-opus-4-5' });
+  });
+
   it('includes routing metadata in all events', async () => {
     mockQuery.mockReturnValueOnce(
       makeAsyncGen({ type: 'result', subtype: 'success', result: 'reply' }) as any,

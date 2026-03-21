@@ -34,6 +34,10 @@ export class SdkBackend implements AgentBackend {
         settingSources: ['user', 'project', 'local'],
       };
 
+      if (request.model) {
+        options.model = request.model;
+      }
+
       if (request.systemPrompt) {
         options.systemPrompt = request.systemPrompt;
       }
