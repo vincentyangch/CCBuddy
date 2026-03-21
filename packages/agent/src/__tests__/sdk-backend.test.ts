@@ -219,4 +219,93 @@ describe('SdkBackend', () => {
     expect(callArg.options['sessionId']).toBeUndefined();
     expect(callArg.options['resume']).toBeUndefined();
   });
+
+  it('yields thinking events from assistant messages', async () => {
+    async function* thinkingGenerator() {
+      yield {
+        type: 'assistant',
+        message: {
+          content: [
+            { type: 'thinking', thinking: 'Let me think about this...' },
+            { type: 'text', text: 'Here is my answer.' },
+          ],
+        },
+      };
+      yield { type: 'result', subtype: 'success', result: 'Here is my answer.' };
+    }
+    mockQuery.mockReturnValue(thinkingGenerator());
+
+    const backend = new SdkBackend();
+    const events = [];
+    for await (const event of backend.execute(makeRequest())) {
+      events.push(event);
+    }
+
+    expect(events.length).toBeGreaterThanOrEqual(3);
+    const thinking = events.find(e => e.type === 'thinking');
+    expect(thinking).toBeDefined();
+    if (thinking && thinking.type === 'thinking') {
+      expect(thinking.content).toBe('Let me think about this...');
+    }
+    const text = events.find(e => e.type === 'text');
+    expect(text).toBeDefined();
+    if (text && text.type === 'text') {
+      expect(text.content).toBe('Here is my answer.');
+    }
+    const complete = events.find(e => e.type === 'complete');
+    expect(complete).toBeDefined();
+  });
+
+  it('yields tool_use events from assistant messages', async () => {
+    async function* toolGenerator() {
+      yield {
+        type: 'assistant',
+        message: {
+          content: [
+            { type: 'tool_use', id: 'tu_1', name: 'Bash', input: { command: 'ls' } },
+          ],
+        },
+      };
+      yield { type: 'result', subtype: 'success', result: 'Done!' };
+    }
+    mockQuery.mockReturnValue(toolGenerator());
+
+    const backend = new SdkBackend();
+    const events = [];
+    for await (const event of backend.execute(makeRequest())) {
+      events.push(event);
+    }
+
+    const toolUse = events.find(e => e.type === 'tool_use');
+    expect(toolUse).toBeDefined();
+    if (toolUse && toolUse.type === 'tool_use') {
+      expect(toolUse.tool).toBe('Bash');
+    }
+  });
+
+  it('does not yield thinking when assistant has no thinking blocks', async () => {
+    async function* plainGenerator() {
+      yield {
+        type: 'assistant',
+        message: {
+          content: [
+            { type: 'text', text: 'Simple answer.' },
+          ],
+        },
+      };
+      yield { type: 'result', subtype: 'success', result: 'Simple answer.' };
+    }
+    mockQuery.mockReturnValue(plainGenerator());
+
+    const backend = new SdkBackend();
+    const events = [];
+    for await (const event of backend.execute(makeRequest())) {
+      events.push(event);
+    }
+
+    const thinking = events.find(e => e.type === 'thinking');
+    expect(thinking).toBeUndefined();
+    const complete = events.find(e => e.type === 'complete');
+    expect(complete).toBeDefined();
+  });
 });

@@ -104,7 +104,21 @@ export class SdkBackend implements AgentBackend {
 
       let responseText = '';
       for await (const msg of result) {
-        if (msg.type === 'result') {
+        if (msg.type === 'assistant') {
+          // Extract content blocks from assistant messages
+          const content = (msg as any).message?.content;
+          if (Array.isArray(content)) {
+            for (const block of content) {
+              if (block.type === 'thinking' && block.thinking) {
+                yield { ...base, type: 'thinking' as const, content: block.thinking };
+              } else if (block.type === 'text' && block.text) {
+                yield { ...base, type: 'text' as const, content: block.text };
+              } else if (block.type === 'tool_use') {
+                yield { ...base, type: 'tool_use' as const, tool: block.name ?? block.id };
+              }
+            }
+          }
+        } else if (msg.type === 'result') {
           if ((msg as any).subtype === 'success') {
             responseText = (msg as any).result ?? '';
           } else {
