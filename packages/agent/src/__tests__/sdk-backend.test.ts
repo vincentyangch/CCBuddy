@@ -369,7 +369,7 @@ describe('SdkBackend', () => {
     const canUseTool = callArg.options['canUseTool'] as Function;
 
     const result = await canUseTool('Bash', { command: 'ls' }, { signal: new AbortController().signal });
-    expect(result).toEqual({ behavior: 'allow' });
+    expect(result).toEqual({ behavior: 'allow', updatedInput: { command: 'ls' } });
     expect(requestUserInput).not.toHaveBeenCalled();
   });
 });
