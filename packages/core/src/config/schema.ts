@@ -136,6 +136,13 @@ export interface GatewayConfig {
   unknown_user_reply: boolean;
 }
 
+export interface DashboardConfig {
+  enabled: boolean;
+  port: number;
+  host: string;
+  auth_token_env: string;
+}
+
 export interface CCBuddyConfig {
   data_dir: string;
   log_level: 'debug' | 'info' | 'warn' | 'error';
@@ -150,6 +157,7 @@ export interface CCBuddyConfig {
   image_generation: ImageGenerationConfig;
   skills: SkillsConfig;
   apple: AppleConfig;
+  dashboard: DashboardConfig;
   users: Record<string, UserConfig>;
 }
 
@@ -225,6 +233,12 @@ export const DEFAULT_CONFIG: CCBuddyConfig = {
   },
   apple: {
     enabled: false,
+  },
+  dashboard: {
+    enabled: false,
+    port: 18801,
+    host: '127.0.0.1',
+    auth_token_env: 'CCBUDDY_DASHBOARD_TOKEN',
   },
   users: {},
 };
