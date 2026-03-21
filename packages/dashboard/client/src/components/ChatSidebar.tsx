@@ -11,9 +11,10 @@ interface ChatSidebarProps {
   activeSession: string;
   onSelectSession: (sessionId: string) => void;
   onNewChat: () => void;
+  refreshKey?: number;
 }
 
-export function ChatSidebar({ activeSession, onSelectSession, onNewChat }: ChatSidebarProps) {
+export function ChatSidebar({ activeSession, onSelectSession, onNewChat, refreshKey }: ChatSidebarProps) {
   const [sessions, setSessions] = useState<Session[]>([]);
 
   useEffect(() => {
@@ -30,7 +31,7 @@ export function ChatSidebar({ activeSession, onSelectSession, onNewChat }: ChatS
       }
       setSessions(Array.from(grouped.values()).sort((a, b) => b.timestamp - a.timestamp));
     });
-  }, []);
+  }, [refreshKey]);
 
   return (
     <div className="w-56 bg-gray-900 border-r border-gray-800 p-3 flex flex-col">

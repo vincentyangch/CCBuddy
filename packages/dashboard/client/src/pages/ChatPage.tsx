@@ -24,6 +24,7 @@ export function ChatPage() {
   const [typing, setTyping] = useState(false);
   const [buttons, setButtons] = useState<{ messageId: string; text: string; buttons: Array<{ id: string; label: string }> } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [sidebarRefresh, setSidebarRefresh] = useState(0);
 
   const handleEvent = useCallback((type: string, data: any) => {
     switch (type) {
@@ -31,6 +32,7 @@ export function ChatPage() {
         setMessages(prev => [...prev, { id: data.messageId, role: 'assistant', content: data.text }]);
         setProgress([]);
         setTyping(false);
+        setSidebarRefresh(n => n + 1);
         break;
       case 'chat.edit':
         setMessages(prev => prev.map(m => m.id === data.messageId ? { ...m, content: data.text } : m));
@@ -109,7 +111,7 @@ export function ChatPage() {
 
   return (
     <div className="flex h-[calc(100vh-theme(spacing.12))] -m-6">
-      <ChatSidebar activeSession={channelId} onSelectSession={setChannelId} onNewChat={handleNewChat} />
+      <ChatSidebar activeSession={channelId} onSelectSession={setChannelId} onNewChat={handleNewChat} refreshKey={sidebarRefresh} />
       <div className="flex-1 flex flex-col">
         <div className="px-4 py-3 border-b border-gray-800 flex justify-between items-center">
           <span className="text-sm font-medium">Chat with Po</span>
