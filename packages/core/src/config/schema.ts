@@ -22,6 +22,7 @@ export interface AgentConfig {
   queue_timeout_seconds: number;
   rate_limits: {
     admin: number;
+    trusted: number;
     chat: number;
     system: number;
   };
@@ -33,6 +34,7 @@ export interface AgentConfig {
   session_timeout_ms: number;
   user_input_timeout_ms: number;
   max_pause_ms: number;
+  trusted_allowed_tools: string[];
   permission_gates: PermissionGateConfig;
 }
 
@@ -211,6 +213,7 @@ export const DEFAULT_CONFIG: CCBuddyConfig = {
     queue_timeout_seconds: 120,
     rate_limits: {
       admin: 30,
+      trusted: 20,
       chat: 10,
       system: 20,
     },
@@ -222,6 +225,14 @@ export const DEFAULT_CONFIG: CCBuddyConfig = {
     session_timeout_ms: 3_600_000, // 1 hour
     user_input_timeout_ms: 300_000, // 5 minutes
     max_pause_ms: 604_800_000, // 7 days
+    trusted_allowed_tools: [
+      'Read',
+      'Glob',
+      'Grep',
+      'WebSearch',
+      'WebFetch',
+      'AskUserQuestion',
+    ],
     permission_gates: {
       enabled: true,
       timeout_ms: 300_000,

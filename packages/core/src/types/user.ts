@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'chat' | 'system';
+export type UserRole = 'admin' | 'trusted' | 'chat' | 'system';
 
 export interface User {
   name: string;

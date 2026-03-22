@@ -18,7 +18,7 @@ export interface AgentRequest {
   systemPrompt?: string;
   memoryContext?: string;
   attachments?: Attachment[];
-  permissionLevel: 'admin' | 'chat' | 'system';
+  permissionLevel: 'admin' | 'trusted' | 'chat' | 'system';
   mcpServers?: Array<{ name: string; command: string; args: string[]; env?: Record<string, string> }>;
   /** SDK session UUID to resume (mutually exclusive with sdkSessionId) */
   resumeSessionId?: string;
