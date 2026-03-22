@@ -148,7 +148,7 @@ export interface SchedulerConfig {
 
 export interface UserConfig {
   name: string;
-  role: 'admin' | 'chat';
+  role: 'admin' | 'trusted' | 'chat';
   [key: string]: string | undefined;
 }
 
