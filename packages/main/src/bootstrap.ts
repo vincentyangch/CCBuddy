@@ -290,6 +290,31 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
     },
     getWorkspace: (channelKey) => workspaceStore.get(channelKey),
     defaultWorkingDirectory: config.agent.default_working_directory,
+    compactSession: async ({ sessionKey, userId, sessionId, platform, channelId }) => {
+      // Fetch recent messages for this session
+      const messages = messageStore.getFreshTail(userId, sessionId, 500);
+      if (messages.length === 0) {
+        throw new Error('No messages to compact');
+      }
+      const conversationText = messages
+        .map(m => `[${m.role}] ${m.content}`)
+        .join('\n\n');
+
+      // Summarize using existing summarize function
+      const summary = await summarize(
+        `Summarize this conversation, preserving key decisions, code changes, current task state, and any important context the assistant needs to continue helping:\n\n${conversationText}`
+      );
+
+      // Archive old session, create new one
+      sessionStore.archive(sessionKey);
+      const newSession = sessionStore.getOrCreate(
+        sessionKey, false, platform, channelId, userId,
+      );
+
+      console.log(`[Compaction] Session ${sessionKey} compacted: ${messages.length} messages → ${summary.length} char summary`);
+      return { newSdkSessionId: newSession.sdkSessionId, summary };
+    },
+    compactionThreshold: config.agent.compaction_threshold,
   });
 
   // 9. Create and register platform adapters based on config
