@@ -201,7 +201,7 @@ export class HeartbeatMonitor {
       if (isRecovery) {
         await this.opts.eventBus.publish('alert.health', {
           module,
-          status: 'recovered' as 'degraded' | 'down',
+          status: 'recovered',
           message: `Module "${module}" has recovered`,
           timestamp: Date.now(),
         });
