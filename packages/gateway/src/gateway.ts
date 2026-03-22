@@ -370,6 +370,10 @@ export class Gateway {
               // First text event → finalize thinking, start response phase
               if (!inResponsePhase) {
                 await finalizeThinking();
+                // Add response header if there was visible thinking/tool content
+                if (thinkingMessageId && msg.platform !== 'webchat') {
+                  responseBuffer = '**💬 Response:**\n';
+                }
               }
               responseBuffer += event.content;
               if (!streamInterval) {
