@@ -241,8 +241,8 @@ export class Gateway {
       model: effectiveModel,
       memoryContext,
       attachments: msg.attachments.length > 0 ? msg.attachments : undefined,
-      // UserConfig only allows 'admin' | 'chat' roles; 'system' is internal-only
-      permissionLevel: user.role === 'admin' ? 'admin' : 'chat',
+      // UserConfig only allows 'admin' | 'trusted' | 'chat' roles; 'system' is internal-only
+      permissionLevel: user.role === 'admin' ? 'admin' : user.role === 'trusted' ? 'trusted' : 'chat',
       workingDirectory,
       sdkSessionId,
       resumeSessionId,
