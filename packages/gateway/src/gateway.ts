@@ -49,6 +49,8 @@ export interface GatewayDeps {
   sessionStore?: SessionStore;
   defaultModel?: string;
   userInputTimeoutMs?: number;
+  getWorkspace?: (channelKey: string) => string | null;
+  defaultWorkingDirectory?: string;
   storeAgentEvent?: (params: { userId: string; sessionId: string; platform: string; eventType: string; content: string; toolInput?: string; toolOutput?: string }) => void;
 }
 
@@ -225,6 +227,10 @@ export class Gateway {
     // 6. Assemble memory context (only for new sessions — resumed sessions already have conversation history)
     const memoryContext = isNewSession ? this.deps.assembleContext(user.name, sessionId) : undefined;
 
+    // 6b. Resolve working directory for this channel
+    const channelKey = `${msg.platform}-${msg.channelId}`;
+    const workingDirectory = this.deps.getWorkspace?.(channelKey) ?? this.deps.defaultWorkingDirectory;
+
     // 7. Build agent request
     const request: AgentRequest = {
       prompt: msg.text,
@@ -237,6 +243,7 @@ export class Gateway {
       attachments: msg.attachments.length > 0 ? msg.attachments : undefined,
       // UserConfig only allows 'admin' | 'chat' roles; 'system' is internal-only
       permissionLevel: user.role === 'admin' ? 'admin' : 'chat',
+      workingDirectory,
       sdkSessionId,
       resumeSessionId,
       requestUserInput: async (questions, signal) => {
