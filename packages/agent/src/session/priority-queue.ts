@@ -1,8 +1,9 @@
-export type QueuePriority = 'admin' | 'system' | 'chat';
+export type QueuePriority = 'admin' | 'system' | 'trusted' | 'chat';
 
 const PRIORITY_ORDER: Record<QueuePriority, number> = {
   admin: 0,
   system: 1,
+  trusted: 1,
   chat: 2,
 };
 
