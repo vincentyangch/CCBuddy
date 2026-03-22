@@ -14,6 +14,7 @@ import {
   BackupService,
   AgentEventStore,
   SessionDatabase,
+  WorkspaceStore,
 } from '@ccbuddy/memory';
 import { SkillRegistry, MCP_SERVER_PATH } from '@ccbuddy/skills';
 import { Gateway } from '@ccbuddy/gateway';
@@ -135,6 +136,7 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
   const agentEventStore = new AgentEventStore(database);
   const summaryStore = new SummaryStore(database);
   const profileStore = new ProfileStore(database);
+  const workspaceStore = new WorkspaceStore(database.raw());
 
   const contextAssembler = new ContextAssembler(messageStore, summaryStore, profileStore, {
     maxContextTokens: config.memory.max_context_tokens,
@@ -247,7 +249,11 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
     executeAgentRequest: (request) => {
       const mcpServer = {
         ...skillMcpServer,
-        args: [...skillMcpServer.args, '--session-key', request.sessionId],
+        args: [
+          ...skillMcpServer.args,
+          '--session-key', request.sessionId,
+          '--channel-key', `${request.platform}-${request.channelId}`,
+        ],
       };
       return agentService.handleRequest({
         ...request,
@@ -282,6 +288,8 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
     storeAgentEvent: (params) => {
       agentEventStore.add({ ...params, timestamp: Date.now() });
     },
+    getWorkspace: (channelKey) => workspaceStore.get(channelKey),
+    defaultWorkingDirectory: config.agent.default_working_directory,
   });
 
   // 9. Create and register platform adapters based on config
