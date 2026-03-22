@@ -289,31 +289,73 @@ export class Gateway {
     console.log(`[Gateway] executeAndRoute: channel=${msg.channelId} isMention=${msg.isMention} text="${msg.text.slice(0, 50)}"`);
     await adapter.setTypingIndicator(msg.channelId, true);
 
-    // Streaming state — progressively edit Discord message as text arrives
-    let streamBuffer = '';
-    let toolSuffix = ''; // Transient tool indicator — replaced on next tool, cleared on text
-    let streamMessageId: string | undefined;
+    // Streaming state — thinking and response use separate messages
+    let thinkingBuffer = '';  // 💭 thinking + 🔧 tool_use indicators
+    let thinkingMessageId: string | undefined;
+    let thinkingSuffix = ''; // Transient tool indicator
+    let responseBuffer = ''; // Final response text
+    let responseMessageId: string | undefined;
     let streamInterval: ReturnType<typeof setInterval> | undefined;
-    let lastEditedLength = 0; // Track how many chars were in the last successful edit
+    let inResponsePhase = false; // True once text events start arriving
     const canStream = !!adapter.editMessage && !voiceInput;
     const charLimit = PLATFORM_CHAR_LIMITS[msg.platform] ?? DEFAULT_CHAR_LIMIT;
 
+    /** Flush the active stream message (thinking or response phase). */
     const flushStream = async () => {
-      const display = streamBuffer + toolSuffix;
-      if (!display || !adapter.editMessage) return;
-      try {
-        if (streamMessageId) {
-          if (display.length <= charLimit - 100) {
-            await adapter.editMessage(msg.channelId, streamMessageId, display);
-            lastEditedLength = display.length;
+      if (!adapter.editMessage) return;
+
+      if (!inResponsePhase) {
+        // Thinking phase — edit thinking message
+        const display = thinkingBuffer + thinkingSuffix;
+        if (!display) return;
+        try {
+          if (thinkingMessageId) {
+            if (display.length <= charLimit - 100) {
+              await adapter.editMessage(msg.channelId, thinkingMessageId, display);
+            }
+          } else {
+            const id = await adapter.sendText(msg.channelId, display);
+            if (typeof id === 'string') thinkingMessageId = id;
           }
-        } else {
-          const id = await adapter.sendText(msg.channelId, display);
-          if (typeof id === 'string') streamMessageId = id;
-          lastEditedLength = display.length;
+        } catch (err) {
+          console.warn('[Gateway] Thinking flush error:', (err as Error).message);
         }
-      } catch (err) {
-        console.warn('[Gateway] Stream flush error:', (err as Error).message);
+      } else {
+        // Response phase — edit response message
+        if (!responseBuffer) return;
+        try {
+          if (responseMessageId) {
+            if (responseBuffer.length <= charLimit - 100) {
+              await adapter.editMessage(msg.channelId, responseMessageId, responseBuffer);
+            }
+          } else {
+            const id = await adapter.sendText(msg.channelId, responseBuffer);
+            if (typeof id === 'string') responseMessageId = id;
+          }
+        } catch (err) {
+          console.warn('[Gateway] Response flush error:', (err as Error).message);
+        }
+      }
+    };
+
+    /** Finalize the thinking message and switch to response phase. */
+    const finalizeThinking = async () => {
+      if (inResponsePhase) return;
+      inResponsePhase = true;
+      if (thinkingMessageId && adapter.editMessage) {
+        // Final edit of thinking message — remove tool suffix, cap at char limit
+        const finalThinking = thinkingBuffer.length <= charLimit - 100
+          ? thinkingBuffer
+          : thinkingBuffer.slice(0, charLimit - 100);
+        try {
+          await adapter.editMessage(msg.channelId, thinkingMessageId, finalThinking);
+        } catch { /* best effort */ }
+        // If thinking overflowed, send rest as additional messages
+        if (thinkingBuffer.length > charLimit - 100) {
+          const overflow = thinkingBuffer.slice(charLimit - 100);
+          const chunks = chunkMessage(overflow, charLimit);
+          for (const chunk of chunks) await adapter.sendText(msg.channelId, chunk);
+        }
       }
     };
 
@@ -325,8 +367,11 @@ export class Gateway {
         switch (event.type) {
           case 'text': {
             if (canStream) {
-              toolSuffix = ''; // Clear tool indicator — text is arriving
-              streamBuffer += event.content;
+              // First text event → finalize thinking, start response phase
+              if (!inResponsePhase) {
+                await finalizeThinking();
+              }
+              responseBuffer += event.content;
               if (!streamInterval) {
                 streamInterval = setInterval(flushStream, 1000);
                 await flushStream();
@@ -336,24 +381,23 @@ export class Gateway {
           }
           case 'thinking': {
             if (canStream) {
-              toolSuffix = ''; // Clear tool indicator
-              // Webchat handles thinking via agent.progress events — don't mix into stream buffer
+              thinkingSuffix = ''; // Clear tool indicator
+              // Webchat handles thinking via agent.progress events — don't mix into stream
               if (msg.platform !== 'webchat') {
-                streamBuffer += `*💭 Thinking...*\n${event.content}\n\n`;
+                thinkingBuffer += `*💭 Thinking...*\n${event.content}\n\n`;
               }
               if (!streamInterval) {
                 streamInterval = setInterval(flushStream, 1000);
-                // Only flush if we have content (webchat may skip thinking)
-                if (streamBuffer) await flushStream();
+                if (thinkingBuffer) await flushStream();
               }
             }
             break;
           }
           case 'tool_use': {
             if (canStream) {
-              // Webchat handles tool_use via agent.progress events — don't mix into stream buffer
+              // Webchat handles tool_use via agent.progress events — don't mix into stream
               if (msg.platform !== 'webchat') {
-                toolSuffix = `\n*🔧 Using ${event.tool}...*`;
+                thinkingSuffix = `\n*🔧 Using ${event.tool}...*`;
               }
               if (!streamInterval) {
                 streamInterval = setInterval(flushStream, 1000);
@@ -409,20 +453,29 @@ export class Gateway {
               // Clear streaming interval
               if (streamInterval) clearInterval(streamInterval);
 
-              if (streamMessageId && adapter.editMessage) {
-                // Was streaming — final flush without tool suffix
-                toolSuffix = '';
-                // If buffer fits in the char limit, do a final edit
-                if (streamBuffer.length <= charLimit - 100) {
-                  await flushStream();
+              if ((thinkingMessageId || responseMessageId) && adapter.editMessage) {
+                // Was streaming — finalize thinking if not yet done
+                if (!inResponsePhase && thinkingBuffer) {
+                  await finalizeThinking();
+                }
+
+                // Final flush of response message
+                if (responseBuffer.length <= charLimit - 100) {
+                  // Fits in one message — final edit
+                  if (responseMessageId) {
+                    try { await adapter.editMessage(msg.channelId, responseMessageId, responseBuffer); } catch { /* best effort */ }
+                  } else if (responseBuffer) {
+                    await adapter.sendText(msg.channelId, responseBuffer);
+                  }
                 } else {
-                  // Buffer overflowed — edit the streaming message to show up to the limit,
-                  // then send the rest as new messages
-                  const editPortion = streamBuffer.slice(0, charLimit - 100);
-                  try {
-                    await adapter.editMessage(msg.channelId, streamMessageId, editPortion);
-                  } catch { /* best effort */ }
-                  const overflow = streamBuffer.slice(charLimit - 100);
+                  // Response overflowed — edit to limit, send rest as new messages
+                  const editPortion = responseBuffer.slice(0, charLimit - 100);
+                  if (responseMessageId) {
+                    try { await adapter.editMessage(msg.channelId, responseMessageId, editPortion); } catch { /* best effort */ }
+                  } else {
+                    await adapter.sendText(msg.channelId, editPortion);
+                  }
+                  const overflow = responseBuffer.slice(charLimit - 100);
                   const chunks = chunkMessage(overflow, charLimit);
                   for (const chunk of chunks) await adapter.sendText(msg.channelId, chunk);
                 }
