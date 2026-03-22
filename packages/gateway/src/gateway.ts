@@ -294,6 +294,7 @@ export class Gateway {
     let toolSuffix = ''; // Transient tool indicator — replaced on next tool, cleared on text
     let streamMessageId: string | undefined;
     let streamInterval: ReturnType<typeof setInterval> | undefined;
+    let lastEditedLength = 0; // Track how many chars were in the last successful edit
     const canStream = !!adapter.editMessage && !voiceInput;
     const charLimit = PLATFORM_CHAR_LIMITS[msg.platform] ?? DEFAULT_CHAR_LIMIT;
 
@@ -304,10 +305,12 @@ export class Gateway {
         if (streamMessageId) {
           if (display.length <= charLimit - 100) {
             await adapter.editMessage(msg.channelId, streamMessageId, display);
+            lastEditedLength = display.length;
           }
         } else {
           const id = await adapter.sendText(msg.channelId, display);
           if (typeof id === 'string') streamMessageId = id;
+          lastEditedLength = display.length;
         }
       } catch (err) {
         console.warn('[Gateway] Stream flush error:', (err as Error).message);
@@ -409,9 +412,16 @@ export class Gateway {
               if (streamMessageId && adapter.editMessage) {
                 // Was streaming — final flush without tool suffix
                 toolSuffix = '';
-                await flushStream();
-                // If buffer overflowed the char limit, send remaining as new messages
-                if (streamBuffer.length > charLimit - 100) {
+                // If buffer fits in the char limit, do a final edit
+                if (streamBuffer.length <= charLimit - 100) {
+                  await flushStream();
+                } else {
+                  // Buffer overflowed — edit the streaming message to show up to the limit,
+                  // then send the rest as new messages
+                  const editPortion = streamBuffer.slice(0, charLimit - 100);
+                  try {
+                    await adapter.editMessage(msg.channelId, streamMessageId, editPortion);
+                  } catch { /* best effort */ }
                   const overflow = streamBuffer.slice(charLimit - 100);
                   const chunks = chunkMessage(overflow, charLimit);
                   for (const chunk of chunks) await adapter.sendText(msg.channelId, chunk);
