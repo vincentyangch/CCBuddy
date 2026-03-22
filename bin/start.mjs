@@ -9,6 +9,13 @@ const origErr = console.error;
 console.log = (...a) => { log(a.join(' ')); origLog(...a); };
 console.error = (...a) => { log('ERR: ' + a.join(' ')); origErr(...a); };
 process.on('unhandledRejection', (err) => { log('UNHANDLED: ' + (err?.stack || err)); });
+process.on('uncaughtException', (err) => {
+  const msg = err?.stack || String(err);
+  const line = `[${new Date().toISOString()}] UNCAUGHT EXCEPTION: ${msg}\n`;
+  try { appendFileSync(LOG, line); } catch {}
+  console.error(line);
+  process.exit(1);
+});
 
 log('Starting CCBuddy...');
 const { bootstrap } = await import('../packages/main/dist/bootstrap.js');
