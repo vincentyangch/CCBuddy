@@ -55,10 +55,15 @@ Config loads in order: DEFAULT_CONFIG → `config/default.yaml` → `config/loca
 - **Conversation continuity:** SDK sessions are resumed via `query({ resume: uuid })`. SessionStore maps session keys to SDK UUIDs with configurable idle timeout (default 1 hour). DMs use per-user keys; group channels share one key.
 - **Dashboard:** Fastify server (port 18801) + React SPA. Token auth via `CCBUDDY_DASHBOARD_TOKEN` env var. REST API + WebSocket for real-time events. Enable with `dashboard.enabled: true` in config.
 - **Interactive follow-ups:** Po can ask clarifying questions mid-task via the SDK's `AskUserQuestion` tool. Questions appear as Discord buttons (with "Other" for free-text). Configurable timeout (default 5 min) via `agent.user_input_timeout_ms`.
-- **Streaming responses:** Discord messages are edited progressively as text arrives from the SDK stream (~1s batched edits). Falls back to wait-for-complete when adapter lacks `editMessage` or for voice responses.
-- **Model selection:** Configurable default model (`agent.model`). Po can switch models mid-session via `switch_model` MCP tool. Per-session model state stored in `data/sessions/<key>.model` files. Dashboard has model selector + per-session badges. Runtime override persisted to `data/runtime-config.json`.
+- **Streaming responses:** Thinking (💭) and response (💬) stream into separate Discord messages with independent char budgets. Tool use (🔧) indicators appear in the thinking message. Falls back to wait-for-complete when adapter lacks `editMessage` or for voice responses.
+- **Model selection:** Configurable default model (`agent.model`). Po can switch models mid-session via `switch_model` MCP tool. Per-session model state stored in `sessions` DB table. Dashboard has model selector + per-session badges. Runtime override persisted to `data/runtime-config.json`.
 - **Permission gates:** Configurable regex rules intercept dangerous tool calls (rm -rf, destructive git, local config, launchctl, npm publish). When `admin_skip_permissions: false`, the SDK's `canUseTool` callback gates matched tools via Discord/webchat approval buttons. Dashboard has toggle switch.
+- **Granular permissions:** Three user roles: `admin` (all tools), `trusted` (configurable safe set via `trusted_allowed_tools`), `chat` (no tools). Permission gates still apply for trusted users.
 - **Web chat:** Dashboard `/chat` route provides browser-based chat with Po. `WebChatAdapter` implements `PlatformAdapter` in the dashboard package. Supports text, images, files, voice, streaming, thinking/tool_use visibility, and session management (new/delete/history).
+- **Session persistence:** Sessions persist to SQLite `sessions` table. Survive restarts via `hydrate()`. Explicit pause/resume via `pause_session` MCP tool. Dashboard shows active/paused/archived sessions with filters and delete.
+- **Notification preferences:** `NotificationService` sends proactive alerts (health, memory, errors, new sessions) via Discord DM or configured channel. Per-user preferences (config defaults + ProfileStore overrides). Quiet hours with queuing. MCP tools: `notification_get`, `notification_set`, `notification_mute`.
+- **Multi-directory workspaces:** Per-channel working directory via `set_workspace` MCP tool. Stored in `workspaces` SQLite table. Gateway resolves workspace before building AgentRequest, falls back to `default_working_directory`.
+- **Context compaction:** Proactive compaction at configurable turn threshold (default 50). Summarizes conversation, archives old SDK session, starts fresh with summary as context. Reactive fallback catches SDK context overflow errors. User sees "*(conversation compacted — continuing)*".
 
 ## Commands
 
@@ -91,3 +96,8 @@ Full specifications live in `docs/superpowers/specs/`:
 - `2026-03-19-apple-calendar-design.md` — Apple Calendar integration
 - `2026-03-20-session-conflict-detection-design.md` — directory locking
 - `2026-03-20-voice-messages-design.md` — voice transcription and TTS
+- `2026-03-21-session-history-persistence-design.md` — session persistence and pause/resume
+- `2026-03-21-notification-preferences-design.md` — proactive notifications with preferences
+- `2026-03-21-multi-directory-workspaces-design.md` — per-channel working directories
+- `2026-03-21-granular-permissions-design.md` — trusted role with tool allowlist
+- `2026-03-21-context-compaction-design.md` — automatic context compaction
