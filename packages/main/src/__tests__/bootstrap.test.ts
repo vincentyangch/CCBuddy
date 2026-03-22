@@ -45,6 +45,7 @@ const mockRetrievalTools = vi.fn();
 const mockConsolidationService = vi.fn();
 const mockBackupService = vi.fn();
 const mockSessionDatabase = vi.fn();
+const mockWorkspaceStore = vi.fn().mockReturnValue({ get: vi.fn() });
 
 vi.mock('@ccbuddy/memory', () => ({
   MemoryDatabase: function (this: unknown, ...args: unknown[]) {
@@ -76,6 +77,9 @@ vi.mock('@ccbuddy/memory', () => ({
   },
   SessionDatabase: function (this: unknown, ...args: unknown[]) {
     return mockSessionDatabase(...args);
+  },
+  WorkspaceStore: function (this: unknown, ...args: unknown[]) {
+    return mockWorkspaceStore(...args);
   },
 }));
 
