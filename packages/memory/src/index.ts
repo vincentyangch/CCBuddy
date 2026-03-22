@@ -9,3 +9,4 @@ export { ConsolidationService, type ConsolidationStats, type ConsolidationServic
 export { BackupService, type BackupServiceDeps } from './backup-service.js';
 export { AgentEventStore, type StoredAgentEvent, type AddAgentEventParams } from './agent-event-store.js';
 export { SessionDatabase } from './session-database.js';
+export { WorkspaceStore } from './workspace-store.js';

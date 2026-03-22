@@ -75,6 +75,12 @@ export class MemoryDatabase {
       CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
       CREATE INDEX IF NOT EXISTS idx_sessions_last_activity ON sessions(last_activity);
       CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+
+      CREATE TABLE IF NOT EXISTS workspaces (
+        channel_key TEXT PRIMARY KEY,
+        directory TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
     `);
 
     // Migrations — add consolidation columns if missing
