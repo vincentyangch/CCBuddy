@@ -27,7 +27,7 @@ import { SkillGenerator } from './generator.js';
 import { SkillValidator } from './validator.js';
 import { SkillRunner } from './runner.js';
 import type { SkillPermission } from './types.js';
-import { MemoryDatabase, MessageStore, SummaryStore, RetrievalTools, ProfileStore, SessionDatabase } from '@ccbuddy/memory';
+import { MemoryDatabase, MessageStore, SummaryStore, RetrievalTools, ProfileStore, SessionDatabase, WorkspaceStore } from '@ccbuddy/memory';
 import { SwiftBridge, AppleCalendarService, AppleRemindersService, AppleShortcutsService, JxaBridge, AppleNotesService } from '@ccbuddy/apple';
 import { isValidModel } from '@ccbuddy/core';
 
@@ -43,6 +43,7 @@ function parseArgs(argv: string[]): {
   appleHelperPath: string;
   sessionKey: string;
   dataDir: string;
+  channelKey: string;
 } {
   let registryPath = '';
   let skillsDir = '';
@@ -53,6 +54,7 @@ function parseArgs(argv: string[]): {
   let appleHelperPath = '';
   let sessionKey = '';
   let dataDir = '';
+  let channelKey = '';
 
   for (let i = 0; i < argv.length; i++) {
     switch (argv[i]) {
@@ -83,6 +85,9 @@ function parseArgs(argv: string[]): {
       case '--data-dir':
         dataDir = argv[++i] ?? '';
         break;
+      case '--channel-key':
+        channelKey = argv[++i] ?? '';
+        break;
     }
   }
 
@@ -95,7 +100,7 @@ function parseArgs(argv: string[]): {
     process.exit(1);
   }
 
-  return { registryPath, skillsDir, requireApproval, autoGitCommit, memoryDbPath, heartbeatStatusFile, appleHelperPath, sessionKey, dataDir };
+  return { registryPath, skillsDir, requireApproval, autoGitCommit, memoryDbPath, heartbeatStatusFile, appleHelperPath, sessionKey, dataDir, channelKey };
 }
 
 // ── Elevated permission check ───────────────────────────────────────────────
@@ -126,6 +131,7 @@ async function main(): Promise<void> {
   let memoryDatabase: MemoryDatabase | null = null;
   let profileDatabase: MemoryDatabase | null = null;
   let sessionDb: SessionDatabase | undefined;
+  let workspaceStore: WorkspaceStore | undefined;
   if (args.memoryDbPath) {
     memoryDatabase = new MemoryDatabase(args.memoryDbPath, { readonly: true });
     const messageStore = new MessageStore(memoryDatabase);
@@ -136,6 +142,7 @@ async function main(): Promise<void> {
     profileDatabase = new MemoryDatabase(args.memoryDbPath);
     profileStore = new ProfileStore(profileDatabase);
     sessionDb = new SessionDatabase(profileDatabase.raw());
+    workspaceStore = new WorkspaceStore(profileDatabase.raw());
 
     // Register cleanup handlers for database shutdown
     const closeDatabases = () => { memoryDatabase?.close(); profileDatabase?.close(); };
@@ -368,6 +375,30 @@ async function main(): Promise<void> {
           },
           required: ['userId', 'minutes'],
         },
+      });
+    }
+
+    if (workspaceStore && args.channelKey) {
+      tools.push({
+        name: 'set_workspace',
+        description: 'Map the current channel to a working directory. Future messages in this channel will use that directory for Claude Code. The directory must exist.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            directory: { type: 'string', description: 'Absolute path to the project directory (~ is expanded to home dir)' },
+          },
+          required: ['directory'],
+        },
+      });
+      tools.push({
+        name: 'get_workspace',
+        description: 'Show the working directory mapped to the current channel, or indicate if using the default.',
+        inputSchema: { type: 'object', properties: {} },
+      });
+      tools.push({
+        name: 'remove_workspace',
+        description: 'Remove the workspace mapping for the current channel. Future messages will use the default working directory.',
+        inputSchema: { type: 'object', properties: {} },
       });
     }
 
@@ -851,6 +882,46 @@ async function main(): Promise<void> {
     if (notesService && name === 'apple_notes_delete') {
       await notesService.deleteNote(toolArgs.name as string);
       return { content: [{ type: 'text', text: JSON.stringify({ success: true }) }] };
+    }
+
+    // ── set_workspace ──────────────────────────────────────────────────
+    if (workspaceStore && name === 'set_workspace') {
+      let dir = toolArgs.directory as string;
+      if (dir.startsWith('~')) {
+        dir = dir.replace(/^~/, process.env.HOME ?? '');
+      }
+      const { existsSync, statSync } = await import('node:fs');
+      if (!existsSync(dir)) {
+        return { content: [{ type: 'text', text: `Directory does not exist: ${dir}` }] };
+      }
+      try {
+        if (!statSync(dir).isDirectory()) {
+          return { content: [{ type: 'text', text: `Path is not a directory: ${dir}` }] };
+        }
+      } catch {
+        return { content: [{ type: 'text', text: `Cannot access path: ${dir}` }] };
+      }
+      workspaceStore.set(args.channelKey, dir);
+      return { content: [{ type: 'text', text: `Workspace set to ${dir} for this channel. Future messages will use this directory.` }] };
+    }
+
+    // ── get_workspace ──────────────────────────────────────────────────
+    if (workspaceStore && name === 'get_workspace') {
+      const dir = workspaceStore.get(args.channelKey);
+      return {
+        content: [{
+          type: 'text',
+          text: dir
+            ? `This channel is mapped to: ${dir}`
+            : 'No workspace mapped — using default working directory.',
+        }],
+      };
+    }
+
+    // ── remove_workspace ───────────────────────────────────────────────
+    if (workspaceStore && name === 'remove_workspace') {
+      workspaceStore.remove(args.channelKey);
+      return { content: [{ type: 'text', text: 'Workspace mapping removed. This channel will use the default working directory.' }] };
     }
 
     // ── switch_model ──────────────────────────────────────────────────────

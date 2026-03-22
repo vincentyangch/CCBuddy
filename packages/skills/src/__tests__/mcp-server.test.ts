@@ -193,6 +193,18 @@ describe('with --memory-db', () => {
         created_at INTEGER NOT NULL,
         last_activity INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS user_profiles (
+        user_id TEXT NOT NULL,
+        key TEXT NOT NULL,
+        value TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (user_id, key)
+      );
+      CREATE TABLE IF NOT EXISTS workspaces (
+        channel_key TEXT PRIMARY KEY,
+        directory TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
     `);
     db.prepare('INSERT INTO messages (user_id, session_id, platform, content, role, timestamp, tokens) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
       'testuser', 'sess-1', 'discord', 'Hello world', 'user', Date.now(), 10
