@@ -50,6 +50,7 @@ function createMinimalConfig(overrides: Partial<CCBuddyConfig> = {}): CCBuddyCon
       permission_gates: { enabled: true, timeout_ms: 300_000, rules: [] },
       max_pause_ms: 86_400_000,
       trusted_allowed_tools: ['Read', 'Glob', 'Grep'],
+      max_turns: 30,
       compaction_threshold: 50,
       compaction_summary_tokens: 4000,
     },

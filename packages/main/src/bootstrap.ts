@@ -410,6 +410,7 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
       skipPermissions: config.agent.admin_skip_permissions,
       permissionGates: config.agent.permission_gates,
       trustedAllowedTools: config.agent.trusted_allowed_tools,
+      maxTurns: config.agent.max_turns,
     }));
   }
 

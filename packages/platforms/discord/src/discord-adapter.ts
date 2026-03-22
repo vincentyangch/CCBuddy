@@ -103,6 +103,10 @@ export class DiscordAdapter implements PlatformAdapter {
 
   async setTypingIndicator(channelId: string, active: boolean): Promise<void> {
     if (active) {
+      // Clear any existing interval first to prevent leaks on repeated calls
+      const existing = this.typingIntervals.get(channelId);
+      if (existing) clearInterval(existing);
+
       // Send immediately, then renew every 8 seconds (Discord typing lasts ~10s)
       const channel = await this.client.channels.fetch(channelId);
       if (channel?.isTextBased()) {

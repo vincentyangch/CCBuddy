@@ -35,6 +35,7 @@ export interface AgentConfig {
   user_input_timeout_ms: number;
   max_pause_ms: number;
   trusted_allowed_tools: string[];
+  max_turns: number;
   compaction_threshold: number;
   compaction_summary_tokens: number;
   permission_gates: PermissionGateConfig;
@@ -235,6 +236,7 @@ export const DEFAULT_CONFIG: CCBuddyConfig = {
       'WebFetch',
       'AskUserQuestion',
     ],
+    max_turns: 30,
     compaction_threshold: 50,
     compaction_summary_tokens: 4000,
     permission_gates: {

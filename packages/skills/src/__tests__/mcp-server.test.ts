@@ -191,7 +191,8 @@ describe('with --memory-db', () => {
         model TEXT,
         status TEXT NOT NULL DEFAULT 'active',
         created_at INTEGER NOT NULL,
-        last_activity INTEGER NOT NULL
+        last_activity INTEGER NOT NULL,
+        turns INTEGER NOT NULL DEFAULT 0
       );
       CREATE TABLE IF NOT EXISTS user_profiles (
         user_id TEXT NOT NULL,

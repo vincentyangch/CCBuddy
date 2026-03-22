@@ -50,8 +50,8 @@ skills:
       createdBy: system
       createdAt: '2026-03-19T23:00:00.000Z'
       updatedAt: '2026-03-19T23:00:00.000Z'
-      usageCount: 0
-      lastUsed: null
+      usageCount: 3
+      lastUsed: '2026-03-22T04:00:13.241Z'
   - definition:
       name: celsius-to-fahrenheit
       description: >-
@@ -76,3 +76,41 @@ skills:
       updatedAt: '2026-03-19T00:42:50.327Z'
       usageCount: 3
       lastUsed: '2026-03-19T00:48:08.151Z'
+  - definition:
+      name: weather
+      description: >-
+        Get current weather and today's forecast for a location using Open-Meteo
+        (no API key required). Returns temperature (°F), conditions, wind,
+        humidity, and daily high/low.
+      version: 1.0.0
+      source: generated
+      filePath: >-
+        /Users/flyingchickens/Documents/Projects/CCBuddy/skills/generated/weather.mjs
+      inputSchema:
+        type: object
+        properties:
+          latitude:
+            type: number
+            description: Latitude of location
+          longitude:
+            type: number
+            description: Longitude of location
+          timezone:
+            type: string
+            description: IANA timezone string, e.g. America/Chicago
+          location_name:
+            type: string
+            description: Human-readable location name for display
+        required:
+          - latitude
+          - longitude
+          - timezone
+          - location_name
+      permissions:
+        - network
+      enabled: true
+    metadata:
+      createdBy: agent
+      createdAt: '2026-03-22T03:50:33.845Z'
+      updatedAt: '2026-03-22T03:50:33.845Z'
+      usageCount: 0

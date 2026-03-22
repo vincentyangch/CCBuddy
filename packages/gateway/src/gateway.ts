@@ -321,18 +321,20 @@ export class Gateway {
     let responseMessageId: string | undefined;
     let streamInterval: ReturnType<typeof setInterval> | undefined;
     let inResponsePhase = false; // True once text events start arriving
+    let isFlushing = false; // Guard against concurrent flushes
     const canStream = !!adapter.editMessage && !voiceInput;
     const charLimit = PLATFORM_CHAR_LIMITS[msg.platform] ?? DEFAULT_CHAR_LIMIT;
 
     /** Flush the active stream message (thinking or response phase). */
     const flushStream = async () => {
       if (!adapter.editMessage) return;
-
-      if (!inResponsePhase) {
-        // Thinking phase — edit thinking message
-        const display = thinkingBuffer + thinkingSuffix;
-        if (!display) return;
-        try {
+      if (isFlushing) return; // Prevent overlapping flushes (interval races)
+      isFlushing = true;
+      try {
+        if (!inResponsePhase) {
+          // Thinking phase — edit thinking message
+          const display = thinkingBuffer + thinkingSuffix;
+          if (!display) return;
           if (thinkingMessageId) {
             if (display.length <= charLimit - 100) {
               await adapter.editMessage(msg.channelId, thinkingMessageId, display);
@@ -341,13 +343,9 @@ export class Gateway {
             const id = await adapter.sendText(msg.channelId, display);
             if (typeof id === 'string') thinkingMessageId = id;
           }
-        } catch (err) {
-          console.warn('[Gateway] Thinking flush error:', (err as Error).message);
-        }
-      } else {
-        // Response phase — edit response message
-        if (!responseBuffer) return;
-        try {
+        } else {
+          // Response phase — edit response message
+          if (!responseBuffer) return;
           if (responseMessageId) {
             if (responseBuffer.length <= charLimit - 100) {
               await adapter.editMessage(msg.channelId, responseMessageId, responseBuffer);
@@ -356,9 +354,11 @@ export class Gateway {
             const id = await adapter.sendText(msg.channelId, responseBuffer);
             if (typeof id === 'string') responseMessageId = id;
           }
-        } catch (err) {
-          console.warn('[Gateway] Response flush error:', (err as Error).message);
         }
+      } catch (err) {
+        console.warn('[Gateway] Stream flush error:', (err as Error).message);
+      } finally {
+        isFlushing = false;
       }
     };
 
@@ -368,9 +368,13 @@ export class Gateway {
       inResponsePhase = true;
       if (thinkingMessageId && adapter.editMessage) {
         // Final edit of thinking message — remove tool suffix, cap at char limit
-        const finalThinking = thinkingBuffer.length <= charLimit - 100
-          ? thinkingBuffer
-          : thinkingBuffer.slice(0, charLimit - 100);
+        // If thinkingBuffer is empty (only had tool indicators), use a placeholder
+        // because Discord rejects edits to empty strings, leaving stale content visible
+        const finalThinking = !thinkingBuffer.trim()
+          ? '*✅ Done thinking*'
+          : thinkingBuffer.length <= charLimit - 100
+            ? thinkingBuffer
+            : thinkingBuffer.slice(0, charLimit - 100);
         try {
           await adapter.editMessage(msg.channelId, thinkingMessageId, finalThinking);
         } catch { /* best effort */ }
@@ -487,23 +491,29 @@ export class Gateway {
                   await finalizeThinking();
                 }
 
+                // Use the SDK's final result text — not the accumulated responseBuffer
+                // which contains intermediate narration between tool calls
+                const finalResponse = thinkingMessageId && msg.platform !== 'webchat'
+                  ? `**💬 Response:**\n${event.response}`
+                  : event.response;
+
                 // Final flush of response message
-                if (responseBuffer.length <= charLimit - 100) {
+                if (finalResponse.length <= charLimit - 100) {
                   // Fits in one message — final edit
                   if (responseMessageId) {
-                    try { await adapter.editMessage(msg.channelId, responseMessageId, responseBuffer); } catch { /* best effort */ }
-                  } else if (responseBuffer) {
-                    await adapter.sendText(msg.channelId, responseBuffer);
+                    try { await adapter.editMessage(msg.channelId, responseMessageId, finalResponse); } catch { /* best effort */ }
+                  } else if (finalResponse) {
+                    await adapter.sendText(msg.channelId, finalResponse);
                   }
                 } else {
                   // Response overflowed — edit to limit, send rest as new messages
-                  const editPortion = responseBuffer.slice(0, charLimit - 100);
+                  const editPortion = finalResponse.slice(0, charLimit - 100);
                   if (responseMessageId) {
                     try { await adapter.editMessage(msg.channelId, responseMessageId, editPortion); } catch { /* best effort */ }
                   } else {
                     await adapter.sendText(msg.channelId, editPortion);
                   }
-                  const overflow = responseBuffer.slice(charLimit - 100);
+                  const overflow = finalResponse.slice(charLimit - 100);
                   const chunks = chunkMessage(overflow, charLimit);
                   for (const chunk of chunks) await adapter.sendText(msg.channelId, chunk);
                 }
@@ -530,6 +540,27 @@ export class Gateway {
             break;
           }
           case 'error':
+            // Session-not-found during resume — retry as a new session
+            if (
+              request.resumeSessionId &&
+              event.error.includes('No conversation found') &&
+              sessionKey &&
+              this.deps.sessionStore
+            ) {
+              console.warn(`[Gateway] Resume returned session-not-found for ${request.resumeSessionId}, retrying as new session`);
+              this.deps.sessionStore.archive(sessionKey);
+              const newSession = this.deps.sessionStore.getOrCreate(
+                sessionKey, msg.channelType === 'group', msg.platform, msg.channelId, request.userId,
+              );
+              const retryRequest: AgentRequest = {
+                ...request,
+                resumeSessionId: undefined,
+                sdkSessionId: newSession.sdkSessionId,
+                memoryContext: this.deps.assembleContext(request.userId, request.sessionId),
+              };
+              await this.executeAndRoute(retryRequest, msg, voiceInput, sessionKey);
+              return;
+            }
             await adapter.sendText(
               msg.channelId,
               `Sorry, something went wrong: ${event.error}`,

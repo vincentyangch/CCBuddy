@@ -1,4 +1,5 @@
 import { readFileSync, existsSync } from 'fs';
+import { homedir } from 'os';
 import { join } from 'path';
 import yaml from 'js-yaml';
 import { CCBuddyConfig, DEFAULT_CONFIG } from './schema.js';
@@ -126,6 +127,14 @@ export function loadConfig(configDir: string): CCBuddyConfig {
 
   config = resolvePlaceholders(config) as CCBuddyConfig;
   config = applyEnvOverrides(config);
+
+  // Expand ~ to actual home directory in paths (Node spawn doesn't understand ~)
+  if (config.agent.default_working_directory) {
+    config.agent.default_working_directory = config.agent.default_working_directory.replace(
+      /^~(?=$|\/)/,
+      homedir(),
+    );
+  }
 
   // Ensure users is always an object (guard against YAML edge cases)
   if (!config.users || typeof config.users !== 'object') {

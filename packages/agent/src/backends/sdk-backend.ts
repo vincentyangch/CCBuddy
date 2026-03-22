@@ -8,6 +8,7 @@ export interface SdkBackendOptions {
   skipPermissions?: boolean;
   permissionGates?: PermissionGateConfig;
   trustedAllowedTools?: string[];
+  maxTurns?: number;
 }
 
 // Known limitation: The SDK `query()` function yields SDKMessage events as an
@@ -40,6 +41,10 @@ export class SdkBackend implements AgentBackend {
         cwd: request.workingDirectory,
         settingSources: ['user', 'project', 'local'],
       };
+
+      if (this.options.maxTurns) {
+        options.maxTurns = this.options.maxTurns;
+      }
 
       if (request.model) {
         options.model = request.model;
