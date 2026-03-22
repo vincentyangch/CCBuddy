@@ -7,6 +7,7 @@ import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 export interface SdkBackendOptions {
   skipPermissions?: boolean;
   permissionGates?: PermissionGateConfig;
+  trustedAllowedTools?: string[];
 }
 
 // Known limitation: The SDK `query()` function yields SDKMessage events as an
@@ -64,6 +65,9 @@ export class SdkBackend implements AgentBackend {
         // bypass permissions since no user is present to approve prompts
         options.permissionMode = 'bypassPermissions';
         options.allowDangerouslySkipPermissions = true;
+      } else if (request.permissionLevel === 'trusted') {
+        options.allowedTools = this.options.trustedAllowedTools ?? [];
+        // Permission gates stay active — no bypass, no skip
       } else if (request.permissionLevel === 'chat') {
         options.allowedTools = [];
         // Restrict to text-only responses for chat users
