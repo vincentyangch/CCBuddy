@@ -12,6 +12,7 @@ function makeRow(overrides?: Partial<SessionRow>): SessionRow {
     channel_id: 'ch1',
     is_group_channel: false,
     model: null,
+    turns: 0,
     status: 'active',
     created_at: 1000,
     last_activity: 1000,

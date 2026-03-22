@@ -21,6 +21,9 @@ class MockPersistence implements SessionPersistence {
   updateModel(key: string, model: string | null): void {
     const r = this.rows.get(key); if (r) r.model = model;
   }
+  updateTurns(key: string, turns: number): void {
+    const r = this.rows.get(key); if (r) r.turns = turns;
+  }
   delete(key: string): void { this.rows.delete(key); }
 }
 
@@ -183,6 +186,7 @@ describe('SessionStore with persistence', () => {
       channel_id: 'ch1',
       is_group_channel: false,
       model: 'sonnet',
+      turns: 0,
       status: 'active',
       created_at: now - 1000,
       last_activity: now - 1000,
@@ -205,6 +209,7 @@ describe('SessionStore with persistence', () => {
       channel_id: 'ch1',
       is_group_channel: false,
       model: null,
+      turns: 0,
       status: 'archived',
       created_at: Date.now() - 5000,
       last_activity: Date.now() - 5000,
@@ -227,6 +232,7 @@ describe('SessionStore with persistence', () => {
       channel_id: 'ch1',
       is_group_channel: false,
       model: null,
+      turns: 0,
       status: 'paused',
       created_at: Date.now() - 5000,
       last_activity: Date.now() - 5000,
@@ -364,17 +370,17 @@ describe('SessionStore with persistence', () => {
     db.upsert({
       session_key: 'key1', sdk_session_id: 'sdk-1', user_id: null,
       platform: 'discord', channel_id: 'ch1', is_group_channel: false,
-      model: 'opus', status: 'active', created_at: now, last_activity: now,
+      model: 'opus', turns: 0, status: 'active', created_at: now, last_activity: now,
     });
     db.upsert({
       session_key: 'key2', sdk_session_id: 'sdk-2', user_id: null,
       platform: 'discord', channel_id: 'ch2', is_group_channel: true,
-      model: null, status: 'paused', created_at: now, last_activity: now,
+      model: null, turns: 0, status: 'paused', created_at: now, last_activity: now,
     });
     db.upsert({
       session_key: 'key3', sdk_session_id: 'sdk-3', user_id: null,
       platform: 'discord', channel_id: 'ch3', is_group_channel: false,
-      model: null, status: 'archived', created_at: now - 10000, last_activity: now - 10000,
+      model: null, turns: 0, status: 'archived', created_at: now - 10000, last_activity: now - 10000,
     });
 
     const store = new SessionStore(60_000, { persistence: db });
@@ -391,12 +397,12 @@ describe('SessionStore with persistence', () => {
     db.upsert({
       session_key: 'key1', sdk_session_id: 'sdk-1', user_id: null,
       platform: 'discord', channel_id: 'ch1', is_group_channel: false,
-      model: null, status: 'archived', created_at: now, last_activity: now,
+      model: null, turns: 0, status: 'archived', created_at: now, last_activity: now,
     });
     db.upsert({
       session_key: 'key2', sdk_session_id: 'sdk-2', user_id: null,
       platform: 'telegram', channel_id: 'ch2', is_group_channel: false,
-      model: null, status: 'active', created_at: now, last_activity: now,
+      model: null, turns: 0, status: 'active', created_at: now, last_activity: now,
     });
 
     const store = new SessionStore(60_000, { persistence: db });
@@ -412,5 +418,35 @@ describe('SessionStore with persistence', () => {
   it('getHistory returns empty when no persistence', () => {
     const store = new SessionStore(60_000);
     expect(store.getHistory()).toEqual([]);
+  });
+});
+
+describe('SessionStore turn counter', () => {
+  it('incrementTurns increments and returns new count', () => {
+    const store = new SessionStore(60_000);
+    store.getOrCreate('k1', false);
+    expect(store.incrementTurns('k1')).toBe(1);
+    expect(store.incrementTurns('k1')).toBe(2);
+    expect(store.getTurns('k1')).toBe(2);
+  });
+
+  it('incrementTurns returns 0 for unknown session', () => {
+    const store = new SessionStore(60_000);
+    expect(store.incrementTurns('unknown')).toBe(0);
+  });
+
+  it('getTurns returns 0 for new session', () => {
+    const store = new SessionStore(60_000);
+    store.getOrCreate('k1', false);
+    expect(store.getTurns('k1')).toBe(0);
+  });
+
+  it('incrementTurns persists to DB', () => {
+    const db = new MockPersistence();
+    const store = new SessionStore(60_000, { persistence: db });
+    store.getOrCreate('k1', false, 'discord', 'ch1', 'dad');
+    store.incrementTurns('k1');
+    store.incrementTurns('k1');
+    expect(db.rows.get('k1')!.turns).toBe(2);
   });
 });

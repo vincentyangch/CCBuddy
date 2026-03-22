@@ -93,6 +93,11 @@ export class MemoryDatabase {
     if (!summaryCols.some(c => c.name === 'condensed_at')) {
       this.db.exec('ALTER TABLE summary_nodes ADD COLUMN condensed_at INTEGER');
     }
+
+    const sessionCols = this.db.pragma('table_info(sessions)') as Array<{ name: string }>;
+    if (sessionCols.length > 0 && !sessionCols.some(c => c.name === 'turns')) {
+      this.db.exec('ALTER TABLE sessions ADD COLUMN turns INTEGER NOT NULL DEFAULT 0');
+    }
   }
 
   raw(): Database.Database {

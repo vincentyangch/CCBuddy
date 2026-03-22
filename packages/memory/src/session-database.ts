@@ -10,6 +10,7 @@ export class SessionDatabase implements SessionPersistence {
     updateStatus: Database.Statement;
     updateLastActivity: Database.Statement;
     updateModel: Database.Statement;
+    updateTurns: Database.Statement;
     delete: Database.Statement;
   };
 
@@ -21,19 +22,21 @@ export class SessionDatabase implements SessionPersistence {
   private prepareStatements(): void {
     this.stmts = {
       upsert: this.db.prepare(`
-        INSERT INTO sessions (session_key, sdk_session_id, user_id, platform, channel_id, is_group_channel, model, status, created_at, last_activity)
-        VALUES (@session_key, @sdk_session_id, @user_id, @platform, @channel_id, @is_group_channel, @model, @status, @created_at, @last_activity)
+        INSERT INTO sessions (session_key, sdk_session_id, user_id, platform, channel_id, is_group_channel, model, status, created_at, last_activity, turns)
+        VALUES (@session_key, @sdk_session_id, @user_id, @platform, @channel_id, @is_group_channel, @model, @status, @created_at, @last_activity, @turns)
         ON CONFLICT(session_key) DO UPDATE SET
           sdk_session_id = @sdk_session_id,
           user_id = @user_id,
           model = @model,
           status = @status,
-          last_activity = @last_activity
+          last_activity = @last_activity,
+          turns = @turns
       `),
       getByKey: this.db.prepare('SELECT * FROM sessions WHERE session_key = ?'),
       updateStatus: this.db.prepare('UPDATE sessions SET status = ? WHERE session_key = ?'),
       updateLastActivity: this.db.prepare('UPDATE sessions SET last_activity = ? WHERE session_key = ?'),
       updateModel: this.db.prepare('UPDATE sessions SET model = ? WHERE session_key = ?'),
+      updateTurns: this.db.prepare('UPDATE sessions SET turns = ? WHERE session_key = ?'),
       delete: this.db.prepare('DELETE FROM sessions WHERE session_key = ?'),
     };
   }
@@ -50,6 +53,7 @@ export class SessionDatabase implements SessionPersistence {
       status: row.status,
       created_at: row.created_at,
       last_activity: row.last_activity,
+      turns: row.turns ?? 0,
     });
   }
 
@@ -89,6 +93,10 @@ export class SessionDatabase implements SessionPersistence {
     this.stmts.updateModel.run(model, sessionKey);
   }
 
+  updateTurns(sessionKey: string, turns: number): void {
+    this.stmts.updateTurns.run(turns, sessionKey);
+  }
+
   delete(sessionKey: string): void {
     this.stmts.delete.run(sessionKey);
   }
@@ -102,6 +110,7 @@ export class SessionDatabase implements SessionPersistence {
       channel_id: row.channel_id,
       is_group_channel: !!row.is_group_channel,
       model: row.model ?? null,
+      turns: row.turns ?? 0,
       status: row.status,
       created_at: row.created_at,
       last_activity: row.last_activity,

@@ -6,6 +6,7 @@ interface SessionEntry {
   lastActivity: number;
   isGroupChannel: boolean;
   model: string | null;
+  turns: number;
   status: 'active' | 'paused';
 }
 
@@ -15,6 +16,7 @@ export interface SessionInfo {
   lastActivity: number;
   isGroupChannel: boolean;
   model: string | null;
+  turns: number;
   status: 'active' | 'paused';
 }
 
@@ -62,6 +64,7 @@ export class SessionStore {
           lastActivity: now,
           isGroupChannel: row.is_group_channel,
           model: row.model,
+          turns: row.turns ?? 0,
           status: 'active',
         };
         this.entries.set(sessionKey, entry);
@@ -80,6 +83,7 @@ export class SessionStore {
       lastActivity: now,
       isGroupChannel,
       model: null,
+      turns: 0,
       status: 'active',
     };
     this.entries.set(sessionKey, entry);
@@ -93,6 +97,7 @@ export class SessionStore {
         channel_id: channelId,
         is_group_channel: isGroupChannel,
         model: null,
+        turns: 0,
         status: 'active',
         created_at: now,
         last_activity: now,
@@ -176,6 +181,7 @@ export class SessionStore {
       lastActivity: entry.lastActivity,
       isGroupChannel: entry.isGroupChannel,
       model: entry.model,
+      turns: entry.turns,
       status: entry.status,
     }));
   }
@@ -200,6 +206,18 @@ export class SessionStore {
     return entry.model;
   }
 
+  incrementTurns(sessionKey: string): number {
+    const entry = this.entries.get(sessionKey);
+    if (!entry) return 0;
+    entry.turns++;
+    this.persistence?.updateTurns(sessionKey, entry.turns);
+    return entry.turns;
+  }
+
+  getTurns(sessionKey: string): number {
+    return this.entries.get(sessionKey)?.turns ?? 0;
+  }
+
   deleteSession(sessionKey: string): void {
     this.entries.delete(sessionKey);
     this.persistence?.delete(sessionKey);
@@ -215,6 +233,7 @@ export class SessionStore {
         lastActivity: row.last_activity,
         isGroupChannel: row.is_group_channel,
         model: row.model,
+        turns: row.turns ?? 0,
         status: row.status as 'active' | 'paused',
       });
     }

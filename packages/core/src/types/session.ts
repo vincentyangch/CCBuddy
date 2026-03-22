@@ -9,6 +9,7 @@ export interface SessionRow {
   is_group_channel: boolean;
   model: string | null;
   status: SessionStatus;
+  turns: number;
   created_at: number;
   last_activity: number;
 }
@@ -25,5 +26,6 @@ export interface SessionPersistence {
   updateStatus(sessionKey: string, status: SessionStatus): void;
   updateLastActivity(sessionKey: string, timestamp: number): void;
   updateModel(sessionKey: string, model: string | null): void;
+  updateTurns(sessionKey: string, turns: number): void;
   delete(sessionKey: string): void;
 }
