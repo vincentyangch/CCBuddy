@@ -38,6 +38,7 @@ function createMinimalConfig(overrides: Partial<CCBuddyConfig> = {}): CCBuddyCon
       queue_timeout_seconds: 120,
       rate_limits: {
         admin: 30,
+        trusted: 20,
         chat: 10,
         system: 20,
       },
@@ -48,6 +49,7 @@ function createMinimalConfig(overrides: Partial<CCBuddyConfig> = {}): CCBuddyCon
       graceful_shutdown_timeout_seconds: 30,
       permission_gates: { enabled: true, timeout_ms: 300_000, rules: [] },
       max_pause_ms: 86_400_000,
+      trusted_allowed_tools: ['Read', 'Glob', 'Grep'],
     },
     memory: {
       db_path: './data/memory.sqlite',
