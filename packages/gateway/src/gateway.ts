@@ -24,6 +24,15 @@ export interface Synthesizer {
 import { chunkMessage } from './chunker.js';
 import { shouldRespond } from './activation.js';
 
+function isContextOverflowError(err: unknown): boolean {
+  const msg = (err as Error)?.message?.toLowerCase() ?? '';
+  return msg.includes('context length') ||
+    msg.includes('too many tokens') ||
+    msg.includes('prompt is too long') ||
+    msg.includes('maximum context') ||
+    msg.includes('context window');
+}
+
 export interface StoreMessageParams {
   userId: string;
   sessionId: string;
@@ -51,6 +60,14 @@ export interface GatewayDeps {
   userInputTimeoutMs?: number;
   getWorkspace?: (channelKey: string) => string | null;
   defaultWorkingDirectory?: string;
+  compactSession?: (params: {
+    sessionKey: string;
+    userId: string;
+    sessionId: string;
+    platform: string;
+    channelId: string;
+  }) => Promise<{ newSdkSessionId: string; summary: string }>;
+  compactionThreshold?: number;
   storeAgentEvent?: (params: { userId: string; sessionId: string; platform: string; eventType: string; content: string; toolInput?: string; toolOutput?: string }) => void;
 }
 
@@ -526,9 +543,56 @@ export class Gateway {
       if (sessionKey && this.deps.sessionStore) {
         this.deps.sessionStore.touch(sessionKey);
       }
+
+      // Proactive compaction — check if session is getting long
+      if (sessionKey && this.deps.sessionStore && this.deps.compactSession && this.deps.compactionThreshold) {
+        const turns = this.deps.sessionStore.incrementTurns(sessionKey);
+        if (turns >= this.deps.compactionThreshold) {
+          try {
+            console.log(`[Gateway] Proactive compaction triggered for ${sessionKey} at ${turns} turns`);
+            await this.deps.compactSession({
+              sessionKey,
+              userId: request.userId,
+              sessionId: request.sessionId,
+              platform: msg.platform,
+              channelId: msg.channelId,
+            });
+            await adapter.sendText(msg.channelId, '*(conversation compacted — continuing)*');
+          } catch (compactErr) {
+            console.error('[Gateway] Proactive compaction failed:', compactErr);
+          }
+        }
+      }
     } catch (err) {
       if (streamInterval) clearInterval(streamInterval);
       console.error(`[Gateway] executeAndRoute error: channel=${msg.channelId}`, err);
+
+      // Reactive compaction — catch context overflow errors
+      if (isContextOverflowError(err) && sessionKey && this.deps.compactSession && this.deps.sessionStore) {
+        console.warn(`[Gateway] Context overflow detected for ${sessionKey}, compacting`);
+        try {
+          const result = await this.deps.compactSession({
+            sessionKey,
+            userId: request.userId,
+            sessionId: request.sessionId,
+            platform: msg.platform,
+            channelId: msg.channelId,
+          });
+          const retryRequest: AgentRequest = {
+            ...request,
+            resumeSessionId: undefined,
+            sdkSessionId: result.newSdkSessionId,
+            memoryContext: result.summary,
+          };
+          await this.executeAndRoute(retryRequest, msg, voiceInput, sessionKey);
+          await adapter.sendText(msg.channelId, '*(conversation compacted — continuing)*');
+          return;
+        } catch (compactErr) {
+          console.error('[Gateway] Reactive compaction failed:', compactErr);
+          // Fall through to normal error handling
+        }
+      }
+
       // Publish agent.error event for notifications
       void this.deps.eventBus.publish('agent.error', {
         userId: request.userId,
