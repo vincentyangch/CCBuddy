@@ -12,6 +12,7 @@ export class DiscordAdapter implements PlatformAdapter {
   readonly platform = 'discord';
   private client: Client;
   private messageHandler?: (msg: IncomingMessage) => void;
+  private typingIntervals = new Map<string, ReturnType<typeof setInterval>>();
 
   constructor(private config: DiscordAdapterConfig) {
     this.client = new Client({
@@ -101,9 +102,23 @@ export class DiscordAdapter implements PlatformAdapter {
   }
 
   async setTypingIndicator(channelId: string, active: boolean): Promise<void> {
-    if (!active) return;
-    const channel = await this.fetchTextChannel(channelId);
-    if (channel) await channel.sendTyping();
+    if (active) {
+      // Send immediately, then renew every 8 seconds (Discord typing lasts ~10s)
+      const channel = await this.client.channels.fetch(channelId);
+      if (channel?.isTextBased()) {
+        try { await (channel as any).sendTyping(); } catch {}
+        const interval = setInterval(async () => {
+          try { await (channel as any).sendTyping(); } catch {}
+        }, 8000);
+        this.typingIntervals.set(channelId, interval);
+      }
+    } else {
+      const interval = this.typingIntervals.get(channelId);
+      if (interval) {
+        clearInterval(interval);
+        this.typingIntervals.delete(channelId);
+      }
+    }
   }
 
   async sendButtons(
