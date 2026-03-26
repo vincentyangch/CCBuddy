@@ -200,6 +200,20 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
   // All paths must be absolute — the SDK spawns a CLI subprocess that may use a different CWD
   const skillMcpServerPath = config.skills.mcp_server_path ?? MCP_SERVER_PATH;
   const registryDir = dirname(config.skills.generated_dir); // parent dir (e.g., './skills')
+  // Forward env vars from this process to the MCP server subprocess.
+  // The Claude Code SDK session does not inherit the LaunchAgent environment,
+  // so env vars (e.g. third-party service keys) must be passed explicitly.
+  const forwardedEnvKeys = Object.keys(process.env).filter(k =>
+    k.startsWith('HOMEAUTOMATION_') ||
+    k.startsWith('CCBUDDY_') ||
+    k.startsWith('OPENAI_') ||
+    k === 'PATH' || k === 'HOME' || k === 'USER' || k === 'TMPDIR'
+  );
+  const mcpEnv: Record<string, string> = {};
+  for (const k of forwardedEnvKeys) {
+    if (process.env[k] !== undefined) mcpEnv[k] = process.env[k] as string;
+  }
+
   const skillMcpServer = {
     name: 'ccbuddy-skills',
     command: process.execPath, // Use the exact same Node.js binary as the parent process
@@ -213,6 +227,7 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
       '--heartbeat-status-file', resolve(join(config.data_dir, 'heartbeat-status.json')),
       '--data-dir', resolve(config.data_dir),
     ],
+    env: mcpEnv,
   };
 
   // 7b. Wire Apple helper path into MCP server args if enabled
@@ -477,6 +492,15 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
       });
     },
     internalJobs,
+    storeMessage: (params) => {
+      messageStore.add({
+        userId: params.userId,
+        sessionId: params.sessionId,
+        platform: params.platform,
+        content: params.content,
+        role: params.role,
+      });
+    },
   });
 
   shutdownHandler.register('scheduler', async () => {
