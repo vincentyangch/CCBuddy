@@ -63,6 +63,8 @@ function createMockDeps(overrides: Partial<CronRunnerOptions> = {}): CronRunnerO
 
   const assembleContext = vi.fn().mockReturnValue('Memory context for user');
 
+  const storeMessage = vi.fn(async () => {});
+
   return {
     eventBus,
     executeAgentRequest,
@@ -70,6 +72,7 @@ function createMockDeps(overrides: Partial<CronRunnerOptions> = {}): CronRunnerO
     runSkill,
     assembleContext,
     timezone: 'UTC',
+    storeMessage,
     ...overrides,
   };
 }
@@ -124,6 +127,103 @@ describe('CronRunner', () => {
       expect(request.permissionLevel).toBe('system');
 
       // Verify sendProactiveMessage was called with the response
+      expect(deps.sendProactiveMessage).toHaveBeenCalledWith(
+        job.target,
+        'Here is your daily report.',
+      );
+    });
+  });
+
+  describe('executeJob — storeMessage', () => {
+    it('stores user trigger and assistant response for prompt job', async () => {
+      const deps = createMockDeps();
+      const runner = new CronRunner(deps);
+      const job = createMockJob();
+
+      await runner.executeJob(job);
+
+      expect(deps.storeMessage).toHaveBeenCalledTimes(2);
+
+      const calls = (deps.storeMessage as ReturnType<typeof vi.fn>).mock.calls;
+
+      expect(calls[0][0]).toMatchObject({
+        userId: 'user-123',
+        platform: 'discord',
+        role: 'user',
+        content: '[Scheduled: daily-report]',
+      });
+      expect(calls[0][0].sessionId).toMatch(/^scheduler:cron:daily-report:\d+$/);
+
+      expect(calls[1][0]).toMatchObject({
+        userId: 'user-123',
+        platform: 'discord',
+        role: 'assistant',
+        content: 'Here is your daily report.',
+      });
+
+      expect(calls[0][0].sessionId).toBe(calls[1][0].sessionId);
+    });
+
+    it('stores user trigger and result for skill job', async () => {
+      const deps = createMockDeps();
+      const runner = new CronRunner(deps);
+      const job: SkillJob = {
+        ...createMockJob(),
+        type: 'skill',
+        payload: 'check-health',
+      };
+
+      await runner.executeJob(job);
+
+      expect(deps.storeMessage).toHaveBeenCalledTimes(2);
+
+      const calls = (deps.storeMessage as ReturnType<typeof vi.fn>).mock.calls;
+      expect(calls[0][0]).toMatchObject({ role: 'user', content: '[Scheduled: daily-report]' });
+      expect(calls[1][0]).toMatchObject({ role: 'assistant', content: 'skill-result-text' });
+      expect(calls[0][0].sessionId).toMatch(/^scheduler:cron:daily-report:\d+$/);
+      expect(calls[0][0].sessionId).toBe(calls[1][0].sessionId);
+    });
+
+    it('does NOT call storeMessage on error', async () => {
+      const errorEvent: AgentEvent = {
+        type: 'error',
+        error: 'boom',
+        sessionId: 'test-session',
+        userId: 'user-123',
+        channelId: 'general',
+        platform: 'discord',
+      };
+      const executeAgentRequest = vi.fn(async function* (): AsyncGenerator<AgentEvent> {
+        yield errorEvent;
+      });
+      const deps = createMockDeps({ executeAgentRequest });
+      const runner = new CronRunner(deps);
+      const job = createMockJob();
+
+      await runner.executeJob(job);
+
+      expect(deps.storeMessage).not.toHaveBeenCalled();
+    });
+
+    it('does NOT throw if storeMessage rejects', async () => {
+      const storeMessage = vi.fn(async () => { throw new Error('DB down'); });
+      const deps = createMockDeps({ storeMessage });
+      const runner = new CronRunner(deps);
+      const job = createMockJob();
+
+      await expect(runner.executeJob(job)).resolves.not.toThrow();
+      expect(deps.sendProactiveMessage).toHaveBeenCalledWith(
+        job.target,
+        'Here is your daily report.',
+      );
+    });
+
+    it('works correctly when storeMessage is not provided', async () => {
+      const deps = createMockDeps({ storeMessage: undefined });
+      const runner = new CronRunner(deps);
+      const job = createMockJob();
+
+      await expect(runner.executeJob(job)).resolves.not.toThrow();
       expect(deps.sendProactiveMessage).toHaveBeenCalledWith(
         job.target,
         'Here is your daily report.',

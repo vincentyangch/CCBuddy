@@ -16,6 +16,13 @@ export interface CronRunnerOptions {
   timezone: string;
   defaultModel?: string;
   internalJobs?: Map<string, () => Promise<void>>;
+  storeMessage?: (params: {
+    userId: string;
+    sessionId: string;
+    platform: string;
+    content: string;
+    role: 'user' | 'assistant';
+  }) => void | Promise<void>;
 }
 
 export class CronRunner {
@@ -76,6 +83,32 @@ export class CronRunner {
     this.jobs.clear();
   }
 
+  private async storeJobMessages(
+    job: PromptJob | SkillJob,
+    sessionId: string,
+    response: string,
+  ): Promise<void> {
+    if (!this.opts.storeMessage) return;
+    try {
+      await this.opts.storeMessage({
+        userId: job.user,
+        sessionId,
+        platform: job.target.platform,
+        content: `[Scheduled: ${job.name}]`,
+        role: 'user',
+      });
+      await this.opts.storeMessage({
+        userId: job.user,
+        sessionId,
+        platform: job.target.platform,
+        content: response,
+        role: 'assistant',
+      });
+    } catch (err) {
+      console.warn('[Scheduler] storeMessage failed:', err);
+    }
+  }
+
   private async executePromptJob(job: PromptJob): Promise<void> {
     const sessionId = `scheduler:cron:${job.name}:${Date.now()}`;
     const memoryContext = this.opts.assembleContext(job.user, sessionId);
@@ -100,6 +133,7 @@ export class CronRunner {
         }
         if (event.type === 'complete') {
           await this.opts.sendProactiveMessage(job.target, event.response);
+          await this.storeJobMessages(job, sessionId, event.response);
           await this.publishComplete(job, true);
           return;
         }
@@ -116,9 +150,12 @@ export class CronRunner {
       return;
     }
 
+    const sessionId = `scheduler:cron:${job.name}:${Date.now()}`;
+
     try {
       const result = await this.opts.runSkill(job.payload, {});
       await this.opts.sendProactiveMessage(job.target, result);
+      await this.storeJobMessages(job, sessionId, result);
       await this.publishComplete(job, true);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
