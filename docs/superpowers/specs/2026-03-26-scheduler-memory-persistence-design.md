@@ -1,7 +1,7 @@
 # Design: Scheduler Job Memory Persistence
 
 **Date:** 2026-03-26
-**Status:** Approved
+**Status:** Pending user review
 **Author:** CCBuddy (Po)
 
 ---
@@ -32,7 +32,7 @@ Scheduled jobs (morning/evening briefs, future cron jobs) are delivered to the u
 
 ### Approach: Add `storeMessage` callback to `CronRunnerOptions`
 
-Add an optional `storeMessage` callback to `CronRunnerOptions` (and by extension `SchedulerService`). Bootstrap passes its existing `messageStore.add` function. The `CronRunner` calls it after a job completes.
+Add an optional `storeMessage` callback to `CronRunnerOptions` and to `SchedulerDeps` (the existing type in `packages/scheduler/src/types.ts`). Bootstrap passes its existing `messageStore.add` function. The `CronRunner` calls it after a job completes successfully.
 
 This is the minimal-change approach: no new events, no new infrastructure, no changes to the memory or gateway packages.
 
@@ -48,15 +48,27 @@ For each completed `prompt` or `skill` job, two messages are stored:
 | `role` | `'user'` | `'assistant'` |
 | `content` | `[Scheduled: <jobName>]` | full response text |
 
-The `sessionId` is the same one used for `assembleContext`, so memory consolidation and context retrieval naturally group these messages with their execution context.
+**Session ID note:** Each job execution generates a fresh `sessionId` via `scheduler:cron:<jobName>:<Date.now()>`. Each run is isolated in its own session — there is no cross-run grouping. This is intentional; memory consolidation treats each scheduled run as an independent session.
+
+**Platform note:** `platform` is taken directly from `job.target.platform` (e.g. `'discord'`). Misconfigured jobs with non-standard platform values (e.g. `'system'`) will store messages with that platform string; this is harmless since storage is platform-agnostic.
+
+### Skill Job Session ID
+
+`executeSkillJob` does not currently generate a `sessionId`. For consistency, it must generate one the same way as `executePromptJob`:
+
+```typescript
+const sessionId = `scheduler:cron:${job.name}:${Date.now()}`;
+```
+
+This is created locally before calling `runSkill`, and used only for the two `storeMessage` calls.
 
 ### Files Changed
 
 | File | Change |
 |---|---|
 | `packages/scheduler/src/cron-runner.ts` | Add optional `storeMessage` to `CronRunnerOptions`; call after prompt/skill job completes |
-| `packages/scheduler/src/scheduler-service.ts` | Thread `storeMessage` through from `SchedulerServiceDeps` to `CronRunner` |
-| `packages/scheduler/src/types.ts` | Add `storeMessage` to `SchedulerServiceDeps` if defined there |
+| `packages/scheduler/src/scheduler-service.ts` | Thread `storeMessage` through from `SchedulerDeps` to `CronRunner` |
+| `packages/scheduler/src/types.ts` | Add optional `storeMessage` to `SchedulerDeps` |
 | `packages/main/src/bootstrap.ts` | Pass `storeMessage: (p) => messageStore.add(p)` to `SchedulerService` |
 
 ### Interface Change
@@ -71,34 +83,66 @@ export interface CronRunnerOptions {
     platform: string;
     content: string;
     role: 'user' | 'assistant';
-  }) => void;
+  }) => void | Promise<void>;
 }
 ```
 
+The callback signature accepts both sync and async implementations. It intentionally omits the `attachments` field present in the gateway's `storeMessage` closure — scheduled job output never has attachments. The runner calls it with `await` inside a `try/catch` to safely handle both:
+
+```typescript
+if (this.opts.storeMessage) {
+  try {
+    await this.opts.storeMessage({ ... });
+  } catch (err) {
+    console.warn('[Scheduler] storeMessage failed:', err);
+  }
+}
+```
+
+Errors in `storeMessage` are logged but do not affect job success or delivery.
+
 ### Control Flow
 
+**`executePromptJob`** (on `event.type === 'complete'` only):
 ```
-executePromptJob / executeSkillJob
-  → agent/skill runs
-  → sendProactiveMessage(target, response)      // existing: delivers to Discord
-  → storeMessage({ role: 'user',  content: '[Scheduled: <name>]', ... })  // NEW
-  → storeMessage({ role: 'assistant', content: response, ... })            // NEW
-  → publishComplete(job, true)
+sendProactiveMessage(target, event.response)
+storeMessage({ role: 'user',      content: '[Scheduled: <name>]', ... })
+storeMessage({ role: 'assistant', content: event.response, ... })
+publishComplete(job, true)
 ```
 
-`storeMessage` is called only on success. On error, the error message is sent via `sendProactiveMessage` but not stored (error paths are typically noise, not recall-worthy content).
+If the generator ends without emitting `complete` or `error` (truncated stream), neither `storeMessage` nor `publishComplete` is called — this is a pre-existing gap, not introduced by this change.
+
+**`executeSkillJob`** (on success):
+```
+const sessionId = `scheduler:cron:${job.name}:${Date.now()}`
+result = await runSkill(...)
+sendProactiveMessage(target, result)
+storeMessage({ role: 'user',      content: '[Scheduled: <name>]', sessionId, ... })
+storeMessage({ role: 'assistant', content: result, sessionId, ... })
+publishComplete(job, true)
+```
+
+`storeMessage` is **not** called on error paths.
 
 ---
 
 ## Error Handling
 
-- `storeMessage` is fire-and-forget — errors are caught and logged but do not affect job success/failure.
+- `storeMessage` is called with `await` inside a `try/catch`. Errors are logged as warnings and do not affect job delivery or the `success` flag.
 - If `storeMessage` is not provided (undefined), the code no-ops gracefully.
 
 ---
 
 ## Testing
 
-- Update existing `cron-runner` unit tests to pass a mock `storeMessage` and assert it is called with the correct `user`/`assistant` pair after a successful job.
-- Assert `storeMessage` is NOT called on error paths.
-- No changes needed to integration or bootstrap tests.
+### `cron-runner` unit tests
+- Pass a mock `storeMessage` spy to `CronRunnerOptions`.
+- After a successful prompt job: assert spy called twice — once with `role: 'user'` and `content: '[Scheduled: <name>]'`, once with `role: 'assistant'` and the response text. Both calls must share the same `sessionId`.
+- After a successful skill job: assert the same two-call pattern with a generated `sessionId`.
+- After a failed job (error event): assert `storeMessage` is NOT called.
+- Assert `storeMessage` errors are caught and do not throw from `executeJob`.
+
+### `scheduler-service` unit tests
+- Assert that `SchedulerDeps.storeMessage` is threaded through to `CronRunner` constructor.
+- Verify that omitting `storeMessage` from `SchedulerDeps` does not throw (optional field).
