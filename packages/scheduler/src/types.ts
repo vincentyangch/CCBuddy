@@ -66,6 +66,13 @@ export interface SchedulerDeps {
   checkAgent: () => Promise<{ reachable: boolean; durationMs: number }>;
   assembleContext: (userId: string, sessionId: string) => string;
   internalJobs?: Map<string, () => Promise<void>>;
+  storeMessage?: (params: {
+    userId: string;
+    sessionId: string;
+    platform: string;
+    content: string;
+    role: 'user' | 'assistant';
+  }) => void | Promise<void>;
 }
 
 export type { MessageTarget };
