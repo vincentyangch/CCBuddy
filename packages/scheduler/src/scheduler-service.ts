@@ -21,6 +21,7 @@ export class SchedulerService {
       defaultModel: deps.defaultModel,
       assembleContext: deps.assembleContext,
       internalJobs: deps.internalJobs,
+      storeMessage: deps.storeMessage,
     });
   }
 

@@ -5,7 +5,7 @@ import type {
   EventBus,
   CCBuddyConfig,
 } from '@ccbuddy/core';
-import type { SchedulerDeps } from '../types.js';
+import type { SchedulerDeps, PromptJob } from '../types.js';
 
 const { mockSchedule, mockValidate } = vi.hoisted(() => ({
   mockSchedule: vi.fn(() => ({ stop: vi.fn() })),
@@ -226,6 +226,29 @@ describe('SchedulerService', () => {
 
     await service.start();
     await expect(service.stop()).resolves.not.toThrow();
+  });
+
+  it('threads storeMessage from deps to CronRunner when provided', async () => {
+    const storeMessage = vi.fn(async () => {});
+    const deps = createMockDeps({ storeMessage });
+    const service = new SchedulerService(deps);
+    await service.start();
+
+    const jobs = service.getJobs();
+    expect(jobs.length).toBeGreaterThan(0);
+    const job = jobs[0] as PromptJob;
+    await (service as any).cronRunner.executeJob(job);
+
+    expect(storeMessage).toHaveBeenCalled();
+    await service.stop();
+  });
+
+  it('starts cleanly when storeMessage is not provided', async () => {
+    const deps = createMockDeps();
+    delete (deps as any).storeMessage;
+    const service = new SchedulerService(deps);
+    await expect(service.start()).resolves.not.toThrow();
+    await service.stop();
   });
 
   it('maps timezone from job config to ScheduledJob', async () => {
