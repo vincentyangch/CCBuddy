@@ -204,7 +204,7 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
   // The Claude Code SDK session does not inherit the LaunchAgent environment,
   // so env vars (e.g. third-party service keys) must be passed explicitly.
   const forwardedEnvKeys = Object.keys(process.env).filter(k =>
-    k.startsWith('HOMEAUTOMATION_') ||
+    k.startsWith('HOMEASSISTANT_') ||
     k.startsWith('CCBUDDY_') ||
     k.startsWith('OPENAI_') ||
     k === 'PATH' || k === 'HOME' || k === 'USER' || k === 'TMPDIR'
@@ -213,6 +213,10 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
   for (const k of forwardedEnvKeys) {
     if (process.env[k] !== undefined) mcpEnv[k] = process.env[k] as string;
   }
+
+  // Determine owner user ID: the first admin user in config, used as default for memory tool calls
+  const adminUser = Object.values(config.users).find(u => u.role === 'admin');
+  const ownerUserId = adminUser?.name ?? '';
 
   const skillMcpServer = {
     name: 'ccbuddy-skills',
@@ -226,8 +230,20 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
       '--memory-db', resolve(config.memory.db_path),
       '--heartbeat-status-file', resolve(join(config.data_dir, 'heartbeat-status.json')),
       '--data-dir', resolve(config.data_dir),
+      ...(ownerUserId ? ['--owner-user-id', ownerUserId] : []),
     ],
     env: mcpEnv,
+  };
+
+  // Home Assistant MCP server (ha-mcp via uvx)
+  const haMcpServer = {
+    name: 'home-assistant',
+    command: 'uvx',
+    args: ['ha-mcp@latest'],
+    env: {
+      HOMEASSISTANT_URL: process.env.HOMEASSISTANT_URL ?? 'http://localhost:8123',
+      HOMEASSISTANT_TOKEN: process.env.HOMEASSISTANT_TOKEN ?? '',
+    },
   };
 
   // 7b. Wire Apple helper path into MCP server args if enabled
@@ -239,7 +255,11 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
 
   const identityPrompt = `You are CCBuddy — a personal AI assistant belonging to flyingchickens. You run 24/7 on a Mac Mini and are reachable via Discord. Your name is CCBuddy (or just "Buddy"). When asked who you are, introduce yourself as CCBuddy. You are powered by Claude under the hood, but your identity, personality, and purpose are CCBuddy's. You are helpful, concise, and proactive. You know your own codebase (this project) and can improve yourself when asked.
 
-You have profile tools (profile_get, profile_set, profile_delete) to remember things about users across conversations. When you learn something about a user — their preferences, interests, timezone, communication style, or anything worth remembering — save it with profile_set. This data automatically appears in your context for every future conversation. Proactively use these tools; don't wait to be asked.`;
+**IMPORTANT — Identity clarification:** You are NOT a Claude Code CLI session. You ARE CCBuddy, a persistent agent running via macOS launchd (com.ccbuddy.agent.plist). The CLAUDE.md file in this project describes YOUR own codebase in third person — it is documentation about you, not instructions for a separate developer. This project IS you. When you see references to "CCBuddy" in project files, that is you.
+
+You have profile tools (profile_get, profile_set, profile_delete) to remember things about users across conversations. When you learn something about a user — their preferences, interests, timezone, communication style, or anything worth remembering — save it with profile_set. This data automatically appears in your context for every future conversation. Proactively use these tools; don't wait to be asked.
+
+**Memory tools:** When using memory_grep, memory_get_briefs, memory_describe, or memory_expand, the userId is "${ownerUserId || 'flyingchickens'}". You may omit userId entirely — the tools will default to the owner user. Use memory_get_briefs to retrieve morning/evening briefings (jobName examples: "evening_briefing", "morning_briefing_weekday", "morning_briefing_weekend").`;
 
   const skillNudge = 'You have access to reusable skills (prefixed skill_) and can create new ones with create_skill. When you solve a novel problem that could be reusable, consider creating a skill for it.\n\nFor image generation requests, use the skill_generate_image tool directly with a descriptive prompt. Do not deliberate — just call the tool.';
 
@@ -273,7 +293,7 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
       return agentService.handleRequest({
         ...request,
         workingDirectory: request.workingDirectory,
-        mcpServers: [mcpServer],
+        mcpServers: [mcpServer, haMcpServer],
         systemPrompt: [identityPrompt, request.systemPrompt, skillNudge].filter(Boolean).join('\n\n'),
       });
     },
@@ -467,7 +487,7 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
     executeAgentRequest: (request) => agentService.handleRequest({
       ...request,
       workingDirectory: request.workingDirectory,
-      mcpServers: [skillMcpServer],
+      mcpServers: [skillMcpServer, haMcpServer],
 
       systemPrompt: [identityPrompt, request.systemPrompt, skillNudge].filter(Boolean).join('\n\n'),
     }),

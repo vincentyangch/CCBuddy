@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+process.title = 'ccbuddy';
 import { appendFileSync } from 'fs';
 
 const LOG = '/Users/flyingchickens/Documents/Projects/CCBuddy/data/ccbuddy.log';
