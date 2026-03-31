@@ -214,16 +214,64 @@ describe('RetrievalTools', () => {
     });
   });
 
-  describe('getToolDefinitions()', () => {
-    it('returns exactly 3 tool definitions', () => {
-      const defs = tools.getToolDefinitions();
-      expect(defs).toHaveLength(3);
+  describe('getBriefs()', () => {
+    it('returns all scheduled brief pairs when no jobName is given', () => {
+      const sessionId = 's-brief';
+      const t1 = msgStore.add({ userId: 'u1', sessionId, platform: 'discord', content: '[Scheduled: evening_briefing]', role: 'user', tokens: 5 });
+      const r1 = msgStore.add({ userId: 'u1', sessionId, platform: 'discord', content: 'Evening brief content here.', role: 'assistant', tokens: 50 });
+      const t2 = msgStore.add({ userId: 'u1', sessionId, platform: 'discord', content: '[Scheduled: morning_briefing_weekday]', role: 'user', tokens: 5 });
+      const r2 = msgStore.add({ userId: 'u1', sessionId, platform: 'discord', content: 'Morning brief content here.', role: 'assistant', tokens: 50 });
+
+      const result = tools.getBriefs('u1');
+
+      expect(result.count).toBe(2);
+      expect(result.briefs[0].trigger.content).toBe('[Scheduled: evening_briefing]');
+      expect(result.briefs[0].response?.content).toBe('Evening brief content here.');
+      expect(result.briefs[1].trigger.content).toBe('[Scheduled: morning_briefing_weekday]');
+      expect(result.briefs[1].response?.content).toBe('Morning brief content here.');
     });
 
-    it('includes memory_grep, memory_describe, and memory_expand', () => {
+    it('filters by jobName', () => {
+      const sessionId = 's-brief2';
+      msgStore.add({ userId: 'u1', sessionId, platform: 'discord', content: '[Scheduled: evening_briefing]', role: 'user', tokens: 5 });
+      msgStore.add({ userId: 'u1', sessionId, platform: 'discord', content: 'Evening content.', role: 'assistant', tokens: 10 });
+      msgStore.add({ userId: 'u1', sessionId, platform: 'discord', content: '[Scheduled: morning_briefing_weekday]', role: 'user', tokens: 5 });
+      msgStore.add({ userId: 'u1', sessionId, platform: 'discord', content: 'Morning content.', role: 'assistant', tokens: 10 });
+
+      const result = tools.getBriefs('u1', 'evening_briefing');
+
+      expect(result.count).toBe(1);
+      expect(result.briefs[0].trigger.content).toBe('[Scheduled: evening_briefing]');
+      expect(result.briefs[0].response?.content).toBe('Evening content.');
+    });
+
+    it('returns undefined response when no assistant message follows', () => {
+      msgStore.add({ userId: 'u1', sessionId: 's-no-resp', platform: 'discord', content: '[Scheduled: evening_briefing]', role: 'user', tokens: 5 });
+
+      const result = tools.getBriefs('u1', 'evening_briefing');
+
+      expect(result.count).toBe(1);
+      expect(result.briefs[0].response).toBeUndefined();
+    });
+
+    it('returns empty when no scheduled messages exist', () => {
+      const result = tools.getBriefs('u1');
+      expect(result.count).toBe(0);
+      expect(result.briefs).toHaveLength(0);
+    });
+  });
+
+  describe('getToolDefinitions()', () => {
+    it('returns exactly 4 tool definitions', () => {
+      const defs = tools.getToolDefinitions();
+      expect(defs).toHaveLength(4);
+    });
+
+    it('includes memory_grep, memory_get_briefs, memory_describe, and memory_expand', () => {
       const defs = tools.getToolDefinitions();
       const names = defs.map(d => d.name);
       expect(names).toContain('memory_grep');
+      expect(names).toContain('memory_get_briefs');
       expect(names).toContain('memory_describe');
       expect(names).toContain('memory_expand');
     });

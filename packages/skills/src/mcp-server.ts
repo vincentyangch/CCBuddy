@@ -44,6 +44,7 @@ function parseArgs(argv: string[]): {
   sessionKey: string;
   dataDir: string;
   channelKey: string;
+  ownerUserId: string;
 } {
   let registryPath = '';
   let skillsDir = '';
@@ -55,6 +56,7 @@ function parseArgs(argv: string[]): {
   let sessionKey = '';
   let dataDir = '';
   let channelKey = '';
+  let ownerUserId = '';
 
   for (let i = 0; i < argv.length; i++) {
     switch (argv[i]) {
@@ -88,6 +90,9 @@ function parseArgs(argv: string[]): {
       case '--channel-key':
         channelKey = argv[++i] ?? '';
         break;
+      case '--owner-user-id':
+        ownerUserId = argv[++i] ?? '';
+        break;
     }
   }
 
@@ -100,7 +105,7 @@ function parseArgs(argv: string[]): {
     process.exit(1);
   }
 
-  return { registryPath, skillsDir, requireApproval, autoGitCommit, memoryDbPath, heartbeatStatusFile, appleHelperPath, sessionKey, dataDir, channelKey };
+  return { registryPath, skillsDir, requireApproval, autoGitCommit, memoryDbPath, heartbeatStatusFile, appleHelperPath, sessionKey, dataDir, channelKey, ownerUserId };
 }
 
 // ── Elevated permission check ───────────────────────────────────────────────
@@ -132,11 +137,19 @@ async function main(): Promise<void> {
   let profileDatabase: MemoryDatabase | null = null;
   let sessionDb: SessionDatabase | undefined;
   let workspaceStore: WorkspaceStore | undefined;
+  // ownerUserId: the default userId for memory tool calls when userId is omitted.
+  // Resolved from --owner-user-id arg, falling back to the first user in the DB.
+  let ownerUserId: string = args.ownerUserId;
   if (args.memoryDbPath) {
     memoryDatabase = new MemoryDatabase(args.memoryDbPath, { readonly: true });
     const messageStore = new MessageStore(memoryDatabase);
     const summaryStore = new SummaryStore(memoryDatabase);
     retrievalTools = new RetrievalTools(messageStore, summaryStore);
+    // Auto-detect ownerUserId if not provided via CLI arg
+    if (!ownerUserId) {
+      const userIds = messageStore.getDistinctUserIds();
+      if (userIds.length > 0) ownerUserId = userIds[0];
+    }
 
     // Writable connection for profile updates (WAL mode supports concurrent writers)
     profileDatabase = new MemoryDatabase(args.memoryDbPath);
@@ -193,6 +206,9 @@ async function main(): Promise<void> {
       });
     };
   }
+
+  // 3b. Load bundled skills from skills/bundled/
+  await generator.loadBundledSkills();
 
   // 4. Create MCP server
   const server = new Server(
@@ -581,13 +597,23 @@ async function main(): Promise<void> {
 
     // ── memory_grep ───────────────────────────────────────────────────────
     if (retrievalTools && name === 'memory_grep') {
-      const result = retrievalTools.grep(toolArgs.userId as string, toolArgs.query as string);
+      const userId = (toolArgs.userId as string | undefined) || ownerUserId;
+      const result = retrievalTools.grep(userId, toolArgs.query as string);
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    }
+
+    // ── memory_get_briefs ─────────────────────────────────────────────────
+    if (retrievalTools && name === 'memory_get_briefs') {
+      const userId = (toolArgs.userId as string | undefined) || ownerUserId;
+      const jobName = toolArgs.jobName as string | undefined;
+      const result = retrievalTools.getBriefs(userId, jobName);
       return { content: [{ type: 'text', text: JSON.stringify(result) }] };
     }
 
     // ── memory_describe ───────────────────────────────────────────────────
     if (retrievalTools && name === 'memory_describe') {
-      const result = retrievalTools.describe(toolArgs.userId as string, {
+      const userId = (toolArgs.userId as string | undefined) || ownerUserId;
+      const result = retrievalTools.describe(userId, {
         startMs: toolArgs.startMs as number,
         endMs: toolArgs.endMs as number,
       });
@@ -596,7 +622,8 @@ async function main(): Promise<void> {
 
     // ── memory_expand ─────────────────────────────────────────────────────
     if (retrievalTools && name === 'memory_expand') {
-      const result = retrievalTools.expand(toolArgs.userId as string, toolArgs.nodeId as number);
+      const userId = (toolArgs.userId as string | undefined) || ownerUserId;
+      const result = retrievalTools.expand(userId, toolArgs.nodeId as number);
       return { content: [{ type: 'text', text: JSON.stringify(result ?? { error: 'Node not found' }) }] };
     }
 

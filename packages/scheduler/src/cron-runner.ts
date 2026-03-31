@@ -132,8 +132,10 @@ export class CronRunner {
           return;
         }
         if (event.type === 'complete') {
-          await this.opts.sendProactiveMessage(job.target, event.response);
-          await this.storeJobMessages(job, sessionId, event.response);
+          if (!job.silent) {
+            await this.opts.sendProactiveMessage(job.target, event.response);
+            await this.storeJobMessages(job, sessionId, event.response);
+          }
           await this.publishComplete(job, true);
           return;
         }
@@ -154,8 +156,10 @@ export class CronRunner {
 
     try {
       const result = await this.opts.runSkill(job.payload, {});
-      await this.opts.sendProactiveMessage(job.target, result);
-      await this.storeJobMessages(job, sessionId, result);
+      if (!job.silent) {
+        await this.opts.sendProactiveMessage(job.target, result);
+        await this.storeJobMessages(job, sessionId, result);
+      }
       await this.publishComplete(job, true);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

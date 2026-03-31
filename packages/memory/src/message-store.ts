@@ -175,6 +175,42 @@ export class MessageStore {
     return result.changes;
   }
 
+  /**
+   * Return pairs of [trigger, response] messages for scheduled briefings.
+   * Each trigger is a user message with content `[Scheduled: <jobName>]`
+   * and the response is the assistant message with the immediately following id.
+   *
+   * If jobName is provided, filters to only that job (e.g. "evening_briefing").
+   * Otherwise returns all scheduled job pairs.
+   */
+  getBriefs(userId: string, jobName?: string): Array<{ trigger: StoredMessage; response: StoredMessage | undefined }> {
+    // Build the LIKE pattern for the trigger message content
+    const likePattern = jobName
+      ? `[Scheduled: ${jobName.replace(/[%_\\]/g, '\\$&')}]`
+      : '[Scheduled: %]';
+
+    const triggers = this.db.raw().prepare(`
+      SELECT * FROM messages
+      WHERE user_id = ? AND role = 'user' AND content LIKE ? ESCAPE '\\'
+      ORDER BY timestamp ASC, id ASC
+    `).all(userId, likePattern) as any[];
+
+    return triggers.map((triggerRow: any) => {
+      const trigger = this.toMessage(triggerRow);
+      // Find the next assistant message in the same session after this trigger
+      const responseRow = this.db.raw().prepare(`
+        SELECT * FROM messages
+        WHERE user_id = ? AND session_id = ? AND role = 'assistant' AND id > ?
+        ORDER BY id ASC
+        LIMIT 1
+      `).get(userId, trigger.sessionId, trigger.id) as any | undefined;
+      return {
+        trigger,
+        response: responseRow ? this.toMessage(responseRow) : undefined,
+      };
+    });
+  }
+
   query(params: MessageQueryParams): MessageQueryResult {
     const conditions: string[] = [];
     const values: (string | number)[] = [];

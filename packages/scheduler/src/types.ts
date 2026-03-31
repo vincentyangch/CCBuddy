@@ -23,6 +23,7 @@ export interface PromptJob extends BaseJob {
   target: MessageTarget;
   permissionLevel: 'admin' | 'system';
   model?: string;
+  silent?: boolean;
 }
 
 export interface SkillJob extends BaseJob {
@@ -32,6 +33,7 @@ export interface SkillJob extends BaseJob {
   target: MessageTarget;
   permissionLevel: 'admin' | 'system';
   model?: string;
+  silent?: boolean;
 }
 
 export interface InternalJob extends BaseJob {

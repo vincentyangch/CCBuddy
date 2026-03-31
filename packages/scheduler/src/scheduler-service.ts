@@ -63,6 +63,7 @@ export class SchedulerService {
         user: jobConfig.user,
         target,
         permissionLevel: jobConfig.permission_level ?? 'system',
+        silent: jobConfig.silent ?? false,
         enabled: jobConfig.enabled !== false,
         nextRun: 0,
         running: false,

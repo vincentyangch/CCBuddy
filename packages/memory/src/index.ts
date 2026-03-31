@@ -4,7 +4,7 @@ export { MessageStore, type StoredMessage, type AddMessageParams, type MessageQu
 export { SummaryStore, type SummaryNode, type AddSummaryParams } from './summary-store.js';
 export { ProfileStore } from './profile-store.js';
 export { ContextAssembler, type ContextAssemblerConfig, type AssembledContext } from './context-assembler.js';
-export { RetrievalTools, type GrepResult, type ExpandResult, type DescribeResult } from './retrieval-tools.js';
+export { RetrievalTools, type GrepResult, type ExpandResult, type DescribeResult, type BriefPair, type GetBriefsResult } from './retrieval-tools.js';
 export { ConsolidationService, type ConsolidationStats, type ConsolidationServiceDeps } from './consolidation-service.js';
 export { BackupService, type BackupServiceDeps } from './backup-service.js';
 export { AgentEventStore, type StoredAgentEvent, type AddAgentEventParams } from './agent-event-store.js';

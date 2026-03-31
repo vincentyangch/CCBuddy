@@ -207,11 +207,19 @@ describe('with --memory-db', () => {
         created_at INTEGER NOT NULL
       );
     `);
+    const now = Date.now();
     db.prepare('INSERT INTO messages (user_id, session_id, platform, content, role, timestamp, tokens) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
-      'testuser', 'sess-1', 'discord', 'Hello world', 'user', Date.now(), 10
+      'testuser', 'sess-1', 'discord', 'Hello world', 'user', now, 10
     );
     db.prepare('INSERT INTO summary_nodes (user_id, depth, content, source_ids, tokens, timestamp) VALUES (?, ?, ?, ?, ?, ?)').run(
-      'testuser', 0, 'Summary about greetings', '[1]', 20, Date.now()
+      'testuser', 0, 'Summary about greetings', '[1]', 20, now
+    );
+    // Seed a scheduled briefing pair
+    db.prepare('INSERT INTO messages (user_id, session_id, platform, content, role, timestamp, tokens) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+      'testuser', 'sess-1', 'discord', '[Scheduled: evening_briefing]', 'user', now + 1, 5
+    );
+    db.prepare('INSERT INTO messages (user_id, session_id, platform, content, role, timestamp, tokens) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+      'testuser', 'sess-1', 'discord', 'Good evening! Here is your brief.', 'assistant', now + 2, 20
     );
     db.close();
 
@@ -233,6 +241,7 @@ describe('with --memory-db', () => {
     expect(names).toContain('list_skills');
     expect(names).toContain('create_skill');
     expect(names).toContain('memory_grep');
+    expect(names).toContain('memory_get_briefs');
     expect(names).toContain('memory_describe');
     expect(names).toContain('memory_expand');
   });
@@ -251,7 +260,29 @@ describe('with --memory-db', () => {
       arguments: { userId: 'testuser', startMs: now - 60_000, endMs: now + 60_000 },
     });
     const parsed = JSON.parse((result.content as any)[0].text);
+    expect(parsed.count).toBeGreaterThan(0);
+  });
+
+  it('memory_get_briefs returns scheduled briefing pairs', async () => {
+    const result = await memClient.callTool({
+      name: 'memory_get_briefs',
+      arguments: { userId: 'testuser', jobName: 'evening_briefing' },
+    });
+    const parsed = JSON.parse((result.content as any)[0].text);
     expect(parsed.count).toBe(1);
+    expect(parsed.briefs[0].trigger.content).toBe('[Scheduled: evening_briefing]');
+    expect(parsed.briefs[0].response.content).toBe('Good evening! Here is your brief.');
+  });
+
+  it('memory_grep works without explicit userId (uses owner default)', async () => {
+    const result = await memClient.callTool({
+      name: 'memory_grep',
+      arguments: { query: 'Hello' },
+    });
+    const parsed = JSON.parse((result.content as any)[0].text);
+    // Should not throw — will return results or empty array depending on owner user resolution
+    expect(parsed).toHaveProperty('messages');
+    expect(parsed).toHaveProperty('summaries');
   });
 });
 

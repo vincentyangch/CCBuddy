@@ -141,6 +141,7 @@ export interface ScheduledJobConfig {
   permission_level?: 'admin' | 'system';
   timezone?: string;
   model?: string;
+  silent?: boolean;
 }
 
 export interface SchedulerConfig {

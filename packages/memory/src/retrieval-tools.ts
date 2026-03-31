@@ -7,6 +7,16 @@ export interface GrepResult {
   summaries: SummaryNode[];
 }
 
+export interface BriefPair {
+  trigger: StoredMessage;
+  response: StoredMessage | undefined;
+}
+
+export interface GetBriefsResult {
+  briefs: BriefPair[];
+  count: number;
+}
+
 export interface ExpandResult {
   node: SummaryNode;
   sourceMessages: StoredMessage[];
@@ -63,6 +73,15 @@ export class RetrievalTools {
   }
 
   /**
+   * Return scheduled briefing pairs (trigger + assistant response).
+   * Optionally filter by job name (e.g. "evening_briefing", "morning_briefing_weekday").
+   */
+  getBriefs(userId: string, jobName?: string): GetBriefsResult {
+    const briefs = this.messages.getBriefs(userId, jobName);
+    return { briefs, count: briefs.length };
+  }
+
+  /**
    * Return messages in a given time range with count.
    */
   describe(userId: string, { startMs, endMs }: { startMs: number; endMs: number }): DescribeResult {
@@ -71,26 +90,44 @@ export class RetrievalTools {
   }
 
   /**
-   * Returns 3 ToolDescription objects compatible with the skill registry.
+   * Returns 4 ToolDescription objects compatible with the skill registry.
    */
   getToolDefinitions(): ToolDescription[] {
     return [
       {
         name: 'memory_grep',
-        description: 'Search across stored messages and summaries for a user by query string.',
+        description: 'Search across stored messages and summaries for a user by query string. userId is optional — omit it to search all stored users (defaults to the owner user).',
         inputSchema: {
           type: 'object',
           properties: {
             userId: {
               type: 'string',
-              description: 'The user ID to search within',
+              description: 'The user ID to search within (optional — defaults to the owner user ID)',
             },
             query: {
               type: 'string',
               description: 'The search query string',
             },
           },
-          required: ['userId', 'query'],
+          required: ['query'],
+        },
+      },
+      {
+        name: 'memory_get_briefs',
+        description: 'Retrieve scheduled briefing pairs (trigger + assistant response) from memory. Use this to look up morning or evening briefings. Optionally filter by job name.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            userId: {
+              type: 'string',
+              description: 'The user ID to query (optional — defaults to the owner user ID)',
+            },
+            jobName: {
+              type: 'string',
+              description: 'Optional job name to filter by (e.g. "evening_briefing", "morning_briefing_weekday", "morning_briefing_weekend"). Omit to get all scheduled briefings.',
+            },
+          },
+          required: [],
         },
       },
       {
@@ -101,7 +138,7 @@ export class RetrievalTools {
           properties: {
             userId: {
               type: 'string',
-              description: 'The user ID to query',
+              description: 'The user ID to query (optional — defaults to the owner user ID)',
             },
             startMs: {
               type: 'number',
@@ -112,7 +149,7 @@ export class RetrievalTools {
               description: 'End of time range in milliseconds since epoch',
             },
           },
-          required: ['userId', 'startMs', 'endMs'],
+          required: ['startMs', 'endMs'],
         },
       },
       {
@@ -123,14 +160,14 @@ export class RetrievalTools {
           properties: {
             userId: {
               type: 'string',
-              description: 'The user ID that owns the node',
+              description: 'The user ID that owns the node (optional — defaults to the owner user ID)',
             },
             nodeId: {
               type: 'number',
               description: 'The summary node ID to expand',
             },
           },
-          required: ['userId', 'nodeId'],
+          required: ['nodeId'],
         },
       },
     ];

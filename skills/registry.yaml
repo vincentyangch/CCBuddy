@@ -50,8 +50,8 @@ skills:
       createdBy: system
       createdAt: '2026-03-19T23:00:00.000Z'
       updatedAt: '2026-03-19T23:00:00.000Z'
-      usageCount: 3
-      lastUsed: '2026-03-22T04:00:13.241Z'
+      usageCount: 12
+      lastUsed: '2026-03-30T04:00:14.722Z'
   - definition:
       name: celsius-to-fahrenheit
       description: >-
@@ -113,4 +113,25 @@ skills:
       createdBy: agent
       createdAt: '2026-03-22T03:50:33.845Z'
       updatedAt: '2026-03-22T03:50:33.845Z'
+      usageCount: 9
+      lastUsed: '2026-03-30T12:00:12.185Z'
+  - definition:
+      name: hello-world
+      description: A simple greeting skill — says hello to the given name
+      version: 1.0.0
+      source: bundled
+      filePath: >-
+        /Users/flyingchickens/Documents/Projects/CCBuddy/skills/bundled/hello-world.mjs
+      inputSchema:
+        type: object
+        properties:
+          name:
+            type: string
+            description: Name to greet (defaults to 'World')
+      permissions: []
+      enabled: true
+    metadata:
+      createdBy: system
+      createdAt: '2026-03-26T04:20:00.987Z'
+      updatedAt: '2026-03-26T04:20:00.987Z'
       usageCount: 0
