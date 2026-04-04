@@ -1,9 +1,31 @@
 #!/usr/bin/env node
 process.title = 'ccbuddy';
-import { appendFileSync } from 'fs';
+import { appendFileSync, mkdirSync } from 'fs';
+import { execSync } from 'child_process';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 
-const LOG = '/Users/flyingchickens/Documents/Projects/CCBuddy/data/ccbuddy.log';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const ROOT = join(__dirname, '..');
+
+const dataDir = join(ROOT, 'data');
+mkdirSync(dataDir, { recursive: true });
+const LOG = join(dataDir, 'ccbuddy.log');
 const log = (msg) => appendFileSync(LOG, `[${new Date().toISOString()}] ${msg}\n`);
+
+// Ensure better-sqlite3 native module matches this Node.js ABI
+try {
+  await import('better-sqlite3');
+} catch (err) {
+  if (err?.message?.includes('NODE_MODULE_VERSION')) {
+    log('Native module mismatch — rebuilding better-sqlite3...');
+    execSync('npm rebuild better-sqlite3', { cwd: ROOT, stdio: 'ignore' });
+    log('Rebuild complete');
+  } else {
+    throw err;
+  }
+}
 
 const origLog = console.log;
 const origErr = console.error;
@@ -21,7 +43,7 @@ process.on('uncaughtException', (err) => {
 log('Starting CCBuddy...');
 const { bootstrap } = await import('../packages/main/dist/bootstrap.js');
 const result = await bootstrap(
-  '/Users/flyingchickens/Documents/Projects/CCBuddy/config',
+  join(ROOT, 'config'),
 );
 log('CCBuddy running');
 

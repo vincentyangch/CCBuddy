@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
+import { timingSafeEqual } from 'node:crypto';
 import type { Disposable } from '@ccbuddy/core';
 import type { WebChatAdapter } from './webchat-adapter.js';
 
@@ -44,7 +45,7 @@ export function setupWebSocket(
       }
 
       if (msg.type === 'auth') {
-        if (msg.token === token) {
+        if (msg.token && Buffer.from(msg.token).length === Buffer.from(token).length && timingSafeEqual(Buffer.from(msg.token), Buffer.from(token))) {
           authenticated = true;
           clearTimeout(authTimeout);
           socket.send(JSON.stringify({ type: 'auth.ok' }));

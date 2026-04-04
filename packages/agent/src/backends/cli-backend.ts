@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'child_process';
 import { writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { randomUUID } from 'node:crypto';
 import type { AgentBackend, AgentRequest, AgentEvent, AgentEventBase } from '@ccbuddy/core';
 
 export class CliBackend implements AgentBackend {
@@ -95,7 +96,7 @@ export class CliBackend implements AgentBackend {
         (mcpServers ?? []).map(s => [s.name, { type: 'stdio', command: s.command, args: s.args, env: s.env }])
       ),
     };
-    const configPath = join(tmpdir(), `ccbuddy-mcp-${Date.now()}.json`);
+    const configPath = join(tmpdir(), `ccbuddy-mcp-${randomUUID()}.json`);
     writeFileSync(configPath, JSON.stringify(config));
     return configPath;
   }

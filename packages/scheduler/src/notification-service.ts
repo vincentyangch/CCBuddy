@@ -167,8 +167,8 @@ export class NotificationService {
   }
 
   private async resolveTarget(prefs: NotificationPreferences, user: User): Promise<MessageTarget | null> {
-    // If the target channel is 'dm', resolve the DM channel
-    if (prefs.target.channel === 'dm') {
+    // If the target channel is 'dm' (case-insensitive), resolve the DM channel
+    if (prefs.target.channel.toLowerCase() === 'dm') {
       const platform = prefs.target.platform;
       const platformUserId = user.platformIds[platform];
       if (!platformUserId) return null;
@@ -202,20 +202,28 @@ export class NotificationService {
   private isQuietHours(prefs: NotificationPreferences): boolean {
     if (!prefs.quietHours) return false;
     const { start, end, timezone } = prefs.quietHours;
-    const now = new Date();
-    const timeStr = now.toLocaleTimeString('en-US', {
-      timeZone: timezone,
-      hour12: false,
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-    const [startH, startM] = start.split(':').map(Number);
-    const [endH, endM] = end.split(':').map(Number);
-    const [nowH, nowM] = timeStr.split(':').map(Number);
-    const startMin = startH * 60 + startM;
-    const endMin = endH * 60 + endM;
-    const nowMin = nowH * 60 + nowM;
-    if (startMin <= endMin) return nowMin >= startMin && nowMin < endMin; // same-day
-    return nowMin >= startMin || nowMin < endMin; // overnight
+    try {
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString('en-US', {
+        timeZone: timezone,
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      const [startH, startM] = start.split(':').map(Number);
+      const [endH, endM] = end.split(':').map(Number);
+      const [nowH, nowM] = timeStr.split(':').map(Number);
+      if (isNaN(startH) || isNaN(startM) || isNaN(endH) || isNaN(endM) || isNaN(nowH) || isNaN(nowM)) {
+        return false; // Malformed time strings — treat as not quiet hours
+      }
+      const startMin = startH * 60 + startM;
+      const endMin = endH * 60 + endM;
+      const nowMin = nowH * 60 + nowM;
+      if (startMin <= endMin) return nowMin >= startMin && nowMin < endMin; // same-day
+      return nowMin >= startMin || nowMin < endMin; // overnight
+    } catch {
+      // Invalid timezone or other error — don't crash the notification service
+      return false;
+    }
   }
 }

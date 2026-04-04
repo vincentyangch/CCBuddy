@@ -1,4 +1,6 @@
 import nodeCron, { type ScheduledTask } from 'node-cron';
+import { CronExpressionParser } from 'cron-parser';
+import { randomUUID } from 'node:crypto';
 import type {
   EventBus,
   AgentRequest,
@@ -56,10 +58,45 @@ export class CronRunner {
 
     this.tasks.set(job.name, task);
     this.jobs.set(job.name, job);
+
+    // Catch-up: fire immediately if the job was missed within the catchup window
+    if (job.catchupWindowMinutes && job.catchupWindowMinutes > 0) {
+      void this.checkAndCatchup(job);
+    }
+  }
+
+  private async checkAndCatchup(job: ScheduledJob): Promise<void> {
+    if (job.type === 'internal') return;
+    try {
+      const tz = job.timezone ?? this.opts.timezone;
+      const now = new Date();
+      const windowMs = (job.catchupWindowMinutes ?? 0) * 60 * 1000;
+      const windowStart = new Date(now.getTime() - windowMs);
+
+      const interval = CronExpressionParser.parse(job.cron, {
+        currentDate: now,
+        tz,
+      });
+
+      // Get previous scheduled occurrence
+      const prev = interval.prev();
+      if (prev.toDate() >= windowStart) {
+        console.log(
+          `[Scheduler] Catch-up: running missed job "${job.name}" (was due at ${prev.toDate().toISOString()})`,
+        );
+        await this.executeJob(job);
+      }
+    } catch (err) {
+      // Non-fatal — just skip catch-up if cron-parser fails
+      console.warn(`[Scheduler] Catch-up check failed for "${job.name}":`, err);
+    }
   }
 
   async executeJob(job: ScheduledJob): Promise<void> {
-    if (job.running) return;
+    if (job.running) {
+      console.warn(`[Scheduler] Skipping "${job.name}" — previous run still in progress`);
+      return;
+    }
 
     job.running = true;
     try {
@@ -110,7 +147,7 @@ export class CronRunner {
   }
 
   private async executePromptJob(job: PromptJob): Promise<void> {
-    const sessionId = `scheduler:cron:${job.name}:${Date.now()}`;
+    const sessionId = `scheduler:cron:${job.name}:${randomUUID().slice(0, 8)}`;
     const memoryContext = this.opts.assembleContext(job.user, sessionId);
 
     const request: AgentRequest = {
@@ -122,6 +159,10 @@ export class CronRunner {
       permissionLevel: job.permissionLevel,
       memoryContext,
       model: job.model ?? this.opts.defaultModel,
+      // System jobs use home dir to avoid TCC restrictions on ~/Documents
+      workingDirectory: job.permissionLevel === 'system'
+        ? (process.env.HOME ?? '/tmp')
+        : undefined,
     };
 
     const generator = this.opts.executeAgentRequest(request);
@@ -152,7 +193,7 @@ export class CronRunner {
       return;
     }
 
-    const sessionId = `scheduler:cron:${job.name}:${Date.now()}`;
+    const sessionId = `scheduler:cron:${job.name}:${randomUUID().slice(0, 8)}`;
 
     try {
       const result = await this.opts.runSkill(job.payload, {});

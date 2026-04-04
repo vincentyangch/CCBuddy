@@ -111,11 +111,6 @@ export class ContextAssembler {
   }
 
   private getAllSummariesByPriority(userId: string): SummaryNode[] {
-    // Get all summary nodes, sort by depth DESC then timestamp DESC
-    const allNodes: SummaryNode[] = [];
-
-    // Collect all nodes by iterating depth levels starting from highest
-    // We use a direct query approach via getRecent with a large limit and re-sort
     const raw = this.summaries.getRecent(userId, 10000);
 
     // Sort by depth DESC (higher = more condensed = higher priority),

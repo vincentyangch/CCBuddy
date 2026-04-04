@@ -58,16 +58,19 @@ export class DiscordAdapter implements PlatformAdapter {
   async sendText(channelId: string, text: string): Promise<string | undefined> {
     const channel = await this.fetchTextChannel(channelId);
     if (!channel) return undefined;
-    const msg = await channel.send(text);
+    // Discord's limit is 2000 chars; truncate as a safety net (gateway should chunk first)
+    const safe = text.length > 2000 ? text.slice(0, 1997) + '...' : text;
+    const msg = await channel.send(safe);
     return msg.id;
   }
 
   async editMessage(channelId: string, messageId: string, text: string): Promise<void> {
     const channel = await this.fetchTextChannel(channelId);
     if (!channel) return;
+    const safe = text.length > 2000 ? text.slice(0, 1997) + '...' : text;
     try {
       const message = await channel.messages.fetch(messageId);
-      await message.edit(text);
+      await message.edit(safe);
     } catch {
       // Message may have been deleted
     }

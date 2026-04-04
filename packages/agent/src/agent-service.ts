@@ -37,6 +37,8 @@ export class AgentService {
   private activeConcurrent = 0;
   private readonly sessionStore?: import('./session/session-store.js').SessionStore;
   private readonly directoryLock = new DirectoryLock();
+  /** Track which directory each session holds a lock on, so abort() can release it. */
+  private readonly sessionDirectories = new Map<string, string>();
   private readonly directoryQueue = new Map<string, Array<{
     resolve: () => void;
     reject: (err: Error) => void;
@@ -100,6 +102,7 @@ export class AgentService {
           return;
         }
       }
+      this.sessionDirectories.set(request.sessionId, request.workingDirectory);
     }
 
     // Check concurrency — queue if at cap, reject if queue also full
@@ -108,6 +111,7 @@ export class AgentService {
       if (!queued) {
         if (request.workingDirectory) {
           this.directoryLock.release(request.workingDirectory, request.sessionId);
+          this.sessionDirectories.delete(request.sessionId);
         }
         yield { ...base, type: 'error', error: 'server busy' };
         return;
@@ -152,6 +156,7 @@ export class AgentService {
       // Release directory lock and drain directory queue
       if (request.workingDirectory) {
         this.directoryLock.release(request.workingDirectory, request.sessionId);
+        this.sessionDirectories.delete(request.sessionId);
         this.drainDirectoryQueue(request.workingDirectory);
       }
       this.drainQueue();
@@ -238,6 +243,13 @@ export class AgentService {
   async abort(sessionId: string): Promise<void> {
     await this.backend.abort(sessionId);
     this.sessionManager.remove(sessionId);
+    // Release directory lock so subsequent requests aren't permanently blocked
+    const dir = this.sessionDirectories.get(sessionId);
+    if (dir) {
+      this.directoryLock.release(dir, sessionId);
+      this.sessionDirectories.delete(sessionId);
+      this.drainDirectoryQueue(dir);
+    }
   }
 
   tick(): void {

@@ -18,7 +18,7 @@
     "@ccbuddy/core": "*"
   },
   "devDependencies": {
-    "@types/node": "^25.5.0",
+    "@types/node": "^22",
     "vitest": "^3"
   }
 }

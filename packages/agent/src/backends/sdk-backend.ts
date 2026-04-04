@@ -19,6 +19,7 @@ export interface SdkBackendOptions {
 export class SdkBackend implements AgentBackend {
   private options: SdkBackendOptions;
   private gateChecker: PermissionGateChecker | null;
+  private readonly abortControllers = new Map<string, AbortController>();
 
   constructor(options: SdkBackendOptions = {}) {
     this.options = options;
@@ -171,6 +172,10 @@ export class SdkBackend implements AgentBackend {
         prompt = fullPrompt;
       }
 
+      const ac = new AbortController();
+      this.abortControllers.set(request.sessionId, ac);
+      options.abortController = ac;
+
       const result = query({ prompt, options });
 
       let responseText = '';
@@ -202,6 +207,8 @@ export class SdkBackend implements AgentBackend {
       yield { ...base, type: 'complete', response: responseText, sdkSessionId };
     } catch (err) {
       yield { ...base, type: 'error', error: (err as Error).message };
+    } finally {
+      this.abortControllers.delete(request.sessionId);
     }
   }
 
@@ -221,7 +228,11 @@ export class SdkBackend implements AgentBackend {
     return preview.length > 200 ? preview.slice(0, 200) + '...' : preview;
   }
 
-  async abort(_sessionId: string): Promise<void> {
-    // SDK doesn't have a direct abort — future: track AbortControllers per session
+  async abort(sessionId: string): Promise<void> {
+    const ac = this.abortControllers.get(sessionId);
+    if (ac) {
+      ac.abort();
+      this.abortControllers.delete(sessionId);
+    }
   }
 }

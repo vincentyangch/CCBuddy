@@ -19,7 +19,7 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { readFileSync, copyFileSync, mkdirSync } from 'node:fs';
-import { join as pathJoin, basename, extname } from 'node:path';
+import { join as pathJoin, resolve as pathResolve, basename, extname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 import { SkillRegistry } from './registry.js';
@@ -606,7 +606,13 @@ async function main(): Promise<void> {
     if (retrievalTools && name === 'memory_get_briefs') {
       const userId = (toolArgs.userId as string | undefined) || ownerUserId;
       const jobName = toolArgs.jobName as string | undefined;
-      const result = retrievalTools.getBriefs(userId, jobName);
+      const limit = toolArgs.limit as number | undefined;
+      const startMs = toolArgs.startMs as number | undefined;
+      const endMs = toolArgs.endMs as number | undefined;
+      const opts = (limit !== undefined || startMs !== undefined || endMs !== undefined)
+        ? { limit, startMs, endMs }
+        : undefined;
+      const result = retrievalTools.getBriefs(userId, jobName, opts);
       return { content: [{ type: 'text', text: JSON.stringify(result) }] };
     }
 
@@ -745,18 +751,26 @@ async function main(): Promise<void> {
     // ── send_file ───────────────────────────────────────────────────────
     if (name === 'send_file') {
       const filePath = toolArgs.file_path as string;
+
+      // Restrict to the current working directory to prevent path traversal
+      const cwd = process.cwd();
+      const resolved = pathResolve(filePath);
+      if (!resolved.startsWith(cwd + '/') && resolved !== cwd) {
+        return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: `File must be within the working directory (${cwd})` }) }] };
+      }
+
       try {
         // Verify file exists
-        readFileSync(filePath, { flag: 'r' });
+        readFileSync(resolved, { flag: 'r' });
       } catch {
         return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: `File not found: ${filePath}` }) }] };
       }
-      const outDir = pathJoin(process.cwd(), 'data', 'outbound');
+      const outDir = pathJoin(cwd, 'data', 'outbound');
       try { mkdirSync(outDir, { recursive: true }); } catch { /* exists */ }
-      const ext = extname(filePath) || '.bin';
-      const outFilename = `${basename(filePath, ext)}-${randomUUID().slice(0, 8)}${ext}`;
+      const ext = extname(resolved) || '.bin';
+      const outFilename = `${basename(resolved, ext)}-${randomUUID().slice(0, 8)}${ext}`;
       const outPath = pathJoin(outDir, outFilename);
-      copyFileSync(filePath, outPath);
+      copyFileSync(resolved, outPath);
       return { content: [{ type: 'text', text: JSON.stringify({ success: true, message: `File queued for delivery: ${outFilename}` }) }] };
     }
 

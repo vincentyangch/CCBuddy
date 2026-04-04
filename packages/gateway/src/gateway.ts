@@ -82,32 +82,37 @@ const DEFAULT_CHAR_LIMIT = 2000;
 export class Gateway {
   private adapters = new Map<string, PlatformAdapter>();
   private pendingReplies = new Map<string, (text: string) => void>();
+  private readonly subscriptions: Array<{ dispose(): void }> = [];
 
   constructor(private deps: GatewayDeps) {
     // Subscribe to session conflict events for user notification
-    deps.eventBus.subscribe('session.conflict', (event) => {
-      const adapter = this.adapters.get(event.platform);
-      if (adapter) {
-        const msg = `Another session is using this directory — your request has been queued and will run when it's free.`;
-        adapter.sendText(event.channelId, msg).catch((err) => {
-          console.error(`[Gateway] Failed to send conflict notification:`, err);
-        });
-      }
-    });
+    this.subscriptions.push(
+      deps.eventBus.subscribe('session.conflict', (event) => {
+        const adapter = this.adapters.get(event.platform);
+        if (adapter) {
+          const msg = `Another session is using this directory — your request has been queued and will run when it's free.`;
+          adapter.sendText(event.channelId, msg).catch((err) => {
+            console.error(`[Gateway] Failed to send conflict notification:`, err);
+          });
+        }
+      }),
+    );
 
     // Store agent progress events for dashboard historical replay
     if (deps.storeAgentEvent) {
-      deps.eventBus.subscribe('agent.progress', (event) => {
-        deps.storeAgentEvent!({
-          userId: event.userId,
-          sessionId: event.sessionId,
-          platform: event.platform,
-          eventType: event.type,
-          content: event.content,
-          toolInput: event.toolInput ? JSON.stringify(event.toolInput) : undefined,
-          toolOutput: event.toolOutput,
-        });
-      });
+      this.subscriptions.push(
+        deps.eventBus.subscribe('agent.progress', (event) => {
+          deps.storeAgentEvent!({
+            userId: event.userId,
+            sessionId: event.sessionId,
+            platform: event.platform,
+            eventType: event.type,
+            content: event.content,
+            toolInput: event.toolInput ? JSON.stringify(event.toolInput) : undefined,
+            toolOutput: event.toolOutput,
+          });
+        }),
+      );
     }
   }
 
@@ -132,6 +137,8 @@ export class Gateway {
   }
 
   async stop(): Promise<void> {
+    for (const sub of this.subscriptions) sub.dispose();
+    this.subscriptions.length = 0;
     for (const adapter of this.adapters.values()) {
       await adapter.stop();
     }
@@ -331,7 +338,9 @@ export class Gateway {
       if (isFlushing) return; // Prevent overlapping flushes (interval races)
       isFlushing = true;
       try {
-        if (!inResponsePhase) {
+        // Snapshot state at flush start so concurrent mutations don't cause inconsistency
+        const phase = inResponsePhase;
+        if (!phase) {
           // Thinking phase — edit thinking message
           const display = thinkingBuffer + thinkingSuffix;
           if (!display) return;
@@ -345,13 +354,14 @@ export class Gateway {
           }
         } else {
           // Response phase — edit response message
-          if (!responseBuffer) return;
+          const text = responseBuffer;
+          if (!text) return;
           if (responseMessageId) {
-            if (responseBuffer.length <= charLimit - 100) {
-              await adapter.editMessage(msg.channelId, responseMessageId, responseBuffer);
+            if (text.length <= charLimit - 100) {
+              await adapter.editMessage(msg.channelId, responseMessageId, text);
             }
           } else {
-            const id = await adapter.sendText(msg.channelId, responseBuffer);
+            const id = await adapter.sendText(msg.channelId, text);
             if (typeof id === 'string') responseMessageId = id;
           }
         }

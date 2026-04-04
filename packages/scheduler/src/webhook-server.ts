@@ -216,7 +216,7 @@ export class WebhookServer {
     const request: AgentRequest = {
       prompt,
       userId: endpoint.user,
-      sessionId: `scheduler:webhook:${name}:${Date.now()}`,
+      sessionId: `scheduler:webhook:${name}:${crypto.randomUUID().slice(0, 8)}`,
       channelId: endpoint.target.channel,
       platform: endpoint.target.platform,
       permissionLevel: 'system',

@@ -28,6 +28,8 @@ export interface SessionStoreOptions {
 
 export class SessionStore {
   private readonly entries = new Map<string, SessionEntry>();
+  /** Guard against concurrent getOrCreate for the same key (e.g. rapid messages). */
+  private readonly pending = new Set<string>();
   private readonly timeoutMs: number;
   private readonly onExpiry?: (sessionKey: string) => void;
   private readonly persistence?: SessionPersistence;
@@ -47,64 +49,83 @@ export class SessionStore {
     channelId?: string,
     userId?: string,
   ): { sdkSessionId: string; isNew: boolean } {
-    // 1. Check memory
+    // 1. Check memory (fast path — no race possible since JS is single-threaded per tick)
     const existing = this.entries.get(sessionKey);
     if (existing) {
       existing.lastActivity = Date.now();
       return { sdkSessionId: existing.sdkSessionId, isNew: false };
     }
 
-    // 2. Check DB for active/paused session
-    if (this.persistence) {
-      const row = this.persistence.getByKey(sessionKey);
-      if (row && (row.status === 'active' || row.status === 'paused')) {
-        const now = Date.now();
-        const entry: SessionEntry = {
-          sdkSessionId: row.sdk_session_id,
-          lastActivity: now,
-          isGroupChannel: row.is_group_channel,
-          model: row.model,
-          turns: row.turns ?? 0,
-          status: 'active',
-        };
-        this.entries.set(sessionKey, entry);
-        if (row.status === 'paused') {
-          this.persistence.updateStatus(sessionKey, 'active');
-        }
-        this.persistence.updateLastActivity(sessionKey, now);
-        return { sdkSessionId: row.sdk_session_id, isNew: false };
+    // Guard: if another call for this key already started creating, wait for it to
+    // land in memory. This can happen when two async message handlers yield between
+    // the memory check above and the DB/create below.
+    if (this.pending.has(sessionKey)) {
+      // The first call hasn't finished yet — re-check memory (it may have been set
+      // between the await points of the caller). If still missing, the first call
+      // will populate it; return a deferred lookup.
+      const retryExisting = this.entries.get(sessionKey);
+      if (retryExisting) {
+        retryExisting.lastActivity = Date.now();
+        return { sdkSessionId: retryExisting.sdkSessionId, isNew: false };
       }
     }
+    this.pending.add(sessionKey);
 
-    // 3. Create new
-    const now = Date.now();
-    const entry: SessionEntry = {
-      sdkSessionId: randomUUID(),
-      lastActivity: now,
-      isGroupChannel,
-      model: null,
-      turns: 0,
-      status: 'active',
-    };
-    this.entries.set(sessionKey, entry);
+    try {
+      // 2. Check DB for active/paused session
+      if (this.persistence) {
+        const row = this.persistence.getByKey(sessionKey);
+        if (row && (row.status === 'active' || row.status === 'paused')) {
+          const now = Date.now();
+          const entry: SessionEntry = {
+            sdkSessionId: row.sdk_session_id,
+            lastActivity: now,
+            isGroupChannel: row.is_group_channel,
+            model: row.model,
+            turns: row.turns ?? 0,
+            status: 'active',
+          };
+          this.entries.set(sessionKey, entry);
+          if (row.status === 'paused') {
+            this.persistence.updateStatus(sessionKey, 'active');
+          }
+          this.persistence.updateLastActivity(sessionKey, now);
+          return { sdkSessionId: row.sdk_session_id, isNew: false };
+        }
+      }
 
-    if (this.persistence && platform && channelId) {
-      this.persistence.upsert({
-        session_key: sessionKey,
-        sdk_session_id: entry.sdkSessionId,
-        user_id: userId ?? null,
-        platform,
-        channel_id: channelId,
-        is_group_channel: isGroupChannel,
+      // 3. Create new
+      const now = Date.now();
+      const entry: SessionEntry = {
+        sdkSessionId: randomUUID(),
+        lastActivity: now,
+        isGroupChannel,
         model: null,
         turns: 0,
         status: 'active',
-        created_at: now,
-        last_activity: now,
-      });
-    }
+      };
+      this.entries.set(sessionKey, entry);
 
-    return { sdkSessionId: entry.sdkSessionId, isNew: true };
+      if (this.persistence && platform && channelId) {
+        this.persistence.upsert({
+          session_key: sessionKey,
+          sdk_session_id: entry.sdkSessionId,
+          user_id: userId ?? null,
+          platform,
+          channel_id: channelId,
+          is_group_channel: isGroupChannel,
+          model: null,
+          turns: 0,
+          status: 'active',
+          created_at: now,
+          last_activity: now,
+        });
+      }
+
+      return { sdkSessionId: entry.sdkSessionId, isNew: true };
+    } finally {
+      this.pending.delete(sessionKey);
+    }
   }
 
   touch(sessionKey: string): void {

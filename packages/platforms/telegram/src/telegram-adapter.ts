@@ -116,7 +116,9 @@ export class TelegramAdapter implements PlatformAdapter {
   }
 
   async sendText(channelId: string, text: string): Promise<void> {
-    await this.bot.api.sendMessage(Number(channelId), text);
+    // Telegram's limit is 4096 chars; truncate as a safety net (gateway should chunk first)
+    const safe = text.length > 4096 ? text.slice(0, 4093) + '...' : text;
+    await this.bot.api.sendMessage(Number(channelId), safe);
   }
 
   async sendImage(channelId: string, image: Buffer, caption?: string): Promise<void> {

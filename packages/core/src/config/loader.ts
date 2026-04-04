@@ -141,5 +141,16 @@ export function loadConfig(configDir: string): CCBuddyConfig {
     config.users = {};
   }
 
+  // Validate critical properties
+  if (!config.data_dir) {
+    throw new Error('Config error: data_dir must not be empty');
+  }
+  if (!config.agent.model) {
+    throw new Error('Config error: agent.model must not be empty');
+  }
+  if (!config.agent.default_working_directory) {
+    throw new Error('Config error: agent.default_working_directory must not be empty');
+  }
+
   return config;
 }

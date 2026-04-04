@@ -1,5 +1,5 @@
 import { join, dirname } from 'node:path';
-import { writeFileSync, renameSync, readFileSync, unlinkSync, existsSync, mkdirSync } from 'node:fs';
+import { writeFileSync, renameSync, readFileSync, unlinkSync, existsSync, mkdirSync, openSync, closeSync, constants as fsConstants } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { loadConfig, createEventBus, UserManager, TranscriptionService, SpeechService, isValidModel } from '@ccbuddy/core';
 import { AgentService, CliBackend, SessionStore } from '@ccbuddy/agent';
@@ -31,36 +31,42 @@ export interface BootstrapResult {
 
 /**
  * Acquire a PID lockfile, killing any stale CCBuddy process first.
+ * Uses atomic write-to-temp + rename to avoid TOCTOU races.
  * Returns a cleanup function that removes the lockfile on shutdown.
  */
 function acquirePidLock(dataDir: string): () => void {
+  mkdirSync(dataDir, { recursive: true });
   const lockPath = join(dataDir, 'ccbuddy.pid');
+  const tmpPath = join(dataDir, `ccbuddy.pid.${process.pid}.tmp`);
 
   if (existsSync(lockPath)) {
     const oldPid = parseInt(readFileSync(lockPath, 'utf8').trim(), 10);
     if (oldPid && oldPid !== process.pid) {
-      // Check if the old process is still alive
+      let alive = false;
       try {
         process.kill(oldPid, 0); // signal 0 = existence check
-        console.log(`[PID Lock] Killing stale CCBuddy process (PID ${oldPid})`);
-        process.kill(oldPid, 'SIGTERM');
-        // Give it a moment to shut down gracefully, then force kill
-        try {
-          execSync(`sleep 2 && kill -0 ${oldPid} 2>/dev/null && kill -9 ${oldPid}`, {
-            stdio: 'ignore',
-            timeout: 5000,
-          });
-        } catch {
-          // Process already exited — good
-        }
+        alive = true;
       } catch {
         // Old process no longer exists — stale lockfile
+      }
+      if (alive) {
+        console.log(`[PID Lock] Killing stale CCBuddy process (PID ${oldPid})`);
+        process.kill(oldPid, 'SIGTERM');
+        // Wait for graceful exit, then force kill if needed
+        const deadline = Date.now() + 3000;
+        while (Date.now() < deadline) {
+          try { process.kill(oldPid, 0); } catch { break; }
+          execSync('sleep 0.2', { stdio: 'ignore' });
+        }
+        try { process.kill(oldPid, 0); process.kill(oldPid, 'SIGKILL'); } catch { /* already gone */ }
       }
     }
   }
 
-  mkdirSync(dataDir, { recursive: true });
-  writeFileSync(lockPath, String(process.pid), 'utf8');
+  // Atomic write: write our PID to a temp file, then rename over the lockfile.
+  // rename() is atomic on POSIX — no window where the lockfile is empty or half-written.
+  writeFileSync(tmpPath, String(process.pid), 'utf8');
+  renameSync(tmpPath, lockPath);
 
   return () => {
     try {
@@ -269,10 +275,11 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
   if (config.media.voice_enabled) {
     const openaiKey = process.env.OPENAI_API_KEY;
     if (!openaiKey) {
-      throw new Error('voice_enabled is true but OPENAI_API_KEY is not set');
+      console.warn('[Bootstrap] voice_enabled is true but OPENAI_API_KEY is not set — voice disabled');
+    } else {
+      transcriptionService = new TranscriptionService(openaiKey);
+      speechService = new SpeechService(openaiKey);
     }
-    transcriptionService = new TranscriptionService(openaiKey);
-    speechService = new SpeechService(openaiKey);
   }
 
   // 8. Create Gateway with injected dependencies
@@ -379,7 +386,11 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
 
   // 10. Set up SessionManager.tick() interval (every 60 seconds)
   let notificationService: NotificationService | undefined;
-  const tickInterval = setInterval(() => {
+  let tickInterval: ReturnType<typeof setInterval> | undefined;
+
+  try {
+
+  tickInterval = setInterval(() => {
     agentService.tick();
     sessionStore.tick();
     notificationService?.tick();
@@ -560,9 +571,15 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
 
   return {
     stop: async () => {
-      clearInterval(tickInterval);
+      if (tickInterval) clearInterval(tickInterval);
       await shutdownHandler.execute();
       releasePidLock();
     },
   };
+
+  } catch (err) {
+    // Clean up tick interval if bootstrap fails after creating it
+    if (tickInterval) clearInterval(tickInterval);
+    throw err;
+  }
 }

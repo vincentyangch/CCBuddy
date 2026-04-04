@@ -121,7 +121,7 @@ describe('CronRunner', () => {
       const request: AgentRequest = (deps.executeAgentRequest as ReturnType<typeof vi.fn>).mock.calls[0][0];
       expect(request.prompt).toBe('Give me a daily summary');
       expect(request.userId).toBe('user-123');
-      expect(request.sessionId).toMatch(/^scheduler:cron:daily-report:\d+$/);
+      expect(request.sessionId).toMatch(/^scheduler:cron:daily-report:[a-f0-9]{8}$/);
       expect(request.channelId).toBe('general');
       expect(request.platform).toBe('discord');
       expect(request.permissionLevel).toBe('system');
@@ -152,7 +152,7 @@ describe('CronRunner', () => {
         role: 'user',
         content: '[Scheduled: daily-report]',
       });
-      expect(calls[0][0].sessionId).toMatch(/^scheduler:cron:daily-report:\d+$/);
+      expect(calls[0][0].sessionId).toMatch(/^scheduler:cron:daily-report:[a-f0-9]{8}$/);
 
       expect(calls[1][0]).toMatchObject({
         userId: 'user-123',
@@ -180,7 +180,7 @@ describe('CronRunner', () => {
       const calls = (deps.storeMessage as ReturnType<typeof vi.fn>).mock.calls;
       expect(calls[0][0]).toMatchObject({ role: 'user', content: '[Scheduled: daily-report]' });
       expect(calls[1][0]).toMatchObject({ role: 'assistant', content: 'skill-result-text' });
-      expect(calls[0][0].sessionId).toMatch(/^scheduler:cron:daily-report:\d+$/);
+      expect(calls[0][0].sessionId).toMatch(/^scheduler:cron:daily-report:[a-f0-9]{8}$/);
       expect(calls[0][0].sessionId).toBe(calls[1][0].sessionId);
     });
 
@@ -276,7 +276,7 @@ describe('CronRunner', () => {
 
       expect(deps.assembleContext).toHaveBeenCalledWith(
         job.user,
-        expect.stringMatching(/^scheduler:cron:daily-report:\d+$/),
+        expect.stringMatching(/^scheduler:cron:daily-report:[a-f0-9]{8}$/),
       );
 
       const request = (deps.executeAgentRequest as any).mock.calls[0][0];

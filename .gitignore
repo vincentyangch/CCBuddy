@@ -10,3 +10,6 @@ data/
 .turbo/
 *.tsbuildinfo
 swift-helper/.build/
+.DS_Store
+.node-version
+.superpowers/

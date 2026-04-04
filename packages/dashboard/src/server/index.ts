@@ -1,6 +1,7 @@
 import { readFileSync, copyFileSync, writeFileSync, existsSync, openSync, readSync, closeSync, statSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { timingSafeEqual } from 'node:crypto';
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import type { FastifyInstance } from 'fastify';
@@ -44,6 +45,14 @@ export interface DashboardDeps {
     }>;
     deleteSession(sessionKey: string): void;
   };
+}
+
+/** Constant-time string comparison to prevent timing attacks on token checks. */
+function safeTokenEqual(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
 }
 
 export class DashboardServer {
@@ -112,7 +121,7 @@ export class DashboardServer {
       if (!request.url.startsWith('/api/')) return;
 
       const auth = request.headers.authorization;
-      if (!auth || !auth.startsWith('Bearer ') || auth.slice(7) !== this.token) {
+      if (!auth || !auth.startsWith('Bearer ') || !this.token || !safeTokenEqual(auth.slice(7), this.token)) {
         reply.status(401).send({ error: 'Unauthorized' });
         return;
       }
@@ -121,7 +130,7 @@ export class DashboardServer {
     // POST /api/auth — validate token (no auth middleware needed)
     this.app.post('/api/auth', async (request, reply) => {
       const body = request.body as { token?: string } | null;
-      if (body?.token === this.token) {
+      if (body?.token && this.token && safeTokenEqual(body.token, this.token)) {
         return { ok: true };
       }
       reply.status(401).send({ error: 'Invalid token' });

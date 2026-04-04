@@ -15,7 +15,7 @@ export class ShutdownHandler {
   }
 
   async execute(): Promise<void> {
-    const timeout = (name: string): Promise<void> =>
+    const perHandlerTimeout = (name: string): Promise<void> =>
       new Promise<void>((resolve) =>
         setTimeout(() => {
           console.warn(`[ShutdownHandler] Timeout waiting for '${name}'`);
@@ -25,12 +25,24 @@ export class ShutdownHandler {
 
     const runOne = async (entry: ShutdownEntry): Promise<void> => {
       try {
-        await Promise.race([entry.callback(), timeout(entry.name)]);
+        await Promise.race([entry.callback(), perHandlerTimeout(entry.name)]);
       } catch (err) {
         console.error(`[ShutdownHandler] Error in '${entry.name}':`, err);
       }
     };
 
-    await Promise.all(this.entries.map(runOne));
+    // Global budget: all handlers must finish within 2x the per-handler timeout.
+    // This prevents N slow handlers from causing an N*timeout shutdown.
+    const globalTimeout = new Promise<void>((resolve) =>
+      setTimeout(() => {
+        console.warn(`[ShutdownHandler] Global shutdown timeout reached — forcing exit`);
+        resolve();
+      }, this.timeoutMs * 2)
+    );
+
+    await Promise.race([
+      Promise.all(this.entries.map(runOne)),
+      globalTimeout,
+    ]);
   }
 }

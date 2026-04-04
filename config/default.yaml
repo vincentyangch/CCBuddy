@@ -24,6 +24,7 @@ ccbuddy:
     queue_timeout_seconds: 120
     rate_limits:
       admin: 30
+      trusted: 20
       chat: 10
       system: 20
     default_working_directory: "~"
@@ -33,6 +34,17 @@ ccbuddy:
     graceful_shutdown_timeout_seconds: 30
     session_timeout_ms: 3600000
     user_input_timeout_ms: 300000
+    max_pause_ms: 604800000        # 7 days — max time a paused session stays before archival
+    trusted_allowed_tools:
+      - "Read"
+      - "Glob"
+      - "Grep"
+      - "WebSearch"
+      - "WebFetch"
+      - "AskUserQuestion"
+    max_turns: 80
+    compaction_threshold: 50
+    compaction_summary_tokens: 4000
   permission_gates:
     enabled: true
     timeout_ms: 300000
@@ -97,6 +109,10 @@ ccbuddy:
   # --- Heartbeat ---
   heartbeat:
     interval_seconds: 60
+    checks:
+      process: true
+      database: true
+      agent: true
 
   # --- Webhooks ---
   webhooks:
@@ -110,6 +126,8 @@ ccbuddy:
   # --- Media ---
   media:
     max_file_size_mb: 10
+    voice_enabled: false
+    tts_max_chars: 500
     allowed_mime_types:
       - "image/jpeg"
       - "image/png"

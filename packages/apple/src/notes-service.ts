@@ -16,9 +16,12 @@ export interface CreateNoteParams {
   folder?: string;
 }
 
+// JXA templates use __VARS__ object for safe parameter passing (no string interpolation).
+// The bridge receives the vars as a separate JSON argument to avoid script injection.
+
 const SEARCH_TEMPLATE = `(() => {
   const Notes = Application("Notes");
-  const query = "<QUERY>";
+  const query = __VARS__.QUERY;
   const results = Notes.notes().filter(n => {
     const name = n.name();
     const body = n.plaintext();
@@ -37,7 +40,7 @@ const SEARCH_TEMPLATE = `(() => {
 
 const READ_TEMPLATE = `(() => {
   const Notes = Application("Notes");
-  const matches = Notes.notes.whose({ name: "<NAME>" })();
+  const matches = Notes.notes.whose({ name: __VARS__.NAME })();
   if (matches.length === 0) return JSON.stringify({ success: false, error: "Note not found" });
   const n = matches[0];
   return JSON.stringify({ success: true, note: {
@@ -52,9 +55,9 @@ const READ_TEMPLATE = `(() => {
 
 const CREATE_TEMPLATE = `(() => {
   const Notes = Application("Notes");
-  const folder = "<FOLDER>";
+  const folder = __VARS__.FOLDER;
   const target = folder ? Notes.folders.byName(folder) : Notes.defaultAccount().defaultFolder;
-  const n = Notes.Note({ name: "<TITLE>", body: "<BODY>" });
+  const n = Notes.Note({ name: __VARS__.TITLE, body: __VARS__.BODY });
   target.notes.push(n);
   return JSON.stringify({ success: true, note: {
     id: n.id(),
@@ -74,11 +77,11 @@ export interface UpdateNoteParams {
 
 const UPDATE_TEMPLATE = `(() => {
   const Notes = Application("Notes");
-  const matches = Notes.notes.whose({ name: "<NAME>" })();
+  const matches = Notes.notes.whose({ name: __VARS__.NAME })();
   if (matches.length === 0) return JSON.stringify({ success: false, error: "Note not found" });
   const n = matches[0];
-  const newTitle = "<TITLE>";
-  const newBody = "<BODY>";
+  const newTitle = __VARS__.TITLE;
+  const newBody = __VARS__.BODY;
   if (newTitle) n.name = newTitle;
   if (newBody) n.body = newBody;
   return JSON.stringify({ success: true, note: {
@@ -93,7 +96,7 @@ const UPDATE_TEMPLATE = `(() => {
 
 const DELETE_TEMPLATE = `(() => {
   const Notes = Application("Notes");
-  const matches = Notes.notes.whose({ name: "<NAME>" })();
+  const matches = Notes.notes.whose({ name: __VARS__.NAME })();
   if (matches.length === 0) return JSON.stringify({ success: false, error: "Note not found" });
   Notes.delete(matches[0]);
   return JSON.stringify({ success: true });
@@ -223,14 +226,9 @@ export class AppleNotesService {
   }
 
   private buildScript(template: string, vars: Record<string, string>): string {
-    let script = template;
-    for (const [key, value] of Object.entries(vars)) {
-      // Use JSON.stringify for proper JS string literal escaping
-      // It produces "escaped string" with quotes — we strip the outer quotes
-      // since the template already has quotes around the placeholder
-      const escaped = JSON.stringify(value).slice(1, -1);
-      script = script.replace(`<${key}>`, escaped);
-    }
-    return script;
+    // Inject vars as a parsed JSON object — no string interpolation in the template.
+    // This prevents script injection regardless of what values contain.
+    const preamble = `const __VARS__ = ${JSON.stringify(vars)};\n`;
+    return preamble + template;
   }
 }

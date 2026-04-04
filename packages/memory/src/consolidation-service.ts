@@ -52,8 +52,20 @@ export class ConsolidationService {
     const results = new Map<string, ConsolidationStats>();
 
     for (const userId of userIds) {
-      const stats = await this.consolidate(userId);
-      results.set(userId, stats);
+      try {
+        const stats = await this.consolidate(userId);
+        results.set(userId, stats);
+      } catch (err) {
+        // Don't let one user's failure block consolidation for others
+        console.error(`[Consolidation] Failed for user ${userId}:`, err);
+        results.set(userId, {
+          userId,
+          messagesChunked: 0,
+          leafNodesCreated: 0,
+          condensedNodesCreated: 0,
+          messagesPruned: 0,
+        });
+      }
     }
 
     // Retention pruning runs once across all users (not per-user)
