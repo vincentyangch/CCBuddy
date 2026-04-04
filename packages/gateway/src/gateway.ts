@@ -329,11 +329,12 @@ export class Gateway {
     let streamInterval: ReturnType<typeof setInterval> | undefined;
     let inResponsePhase = false; // True once text events start arriving
     let isFlushing = false; // Guard against concurrent flushes
+    let flushPromise: Promise<void> = Promise.resolve(); // Track in-flight flush
     const canStream = !!adapter.editMessage && !voiceInput;
     const charLimit = PLATFORM_CHAR_LIMITS[msg.platform] ?? DEFAULT_CHAR_LIMIT;
 
     /** Flush the active stream message (thinking or response phase). */
-    const flushStream = async () => {
+    const flushStreamInner = async () => {
       if (!adapter.editMessage) return;
       if (isFlushing) return; // Prevent overlapping flushes (interval races)
       isFlushing = true;
@@ -370,6 +371,11 @@ export class Gateway {
       } finally {
         isFlushing = false;
       }
+    };
+    // Track the in-flight flush so `complete` can await it before sending
+    const flushStream = () => {
+      flushPromise = flushStreamInner();
+      return flushPromise;
     };
 
     /** Finalize the thinking message and switch to response phase. */
@@ -492,8 +498,10 @@ export class Gateway {
                 for (const chunk of chunks) await adapter.sendText(msg.channelId, chunk);
               }
             } else {
-              // Clear streaming interval
+              // Clear streaming interval and wait for any in-flight flush to finish
+              // (prevents race where flush is creating responseMessageId while we check it)
               if (streamInterval) clearInterval(streamInterval);
+              await flushPromise;
 
               if ((thinkingMessageId || responseMessageId) && adapter.editMessage) {
                 // Was streaming — finalize thinking if not yet done
