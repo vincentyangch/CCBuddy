@@ -160,7 +160,7 @@ function makeConfig(overrides: Record<string, unknown> = {}) {
       session_timeout_minutes: 30,
       queue_max_depth: 10,
       queue_timeout_seconds: 120,
-      rate_limits: { admin: 30, chat: 10, system: 20 },
+      rate_limits: { admin: 30, trusted: 20, chat: 10, system: 20 },
       default_working_directory: '~',
       admin_skip_permissions: true,
       session_cleanup_hours: 24,
@@ -396,6 +396,19 @@ describe('bootstrap', () => {
     expect(toolNames).toContain('memory_grep');
     expect(toolNames).toContain('memory_describe');
     expect(toolNames).toContain('memory_expand');
+  });
+
+  it('passes trusted rate limits into AgentService', async () => {
+    await bootstrap('/config');
+
+    expect(mockAgentService).toHaveBeenCalledWith(expect.objectContaining({
+      rateLimits: {
+        admin: 30,
+        trusted: 20,
+        chat: 10,
+        system: 20,
+      },
+    }));
   });
 
   it('creates DiscordAdapter with the discord token', async () => {
