@@ -297,6 +297,10 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
           '--session-key', request.sessionId,
           '--channel-key', `${request.platform}-${request.channelId}`,
         ],
+        env: {
+          ...skillMcpServer.env,
+          ...(request.outboundMediaDir ? { CCBUDDY_OUTBOUND_DIR: request.outboundMediaDir } : {}),
+        },
       };
       return agentService.handleRequest({
         ...request,

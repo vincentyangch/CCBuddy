@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { AgentRequest } from '@ccbuddy/core';
 import { bootstrap } from '../bootstrap.js';
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
@@ -408,6 +409,38 @@ describe('bootstrap', () => {
         chat: 10,
         system: 20,
       },
+    }));
+  });
+
+  it('passes CCBUDDY_OUTBOUND_DIR into the skills MCP server env per request', async () => {
+    await bootstrap('/config');
+
+    const gatewayDeps = (mockGateway as ReturnType<typeof vi.fn>).mock.calls[0][0] as {
+      executeAgentRequest: (request: AgentRequest) => AsyncGenerator<unknown>;
+    };
+
+    const request: AgentRequest = {
+      prompt: 'hello',
+      userId: 'alice',
+      sessionId: 'alice-discord-ch1',
+      channelId: 'ch1',
+      platform: 'discord',
+      permissionLevel: 'admin',
+      outboundMediaDir: '/tmp/ccbuddy-outbound/request-1',
+    };
+
+    for await (const _event of gatewayDeps.executeAgentRequest(request)) {}
+
+    expect(fakeAgentServiceInstance.handleRequest).toHaveBeenCalledWith(expect.objectContaining({
+      mcpServers: [
+        expect.objectContaining({
+          name: 'ccbuddy-skills',
+          env: expect.objectContaining({
+            CCBUDDY_OUTBOUND_DIR: '/tmp/ccbuddy-outbound/request-1',
+          }),
+        }),
+        expect.any(Object),
+      ],
     }));
   });
 
