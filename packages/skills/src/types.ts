@@ -10,7 +10,7 @@ export interface SkillInputSchema {
 }
 
 export type SkillPermission = 'filesystem' | 'network' | 'shell' | 'env';
-export type SkillSource = 'bundled' | 'generated' | 'user';
+export type SkillSource = 'bundled' | 'generated' | 'local' | 'user';
 
 export interface SkillDefinition {
   name: string;
@@ -24,12 +24,27 @@ export interface SkillDefinition {
   requiresApproval?: boolean;
 }
 
-export interface SkillMetadata {
+export interface SkillPersistentMetadata {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface SkillRuntimeMetadata {
   usageCount: number;
   lastUsed?: string;
+}
+
+export interface SkillMetadata extends SkillPersistentMetadata, SkillRuntimeMetadata {}
+
+export interface TrackedRegistryEntry {
+  definition: SkillDefinition;
+  metadata: SkillPersistentMetadata;
+}
+
+export interface LocalRegistryEntry {
+  definition: SkillDefinition;
+  metadata: SkillPersistentMetadata;
 }
 
 export interface RegisteredSkill {
@@ -56,4 +71,13 @@ export interface SkillOutput {
 
 export interface RegistryFile {
   skills: Array<RegisteredSkill>;
+}
+
+export interface TrackedRegistryFile {
+  skills: Array<TrackedRegistryEntry>;
+}
+
+export interface LocalRegistryFile {
+  skills: Array<LocalRegistryEntry>;
+  runtimeMetadata: Record<string, SkillRuntimeMetadata>;
 }

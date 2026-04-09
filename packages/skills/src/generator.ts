@@ -1,6 +1,7 @@
-import { writeFileSync, readdirSync, readFileSync, existsSync } from 'node:fs';
+import { writeFileSync, readdirSync, readFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join, basename } from 'node:path';
-import type { SkillInputSchema, SkillPermission } from './types.js';
+import type { SkillDefinition, SkillInputSchema, SkillMetadata, SkillPermission } from './types.js';
+import { LocalSkillState } from './local-skill-state.js';
 import type { SkillRegistry } from './registry.js';
 import type { SkillValidator } from './validator.js';
 
@@ -40,6 +41,8 @@ const VALID_NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
  * before registration, and loads bundled skills from the bundled/ directory.
  */
 export class SkillGenerator {
+  private readonly localState: LocalSkillState;
+
   /**
    * Optional hook called before a skill is registered.
    * Intended for CC code review — return `{ approved: false, reason }` to abort.
@@ -56,7 +59,30 @@ export class SkillGenerator {
     private readonly registry: SkillRegistry,
     private readonly validator: SkillValidator,
     private readonly skillsDir: string,
-  ) {}
+  ) {
+    this.localState = new LocalSkillState(join(this.skillsDir, 'local'));
+  }
+
+  private restoreLocalSkillState(
+    name: string,
+    filePath: string,
+    previousSkill: { definition: SkillDefinition; metadata: SkillMetadata } | undefined,
+    previousFileContents: string | undefined,
+  ): void {
+    if (previousFileContents !== undefined) {
+      writeFileSync(filePath, previousFileContents, 'utf8');
+    } else {
+      rmSync(filePath, { force: true });
+    }
+
+    if (!previousSkill) {
+      this.registry.unregister(name);
+      return;
+    }
+
+    this.registry.unregister(name);
+    this.registry.register(previousSkill.definition, previousSkill.metadata);
+  }
 
   // ── createSkill ──────────────────────────────────────────────────────────
 
@@ -101,8 +127,24 @@ export class SkillGenerator {
       }
     }
 
+    const existing = this.registry.get(name);
+    if (existing) {
+      const isLocalDraft = existing.definition.source === 'local' || existing.definition.source === 'user';
+      return {
+        success: false,
+        errors: [
+          isLocalDraft
+            ? `Skill "${name}" already exists as a local skill; use updateSkill to edit it`
+            : `Skill "${name}" already exists as a tracked skill`,
+        ],
+      };
+    }
+
     // 5. Write to disk
-    const filePath = join(this.skillsDir, 'generated', `${name}.mjs`);
+    const filePath = join(this.skillsDir, 'local', `${name}.mjs`);
+    const previousSkill = this.registry.get(name);
+    const previousFileContents = existsSync(filePath) ? readFileSync(filePath, 'utf8') : undefined;
+    mkdirSync(join(this.skillsDir, 'local'), { recursive: true });
     writeFileSync(filePath, code, 'utf8');
 
     // 6. Register with metadata
@@ -112,7 +154,7 @@ export class SkillGenerator {
         name,
         description,
         version: '1.0.0',
-        source: 'generated',
+        source: 'local',
         filePath,
         inputSchema,
         permissions,
@@ -126,8 +168,23 @@ export class SkillGenerator {
       },
     );
 
-    // 7. Save registry
-    await this.registry.save();
+    // 7. Save local state
+    try {
+      await this.registry.saveLocalState();
+    } catch (error) {
+      this.restoreLocalSkillState(name, filePath, previousSkill, previousFileContents);
+
+      try {
+        await this.registry.saveLocalState();
+      } catch {
+        // Best effort rollback; keep returning the original persistence error.
+      }
+
+      return {
+        success: false,
+        errors: [error instanceof Error ? error.message : `Failed to save local skill "${name}"`],
+      };
+    }
 
     // 8. Optional post-save hook
     if (this.onAfterSave) {
@@ -150,6 +207,8 @@ export class SkillGenerator {
     }
 
     const { definition } = existing;
+    const previousSkill = existing;
+    const previousFileContents = existsSync(definition.filePath) ? readFileSync(definition.filePath, 'utf8') : undefined;
     let { code: newCode, description, inputSchema, permissions } = updates;
 
     // 2. If new code provided, validate it
@@ -188,7 +247,26 @@ export class SkillGenerator {
     this.registry.update(name, updatedDefinition);
 
     // 5. Save
-    await this.registry.save();
+    if (definition.source === 'local' || definition.source === 'user') {
+      try {
+        await this.registry.saveLocalState();
+      } catch (error) {
+        this.restoreLocalSkillState(name, definition.filePath, previousSkill, previousFileContents);
+
+        try {
+          await this.registry.saveLocalState();
+        } catch {
+          // Best effort rollback; keep returning the original persistence error.
+        }
+
+        return {
+          success: false,
+          errors: [error instanceof Error ? error.message : `Failed to save local skill "${name}"`],
+        };
+      }
+    } else {
+      await this.registry.save();
+    }
 
     // Optional post-save hook
     if (this.onAfterSave) {
@@ -196,6 +274,146 @@ export class SkillGenerator {
     }
 
     return { success: true, filePath: definition.filePath };
+  }
+
+  // ── promoteSkill ────────────────────────────────────────────────────────
+
+  async promoteSkill(name: string): Promise<GeneratorResult> {
+    const localEntry = await this.localState.loadLocalSkill(name);
+    if (!localEntry) {
+      return {
+        success: false,
+        errors: [`Local skill "${name}" not found`],
+      };
+    }
+
+    const visibleSkill = this.registry.get(name);
+    if (visibleSkill && visibleSkill.definition.source !== 'local' && visibleSkill.definition.source !== 'user') {
+      return {
+        success: false,
+        errors: [`Skill "${name}" already exists as a tracked skill`],
+      };
+    }
+
+    let code: string;
+    try {
+      code = readFileSync(localEntry.definition.filePath, 'utf8');
+    } catch (error) {
+      return {
+        success: false,
+        errors: [error instanceof Error ? error.message : `Failed to read local skill "${name}"`],
+      };
+    }
+    const validation = this.validator.validate(code, localEntry.definition.permissions);
+    if (!validation.valid) {
+      return {
+        success: false,
+        errors: validation.errors,
+      };
+    }
+
+    const generatedPath = join(this.skillsDir, 'generated', `${name}.mjs`);
+    mkdirSync(join(this.skillsDir, 'generated'), { recursive: true });
+
+    try {
+      writeFileSync(generatedPath, code, 'utf8');
+    } catch (error) {
+      return {
+        success: false,
+        errors: [error instanceof Error ? error.message : `Failed to write generated skill "${name}"`],
+      };
+    }
+
+    const localPath = localEntry.definition.filePath;
+    const rollbackRuntime = visibleSkill?.metadata;
+    const localMetadata: SkillMetadata = {
+      createdBy: localEntry.metadata.createdBy,
+      createdAt: localEntry.metadata.createdAt,
+      updatedAt: localEntry.metadata.updatedAt,
+      usageCount: rollbackRuntime?.usageCount ?? 0,
+      ...(rollbackRuntime?.lastUsed !== undefined ? { lastUsed: rollbackRuntime.lastUsed } : {}),
+    };
+    const trackedMetadata: SkillMetadata = {
+      createdBy: localEntry.metadata.createdBy,
+      createdAt: localEntry.metadata.createdAt,
+      updatedAt: localEntry.metadata.updatedAt,
+      usageCount: 0,
+    };
+
+    const rollbackPromotion = async (error: unknown): Promise<GeneratorResult> => {
+      this.registry.removeTracked(name);
+      this.registry.register(
+        {
+          ...localEntry.definition,
+          source: 'local',
+          filePath: localPath,
+        },
+        localMetadata,
+      );
+
+      try {
+        await this.registry.save();
+      } catch {
+        // Best effort rollback; keep returning the original promotion error.
+      }
+
+      try {
+        await this.registry.saveLocalState();
+      } catch {
+        // Best effort rollback; keep returning the original promotion error.
+      }
+
+      rmSync(generatedPath, { force: true });
+
+      return {
+        success: false,
+        errors: [error instanceof Error ? error.message : `Failed to promote skill "${name}"`],
+      };
+    };
+
+    try {
+      this.registry.register(
+        {
+          ...localEntry.definition,
+          source: 'generated',
+          filePath: generatedPath,
+        },
+        trackedMetadata,
+      );
+    } catch (error) {
+      rmSync(generatedPath, { force: true });
+      return {
+        success: false,
+        errors: [error instanceof Error ? error.message : `Failed to prepare promotion for skill "${name}"`],
+      };
+    }
+
+    try {
+      await this.registry.save();
+    } catch (error) {
+      this.registry.removeTracked(name);
+      rmSync(generatedPath, { force: true });
+      return {
+        success: false,
+        errors: [error instanceof Error ? error.message : `Failed to promote skill "${name}"`],
+      };
+    }
+
+    this.registry.removeLocal(name);
+
+    try {
+      await this.registry.saveLocalState();
+    } catch (error) {
+      return rollbackPromotion(error);
+    }
+
+    try {
+      rmSync(localPath);
+    } catch (error) {
+      return rollbackPromotion(error);
+    }
+
+    return { success: true, filePath: generatedPath };
   }
 
   // ── loadBundledSkills ────────────────────────────────────────────────────
@@ -246,8 +464,11 @@ export class SkillGenerator {
 
       const skillName = meta.name ?? nameWithoutExt;
 
-      // Skip if already registered (idempotent)
-      if (this.registry.get(skillName)) {
+      const existing = this.registry.get(skillName);
+
+      // Keep tracked/bundled skills ahead of local drafts, but preserve
+      // idempotency for already-loaded tracked skills.
+      if (existing && existing.definition.source !== 'local' && existing.definition.source !== 'user') {
         count++;
         continue;
       }
