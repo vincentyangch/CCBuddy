@@ -547,6 +547,24 @@ describe('bootstrap', () => {
     expect(callOrder).toEqual(['shutdown', 'release']);
   });
 
+  it('runs shutdown cleanup before releasing the pid lock when skill registry loading fails', async () => {
+    const callOrder: string[] = [];
+    const releasePidLock = vi.fn(() => {
+      callOrder.push('release');
+    });
+    mockAcquirePidLock.mockReturnValue(releasePidLock);
+    fakeShutdownHandlerInstance.execute.mockImplementation(async () => {
+      callOrder.push('shutdown');
+    });
+    mockSkillRegistry.mockReturnValue({
+      load: vi.fn().mockRejectedValue(new Error('registry boom')),
+      registerExternalTool: vi.fn(),
+    });
+
+    await expect(bootstrap('/config')).rejects.toThrow('registry boom');
+    expect(callOrder).toEqual(['shutdown', 'release']);
+  });
+
   it('registers shutdown handlers for gateway and database', async () => {
     await bootstrap('/config');
     const registerCalls = (fakeShutdownHandlerInstance.register as ReturnType<typeof vi.fn>).mock.calls;

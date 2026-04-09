@@ -82,6 +82,14 @@ function writePidLock(lockPath: string, record: PidLockRecord): void {
   renameSync(tmpPath, lockPath);
 }
 
+function unlinkPidLockBestEffort(lockPath: string): void {
+  try {
+    unlinkSync(lockPath);
+  } catch {
+    // Best effort: another process may have already removed the lock.
+  }
+}
+
 function readProcessStartTimeFromPs(pid: number): number | null {
   try {
     const raw = execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], {
@@ -179,7 +187,7 @@ export function acquirePidLock(
           latest.startedAtMs === currentRecord.startedAtMs &&
           latest.instanceId === currentRecord.instanceId
         ) {
-          unlinkSync(lockPath);
+          unlinkPidLockBestEffort(lockPath);
         }
       };
     }
@@ -208,7 +216,7 @@ export function acquirePidLock(
       latest.startedAtMs === currentRecord.startedAtMs &&
       latest.instanceId === currentRecord.instanceId
     ) {
-      unlinkSync(lockPath);
+      unlinkPidLockBestEffort(lockPath);
     }
   };
 }

@@ -52,6 +52,11 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
   // 1b. Acquire PID lock — kills any existing CCBuddy process
   releasePidLock = acquirePidLock(config.data_dir);
 
+  // 1c. Create shutdown handler early so startup failures can reuse cleanup logic
+  shutdownHandler = new ShutdownHandler(
+    config.agent.graceful_shutdown_timeout_seconds * 1000,
+  );
+
   // 2. Create event bus
   const eventBus = createEventBus();
 
@@ -66,6 +71,9 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
   const resolve = (p: string) => join(projectRoot, p);
   const database = new MemoryDatabase(config.memory.db_path);
   database.init();
+  shutdownHandler.register('database', async () => {
+    database.close();
+  });
 
   const sessionDb = new SessionDatabase(database.raw());
   const sessionStore = new SessionStore(config.agent.session_timeout_ms, {
@@ -354,17 +362,8 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
     notificationService?.tick();
   }, 60_000);
 
-  // 11. Create shutdown handler
-  shutdownHandler = new ShutdownHandler(
-    config.agent.graceful_shutdown_timeout_seconds * 1000,
-  );
-
   shutdownHandler.register('gateway', async () => {
     await gateway.stop();
-  });
-
-  shutdownHandler.register('database', async () => {
-    database.close();
   });
 
   // 12. Start gateway (connects Discord/Telegram)
