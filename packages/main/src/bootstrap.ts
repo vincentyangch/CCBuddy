@@ -530,7 +530,7 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
   return {
     stop: async () => {
       if (tickInterval) clearInterval(tickInterval);
-      await shutdownHandler.execute();
+      await shutdownHandler!.execute();
       releasePidLock?.();
       releasePidLock = undefined;
     },
