@@ -1,6 +1,9 @@
 import nodeCron, { type ScheduledTask } from 'node-cron';
 import { CronExpressionParser } from 'cron-parser';
 import { randomUUID } from 'node:crypto';
+import { mkdtempSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import type {
   EventBus,
   AgentRequest,
@@ -159,9 +162,10 @@ export class CronRunner {
       permissionLevel: job.permissionLevel,
       memoryContext,
       model: job.model ?? this.opts.defaultModel,
-      // System jobs use home dir to avoid TCC restrictions on ~/Documents
+      // System jobs use a unique temp dir per invocation to avoid directory lock
+      // conflicts with interactive sessions (which may also use HOME)
       workingDirectory: job.permissionLevel === 'system'
-        ? (process.env.HOME ?? '/tmp')
+        ? mkdtempSync(join(tmpdir(), `ccbuddy-cron-${job.name}-`))
         : undefined,
     };
 

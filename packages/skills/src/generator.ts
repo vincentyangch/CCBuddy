@@ -246,8 +246,14 @@ export class SkillGenerator {
 
       const skillName = meta.name ?? nameWithoutExt;
 
-      // Skip if already registered (idempotent)
-      if (this.registry.get(skillName)) {
+      // If already registered, ensure filePath is up-to-date (absolute).
+      // Older registry entries may have stored a relative path, which breaks
+      // if the MCP server process CWD differs from the project root.
+      const existing = this.registry.get(skillName);
+      if (existing) {
+        if (existing.definition.filePath !== filePath) {
+          this.registry.update(skillName, { ...existing.definition, filePath });
+        }
         count++;
         continue;
       }

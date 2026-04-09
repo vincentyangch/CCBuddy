@@ -215,9 +215,9 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
     k.startsWith('OPENAI_') ||
     k === 'PATH' || k === 'HOME' || k === 'USER' || k === 'TMPDIR'
   );
-  const mcpEnv: Record<string, string> = {};
+  const forwardedEnv: Record<string, string> = {};
   for (const k of forwardedEnvKeys) {
-    if (process.env[k] !== undefined) mcpEnv[k] = process.env[k] as string;
+    if (process.env[k] !== undefined) forwardedEnv[k] = process.env[k] as string;
   }
 
   // Determine owner user ID: the first admin user in config, used as default for memory tool calls
@@ -238,15 +238,17 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
       '--data-dir', resolve(config.data_dir),
       ...(ownerUserId ? ['--owner-user-id', ownerUserId] : []),
     ],
-    env: mcpEnv,
+    env: forwardedEnv,
   };
 
   // Home Assistant MCP server (ha-mcp via uvx)
+  // Uses forwardedEnv so the subprocess inherits PATH (needed to find uvx) plus HOMEASSISTANT_* vars
   const haMcpServer = {
     name: 'home-assistant',
     command: 'uvx',
     args: ['ha-mcp@latest'],
     env: {
+      ...forwardedEnv,
       HOMEASSISTANT_URL: process.env.HOMEASSISTANT_URL ?? 'http://localhost:8123',
       HOMEASSISTANT_TOKEN: process.env.HOMEASSISTANT_TOKEN ?? '',
     },
@@ -301,6 +303,7 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
         ...request,
         workingDirectory: request.workingDirectory,
         mcpServers: [mcpServer, haMcpServer],
+        env: forwardedEnv,
         systemPrompt: [identityPrompt, request.systemPrompt, skillNudge].filter(Boolean).join('\n\n'),
       });
     },
@@ -499,7 +502,7 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
       ...request,
       workingDirectory: request.workingDirectory,
       mcpServers: [skillMcpServer, haMcpServer],
-
+      env: forwardedEnv,
       systemPrompt: [identityPrompt, request.systemPrompt, skillNudge].filter(Boolean).join('\n\n'),
     }),
     sendProactiveMessage,

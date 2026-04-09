@@ -215,7 +215,7 @@ describe('RetrievalTools', () => {
   });
 
   describe('getBriefs()', () => {
-    it('returns all scheduled brief pairs when no jobName is given', () => {
+    it('returns all scheduled brief pairs when no jobName is given (newest first)', () => {
       const sessionId = 's-brief';
       const t1 = msgStore.add({ userId: 'u1', sessionId, platform: 'discord', content: '[Scheduled: evening_briefing]', role: 'user', tokens: 5 });
       const r1 = msgStore.add({ userId: 'u1', sessionId, platform: 'discord', content: 'Evening brief content here.', role: 'assistant', tokens: 50 });
@@ -225,10 +225,11 @@ describe('RetrievalTools', () => {
       const result = tools.getBriefs('u1');
 
       expect(result.count).toBe(2);
-      expect(result.briefs[0].trigger.content).toBe('[Scheduled: evening_briefing]');
-      expect(result.briefs[0].response?.content).toBe('Evening brief content here.');
-      expect(result.briefs[1].trigger.content).toBe('[Scheduled: morning_briefing_weekday]');
-      expect(result.briefs[1].response?.content).toBe('Morning brief content here.');
+      // Newest first — morning was added after evening (higher id/timestamp)
+      expect(result.briefs[0].trigger.content).toBe('[Scheduled: morning_briefing_weekday]');
+      expect(result.briefs[0].response?.content).toBe('Morning brief content here.');
+      expect(result.briefs[1].trigger.content).toBe('[Scheduled: evening_briefing]');
+      expect(result.briefs[1].response?.content).toBe('Evening brief content here.');
     });
 
     it('filters by jobName', () => {
@@ -258,6 +259,55 @@ describe('RetrievalTools', () => {
       const result = tools.getBriefs('u1');
       expect(result.count).toBe(0);
       expect(result.briefs).toHaveLength(0);
+    });
+
+    it('returns newest-first by default', () => {
+      const base = 1000000;
+      const s1 = 's-brief-order-1';
+      const s2 = 's-brief-order-2';
+      msgStore.add({ userId: 'u1', sessionId: s1, platform: 'discord', content: '[Scheduled: evening_briefing]', role: 'user', timestamp: base, tokens: 5 });
+      msgStore.add({ userId: 'u1', sessionId: s1, platform: 'discord', content: 'Old evening brief.', role: 'assistant', timestamp: base + 1, tokens: 10 });
+      msgStore.add({ userId: 'u1', sessionId: s2, platform: 'discord', content: '[Scheduled: evening_briefing]', role: 'user', timestamp: base + 100, tokens: 5 });
+      msgStore.add({ userId: 'u1', sessionId: s2, platform: 'discord', content: 'New evening brief.', role: 'assistant', timestamp: base + 101, tokens: 10 });
+
+      const result = tools.getBriefs('u1', 'evening_briefing');
+
+      expect(result.count).toBe(2);
+      expect(result.briefs[0].response?.content).toBe('New evening brief.');
+      expect(result.briefs[1].response?.content).toBe('Old evening brief.');
+    });
+
+    it('respects the limit option', () => {
+      const base = 1000000;
+      for (let i = 0; i < 5; i++) {
+        const sid = `s-limit-${i}`;
+        msgStore.add({ userId: 'u1', sessionId: sid, platform: 'discord', content: '[Scheduled: evening_briefing]', role: 'user', timestamp: base + i * 100, tokens: 5 });
+        msgStore.add({ userId: 'u1', sessionId: sid, platform: 'discord', content: `Brief ${i}`, role: 'assistant', timestamp: base + i * 100 + 1, tokens: 10 });
+      }
+
+      const result = tools.getBriefs('u1', 'evening_briefing', { limit: 2 });
+
+      expect(result.count).toBe(2);
+      expect(result.briefs[0].response?.content).toBe('Brief 4');
+      expect(result.briefs[1].response?.content).toBe('Brief 3');
+    });
+
+    it('filters by time range with startMs/endMs', () => {
+      const base = 1000000;
+      const s1 = 's-time-1';
+      const s2 = 's-time-2';
+      const s3 = 's-time-3';
+      msgStore.add({ userId: 'u1', sessionId: s1, platform: 'discord', content: '[Scheduled: evening_briefing]', role: 'user', timestamp: base, tokens: 5 });
+      msgStore.add({ userId: 'u1', sessionId: s1, platform: 'discord', content: 'Before range.', role: 'assistant', timestamp: base + 1, tokens: 10 });
+      msgStore.add({ userId: 'u1', sessionId: s2, platform: 'discord', content: '[Scheduled: evening_briefing]', role: 'user', timestamp: base + 500, tokens: 5 });
+      msgStore.add({ userId: 'u1', sessionId: s2, platform: 'discord', content: 'In range.', role: 'assistant', timestamp: base + 501, tokens: 10 });
+      msgStore.add({ userId: 'u1', sessionId: s3, platform: 'discord', content: '[Scheduled: evening_briefing]', role: 'user', timestamp: base + 2000, tokens: 5 });
+      msgStore.add({ userId: 'u1', sessionId: s3, platform: 'discord', content: 'After range.', role: 'assistant', timestamp: base + 2001, tokens: 10 });
+
+      const result = tools.getBriefs('u1', 'evening_briefing', { startMs: base + 200, endMs: base + 1000 });
+
+      expect(result.count).toBe(1);
+      expect(result.briefs[0].response?.content).toBe('In range.');
     });
   });
 

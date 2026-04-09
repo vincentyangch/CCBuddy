@@ -6,7 +6,7 @@ skills:
         Returns a PNG image.
       version: 1.0.0
       source: bundled
-      filePath: skills/bundled/generate-image.mjs
+      filePath: /Users/flyingchickens/Projects/CCBuddy/skills/bundled/generate-image.mjs
       inputSchema:
         type: object
         properties:
@@ -28,7 +28,7 @@ skills:
     metadata:
       createdBy: system
       createdAt: '2026-03-19T02:35:00.000Z'
-      updatedAt: '2026-03-19T02:35:00.000Z'
+      updatedAt: '2026-04-05T04:07:45.197Z'
       usageCount: 10
       lastUsed: '2026-03-19T03:07:28.807Z'
   - definition:
@@ -38,7 +38,7 @@ skills:
         and comment counts.
       version: 1.0.0
       source: bundled
-      filePath: skills/bundled/hacker-news.mjs
+      filePath: /Users/flyingchickens/Projects/CCBuddy/skills/bundled/hacker-news.mjs
       inputSchema:
         type: object
         properties: {}
@@ -50,8 +50,8 @@ skills:
       createdBy: system
       createdAt: '2026-03-19T23:00:00.000Z'
       updatedAt: '2026-03-19T23:00:00.000Z'
-      usageCount: 12
-      lastUsed: '2026-03-30T04:00:14.722Z'
+      usageCount: 25
+      lastUsed: '2026-04-09T04:00:10.793Z'
   - definition:
       name: celsius-to-fahrenheit
       description: >-
@@ -84,8 +84,7 @@ skills:
         humidity, and daily high/low.
       version: 1.0.0
       source: generated
-      filePath: >-
-        /Users/flyingchickens/Documents/Projects/CCBuddy/skills/generated/weather.mjs
+      filePath: /Users/flyingchickens/Projects/CCBuddy/skills/generated/weather.mjs
       inputSchema:
         type: object
         properties:
@@ -113,15 +112,14 @@ skills:
       createdBy: agent
       createdAt: '2026-03-22T03:50:33.845Z'
       updatedAt: '2026-03-22T03:50:33.845Z'
-      usageCount: 9
-      lastUsed: '2026-03-30T12:00:12.185Z'
+      usageCount: 18
+      lastUsed: '2026-04-09T12:00:10.925Z'
   - definition:
       name: hello-world
       description: A simple greeting skill — says hello to the given name
       version: 1.0.0
       source: bundled
-      filePath: >-
-        /Users/flyingchickens/Documents/Projects/CCBuddy/skills/bundled/hello-world.mjs
+      filePath: /Users/flyingchickens/Projects/CCBuddy/skills/bundled/hello-world.mjs
       inputSchema:
         type: object
         properties:

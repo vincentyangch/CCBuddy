@@ -55,6 +55,10 @@ export class SdkBackend implements AgentBackend {
         options.systemPrompt = request.systemPrompt;
       }
 
+      if (request.env && Object.keys(request.env).length > 0) {
+        options.env = { ...process.env, ...request.env };
+      }
+
       if (request.mcpServers && request.mcpServers.length > 0) {
         // Stdio MCP servers (subprocess) — fallback for CLI backend compatibility
         const stdioServers = Object.fromEntries(

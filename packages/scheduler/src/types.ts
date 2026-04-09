@@ -14,6 +14,8 @@ export interface BaseJob {
   lastRun?: number;
   running: boolean;
   timezone?: string;
+  /** Fire at startup if the job was missed within this many minutes */
+  catchupWindowMinutes?: number;
 }
 
 export interface PromptJob extends BaseJob {

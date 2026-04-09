@@ -68,6 +68,7 @@ export class SchedulerService {
         nextRun: 0,
         running: false,
         timezone: jobConfig.timezone,
+        catchupWindowMinutes: jobConfig.catchup_window_minutes,
       };
 
       this.jobs.push(job);

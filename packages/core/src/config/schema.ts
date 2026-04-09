@@ -142,6 +142,8 @@ export interface ScheduledJobConfig {
   timezone?: string;
   model?: string;
   silent?: boolean;
+  /** If set, fire the job at startup if it was missed within this many minutes (e.g. 120 = 2 hours) */
+  catchup_window_minutes?: number;
 }
 
 export interface SchedulerConfig {
@@ -237,7 +239,7 @@ export const DEFAULT_CONFIG: CCBuddyConfig = {
       'WebFetch',
       'AskUserQuestion',
     ],
-    max_turns: 30,
+    max_turns: 80,
     compaction_threshold: 50,
     compaction_summary_tokens: 4000,
     permission_gates: {

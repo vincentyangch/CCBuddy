@@ -182,18 +182,42 @@ export class MessageStore {
    *
    * If jobName is provided, filters to only that job (e.g. "evening_briefing").
    * Otherwise returns all scheduled job pairs.
+   *
+   * Options:
+   * - limit: max number of briefing pairs to return (default: all)
+   * - startMs/endMs: filter by trigger timestamp range
+   *
+   * Results are returned newest-first (most recent briefing at index 0).
    */
-  getBriefs(userId: string, jobName?: string): Array<{ trigger: StoredMessage; response: StoredMessage | undefined }> {
+  getBriefs(
+    userId: string,
+    jobName?: string,
+    opts?: { limit?: number; startMs?: number; endMs?: number },
+  ): Array<{ trigger: StoredMessage; response: StoredMessage | undefined }> {
     // Build the LIKE pattern for the trigger message content
     const likePattern = jobName
       ? `[Scheduled: ${jobName.replace(/[%_\\]/g, '\\$&')}]`
       : '[Scheduled: %]';
 
-    const triggers = this.db.raw().prepare(`
-      SELECT * FROM messages
-      WHERE user_id = ? AND role = 'user' AND content LIKE ? ESCAPE '\\'
-      ORDER BY timestamp ASC, id ASC
-    `).all(userId, likePattern) as any[];
+    const conditions = ["user_id = ?", "role = 'user'", "content LIKE ? ESCAPE '\\'"];
+    const params: (string | number)[] = [userId, likePattern];
+
+    if (opts?.startMs !== undefined) {
+      conditions.push('timestamp >= ?');
+      params.push(opts.startMs);
+    }
+    if (opts?.endMs !== undefined) {
+      conditions.push('timestamp <= ?');
+      params.push(opts.endMs);
+    }
+
+    let sql = `SELECT * FROM messages WHERE ${conditions.join(' AND ')} ORDER BY timestamp DESC, id DESC`;
+    if (opts?.limit !== undefined && opts.limit > 0) {
+      sql += ` LIMIT ?`;
+      params.push(opts.limit);
+    }
+
+    const triggers = this.db.raw().prepare(sql).all(...params) as any[];
 
     return triggers.map((triggerRow: any) => {
       const trigger = this.toMessage(triggerRow);

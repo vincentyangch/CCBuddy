@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@ccbuddy/core": "*",
+    "cron-parser": "^5.5.0",
     "node-cron": "^3"
   },
   "devDependencies": {

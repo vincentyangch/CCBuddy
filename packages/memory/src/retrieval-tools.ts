@@ -75,9 +75,14 @@ export class RetrievalTools {
   /**
    * Return scheduled briefing pairs (trigger + assistant response).
    * Optionally filter by job name (e.g. "evening_briefing", "morning_briefing_weekday").
+   * Results are newest-first. Use limit/startMs/endMs to narrow results.
    */
-  getBriefs(userId: string, jobName?: string): GetBriefsResult {
-    const briefs = this.messages.getBriefs(userId, jobName);
+  getBriefs(
+    userId: string,
+    jobName?: string,
+    opts?: { limit?: number; startMs?: number; endMs?: number },
+  ): GetBriefsResult {
+    const briefs = this.messages.getBriefs(userId, jobName, opts);
     return { briefs, count: briefs.length };
   }
 
@@ -114,7 +119,7 @@ export class RetrievalTools {
       },
       {
         name: 'memory_get_briefs',
-        description: 'Retrieve scheduled briefing pairs (trigger + assistant response) from memory. Use this to look up morning or evening briefings. Optionally filter by job name.',
+        description: 'Retrieve scheduled briefing pairs (trigger + assistant response) from memory. Returns newest-first. Use this to look up morning or evening briefings. Common usage: to get today\'s evening briefing, call with jobName="evening_briefing" and limit=1. For a specific date, use startMs/endMs.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -125,6 +130,18 @@ export class RetrievalTools {
             jobName: {
               type: 'string',
               description: 'Optional job name to filter by (e.g. "evening_briefing", "morning_briefing_weekday", "morning_briefing_weekend"). Omit to get all scheduled briefings.',
+            },
+            limit: {
+              type: 'number',
+              description: 'Maximum number of briefing pairs to return (newest first). Use limit=1 to get the most recent briefing. Omit for all.',
+            },
+            startMs: {
+              type: 'number',
+              description: 'Filter to briefings on or after this timestamp (ms since epoch). Useful for date-range queries.',
+            },
+            endMs: {
+              type: 'number',
+              description: 'Filter to briefings on or before this timestamp (ms since epoch). Useful for date-range queries.',
             },
           },
           required: [],
