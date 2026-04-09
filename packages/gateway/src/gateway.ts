@@ -1,4 +1,5 @@
-import { readdirSync, readFileSync, unlinkSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, rmdirSync, unlinkSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import type {
   EventBus,
@@ -314,8 +315,11 @@ export class Gateway {
     const adapter = this.adapters.get(msg.platform);
     if (!adapter) { console.warn('[Gateway] No adapter for platform:', msg.platform); return; }
 
-    // Snapshot outbound dir before execution so we only deliver files produced by THIS request
-    const preExistingFiles = this.snapshotOutboundDir();
+    const requestOutboundDir = request.outboundMediaDir
+      ?? this.createRequestOutboundDir(sessionKey, msg.channelId);
+    const requestWithOutbound: AgentRequest = requestOutboundDir
+      ? { ...request, outboundMediaDir: requestOutboundDir }
+      : request;
 
     console.log(`[Gateway] executeAndRoute: channel=${msg.channelId} isMention=${msg.isMention} text="${msg.text.slice(0, 50)}"`);
     await adapter.setTypingIndicator(msg.channelId, true);
@@ -405,7 +409,7 @@ export class Gateway {
 
     try {
       let eventCount = 0;
-      for await (const event of this.deps.executeAgentRequest(request)) {
+      for await (const event of this.deps.executeAgentRequest(requestWithOutbound)) {
         eventCount++;
         console.log(`[Gateway] Agent event #${eventCount}: type=${event.type} channel=${msg.channelId}`);
         switch (event.type) {
@@ -544,7 +548,7 @@ export class Gateway {
             }
 
             // Deliver any outbound media files (written by skills to data/outbound/)
-            await this.deliverOutboundMedia(adapter, msg.channelId, preExistingFiles);
+            await this.deliverRequestOutboundMedia(adapter, msg.channelId, requestOutboundDir);
             break;
           }
           case 'media': {
@@ -680,14 +684,14 @@ export class Gateway {
     }
   }
 
-  private snapshotOutboundDir(): Set<string> {
-    const dir = this.deps.outboundMediaDir;
-    if (!dir) return new Set();
-    try {
-      return new Set(readdirSync(dir));
-    } catch {
-      return new Set();
-    }
+  private createRequestOutboundDir(sessionKey: string | undefined, channelId: string): string | undefined {
+    const root = this.deps.outboundMediaDir;
+    if (!root) return undefined;
+
+    const requestId = `${sessionKey ?? channelId}-${randomUUID()}`;
+    const requestDir = join(root, requestId);
+    mkdirSync(requestDir, { recursive: true });
+    return requestDir;
   }
 
   private async presentUserQuestions(
@@ -774,19 +778,18 @@ export class Gateway {
     });
   }
 
-  private async deliverOutboundMedia(adapter: PlatformAdapter, channelId: string, preExisting: Set<string>): Promise<void> {
-    const dir = this.deps.outboundMediaDir;
-    if (!dir) return;
+  private async deliverRequestOutboundMedia(adapter: PlatformAdapter, channelId: string, requestDir?: string): Promise<void> {
+    if (!requestDir) return;
 
     let files: string[];
     try {
-      files = readdirSync(dir).filter(f => !f.startsWith('.') && !preExisting.has(f));
+      files = readdirSync(requestDir).filter(f => !f.startsWith('.'));
     } catch {
-      return; // dir doesn't exist yet — no media to send
+      return;
     }
 
     for (const file of files) {
-      const filePath = join(dir, file);
+      const filePath = join(requestDir, file);
       try {
         const data = readFileSync(filePath);
         const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(file);
@@ -799,6 +802,12 @@ export class Gateway {
       } catch (err) {
         console.warn(`[Gateway] Failed to deliver outbound media ${file}:`, (err as Error).message);
       }
+    }
+
+    try {
+      rmdirSync(requestDir);
+    } catch {
+      console.warn(`[Gateway] Outbound request directory not empty after delivery: ${requestDir}`);
     }
   }
 }

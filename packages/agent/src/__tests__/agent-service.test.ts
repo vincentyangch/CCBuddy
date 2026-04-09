@@ -28,7 +28,7 @@ function makeRequest(overrides: Partial<AgentRequest> = {}): AgentRequest {
 
 const defaultOpts = {
   maxConcurrent: 3,
-  rateLimits: { admin: 30, chat: 10 },
+  rateLimits: { admin: 30, trusted: 20, chat: 10, system: 5 },
   queueMaxDepth: 10,
   queueTimeoutSeconds: 5,
   sessionTimeoutMinutes: 30,
@@ -51,13 +51,44 @@ describe('AgentService', () => {
 
   it('rate limits excessive requests', async () => {
     const service = new AgentService({
-      ...defaultOpts, backend: makeBackend('ok'), rateLimits: { admin: 1, chat: 1 },
+      ...defaultOpts, backend: makeBackend('ok'), rateLimits: { admin: 1, trusted: 1, chat: 1, system: 1 },
     });
     const events1 = await collectEvents(service.handleRequest(makeRequest()));
     expect(events1[0].type).toBe('complete');
     const events2 = await collectEvents(service.handleRequest(makeRequest()));
     expect(events2[0].type).toBe('error');
     expect((events2[0] as any).error).toContain('rate limit');
+  });
+
+  it('applies trusted-user rate limits when permissionLevel is trusted', async () => {
+    const service = new AgentService({
+      ...defaultOpts,
+      backend: makeBackend('ok'),
+      rateLimits: { admin: 2, trusted: 1, chat: 2, system: 1 },
+    });
+
+    const events1 = await collectEvents(service.handleRequest(makeRequest({
+      userId: 'trusted-user',
+      sessionId: 'trusted-session-1',
+      permissionLevel: 'trusted',
+    })));
+    expect(events1[0].type).toBe('complete');
+
+    const events2 = await collectEvents(service.handleRequest(makeRequest({
+      userId: 'trusted-user',
+      sessionId: 'trusted-session-2',
+      permissionLevel: 'trusted',
+    })));
+    expect(events2[0].type).toBe('error');
+    expect((events2[0] as any).error).toContain('rate limit');
+  });
+
+  it('fails fast when required permission-level rate limits are missing', () => {
+    expect(() => new AgentService({
+      ...defaultOpts,
+      backend: makeBackend('ok'),
+      rateLimits: { admin: 30, chat: 10 },
+    })).toThrow(/trusted/);
   });
 
   it('rejects when concurrency cap AND queue are full', async () => {
@@ -266,7 +297,7 @@ describe('AgentService', () => {
       maxConcurrent: 1,
       queueMaxDepth: 5,
       queueTimeoutSeconds: 2,
-      rateLimits: { admin: 1000, chat: 1000 },
+      rateLimits: { admin: 1000, trusted: 1000, chat: 1000, system: 1000 },
     });
 
     // Start the first request — it occupies the single slot indefinitely

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { AgentRequest } from '@ccbuddy/core';
 import { bootstrap } from '../bootstrap.js';
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
@@ -160,7 +161,7 @@ function makeConfig(overrides: Record<string, unknown> = {}) {
       session_timeout_minutes: 30,
       queue_max_depth: 10,
       queue_timeout_seconds: 120,
-      rate_limits: { admin: 30, chat: 10, system: 20 },
+      rate_limits: { admin: 30, trusted: 20, chat: 10, system: 20 },
       default_working_directory: '~',
       admin_skip_permissions: true,
       session_cleanup_hours: 24,
@@ -396,6 +397,51 @@ describe('bootstrap', () => {
     expect(toolNames).toContain('memory_grep');
     expect(toolNames).toContain('memory_describe');
     expect(toolNames).toContain('memory_expand');
+  });
+
+  it('passes trusted rate limits into AgentService', async () => {
+    await bootstrap('/config');
+
+    expect(mockAgentService).toHaveBeenCalledWith(expect.objectContaining({
+      rateLimits: {
+        admin: 30,
+        trusted: 20,
+        chat: 10,
+        system: 20,
+      },
+    }));
+  });
+
+  it('passes CCBUDDY_OUTBOUND_DIR into the skills MCP server env per request', async () => {
+    await bootstrap('/config');
+
+    const gatewayDeps = (mockGateway as ReturnType<typeof vi.fn>).mock.calls[0][0] as {
+      executeAgentRequest: (request: AgentRequest) => AsyncGenerator<unknown>;
+    };
+
+    const request: AgentRequest = {
+      prompt: 'hello',
+      userId: 'alice',
+      sessionId: 'alice-discord-ch1',
+      channelId: 'ch1',
+      platform: 'discord',
+      permissionLevel: 'admin',
+      outboundMediaDir: '/tmp/ccbuddy-outbound/request-1',
+    };
+
+    for await (const _event of gatewayDeps.executeAgentRequest(request)) {}
+
+    expect(fakeAgentServiceInstance.handleRequest).toHaveBeenCalledWith(expect.objectContaining({
+      mcpServers: [
+        expect.objectContaining({
+          name: 'ccbuddy-skills',
+          env: expect.objectContaining({
+            CCBUDDY_OUTBOUND_DIR: '/tmp/ccbuddy-outbound/request-1',
+          }),
+        }),
+        expect.any(Object),
+      ],
+    }));
   });
 
   it('creates DiscordAdapter with the discord token', async () => {

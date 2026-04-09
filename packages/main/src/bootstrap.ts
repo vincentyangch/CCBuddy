@@ -126,6 +126,7 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
     maxConcurrent: config.agent.max_concurrent_sessions,
     rateLimits: {
       admin: config.agent.rate_limits.admin,
+      trusted: config.agent.rate_limits.trusted,
       chat: config.agent.rate_limits.chat,
       system: config.agent.rate_limits.system,
     },
@@ -298,6 +299,10 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
           '--session-key', request.sessionId,
           '--channel-key', `${request.platform}-${request.channelId}`,
         ],
+        env: {
+          ...skillMcpServer.env,
+          ...(request.outboundMediaDir ? { CCBUDDY_OUTBOUND_DIR: request.outboundMediaDir } : {}),
+        },
       };
       return agentService.handleRequest({
         ...request,

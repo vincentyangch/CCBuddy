@@ -14,6 +14,7 @@ export interface AgentRequest {
   platform: string;
   model?: string;
   workingDirectory?: string;
+  outboundMediaDir?: string;
   allowedTools?: string[];
   systemPrompt?: string;
   memoryContext?: string;

@@ -235,7 +235,7 @@ async function main(): Promise<void> {
     tools.push({
       name: 'create_skill',
       description:
-        'Create a new skill. Provide name, description, code (JS/TS with export default async function), input_schema, and optional permissions/approved flag.',
+        'Create a new local skill. Provide name, description, code (JS/TS with export default async function), input_schema, and optional permissions/approved flag.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -258,6 +258,19 @@ async function main(): Promise<void> {
           },
         },
         required: ['name', 'description', 'code', 'input_schema'],
+      },
+    });
+
+    tools.push({
+      name: 'promote_skill',
+      description:
+        'Promote a local skill into skills/generated/. Moves the local file into the tracked generated area and updates the tracked registry entry.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Local skill name to promote' },
+        },
+        required: ['name'],
       },
     });
 
@@ -544,6 +557,16 @@ async function main(): Promise<void> {
       };
     }
 
+    // ── promote_skill ────────────────────────────────────────────────────
+    if (name === 'promote_skill') {
+      const skillName = toolArgs.name as string;
+      const result = await generator.promoteSkill(skillName);
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result) }],
+      };
+    }
+
     // ── skill_<name> (dynamic) ────────────────────────────────────────────
     if (name.startsWith('skill_')) {
       const skillName = name.slice('skill_'.length);
@@ -575,7 +598,7 @@ async function main(): Promise<void> {
 
       // Record usage and persist
       registry.recordUsage(skillName);
-      await registry.save();
+      await registry.saveLocalState();
 
       // Run skill
       const output = await runner.run(skill.definition.filePath, toolArgs);
@@ -765,7 +788,17 @@ async function main(): Promise<void> {
       } catch {
         return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: `File not found: ${filePath}` }) }] };
       }
-      const outDir = pathJoin(cwd, 'data', 'outbound');
+
+      const outDir = process.env.CCBUDDY_OUTBOUND_DIR;
+      if (!outDir) {
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({ success: false, error: 'CCBUDDY_OUTBOUND_DIR is not set for this request' }),
+          }],
+        };
+      }
+
       try { mkdirSync(outDir, { recursive: true }); } catch { /* exists */ }
       const ext = extname(resolved) || '.bin';
       const outFilename = `${basename(resolved, ext)}-${randomUUID().slice(0, 8)}${ext}`;

@@ -3,8 +3,9 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync, mkdirSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { load as yamlLoad } from 'js-yaml';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const serverPath = join(__dirname, '..', '..', 'dist', 'mcp-server.js');
@@ -22,22 +23,34 @@ function makeTmpEnv(): { registryPath: string; skillsDir: string; tmpDir: string
   tmpDirs.push(tmpDir);
 
   const skillsDir = join(tmpDir, 'skills');
+  mkdirSync(join(skillsDir, 'local'), { recursive: true });
   mkdirSync(join(skillsDir, 'generated'), { recursive: true });
 
-  const registryPath = join(tmpDir, 'registry.yaml');
+  const registryPath = join(skillsDir, 'registry.yaml');
   writeFileSync(registryPath, 'skills: []\n', 'utf8');
 
   return { registryPath, skillsDir, tmpDir };
+}
+
+function readYamlFile<T>(filePath: string): T {
+  return yamlLoad(readFileSync(filePath, 'utf8')) as T;
 }
 
 async function createClient(
   registryPath: string,
   skillsDir: string,
   extraArgs: string[] = [],
+  extraEnv: Record<string, string> = {},
 ): Promise<{ client: Client; transport: StdioClientTransport }> {
+  const envEntries = Object.entries({ ...process.env, ...extraEnv }).filter(
+    (entry): entry is [string, string] => entry[1] !== undefined,
+  );
+  const env = Object.fromEntries(envEntries);
+
   const transport = new StdioClientTransport({
     command: 'node',
     args: [serverPath, '--registry', registryPath, '--skills-dir', skillsDir, ...extraArgs],
+    env,
   });
   const client = new Client({ name: 'test', version: '1.0.0' });
   await client.connect(transport);
@@ -59,6 +72,7 @@ describe('MCP server integration', () => {
       const names = result.tools.map((t) => t.name);
       expect(names).toContain('list_skills');
       expect(names).toContain('create_skill');
+      expect(names).toContain('promote_skill');
     } finally {
       await transport.close();
     }
@@ -81,7 +95,64 @@ describe('MCP server integration', () => {
     }
   }, 15_000);
 
-  it('create_skill creates a skill and returns success', async () => {
+  it('send_file copies files into CCBUDDY_OUTBOUND_DIR', async () => {
+    const { registryPath, skillsDir } = makeTmpEnv();
+    const workingDir = mkdtempSync(join(process.cwd(), 'send-file-test-'));
+    tmpDirs.push(workingDir);
+    const sourcePath = join(workingDir, 'report.txt');
+    const outboundDir = join(workingDir, 'outbound', 'request-1');
+    mkdirSync(outboundDir, { recursive: true });
+    writeFileSync(sourcePath, 'hello', 'utf8');
+
+    const { client, transport } = await createClient(
+      registryPath,
+      skillsDir,
+      ['--no-approval', '--no-git-commit'],
+      { CCBUDDY_OUTBOUND_DIR: outboundDir },
+    );
+
+    try {
+      const result = await client.callTool({
+        name: 'send_file',
+        arguments: { file_path: sourcePath },
+      });
+      const parsed = JSON.parse((result.content as Array<{ text: string }>)[0].text);
+      expect(parsed.success).toBe(true);
+
+      const queuedFiles = readdirSync(outboundDir);
+      expect(queuedFiles).toHaveLength(1);
+      expect(readFileSync(join(outboundDir, queuedFiles[0]!), 'utf8')).toBe('hello');
+    } finally {
+      await transport.close();
+    }
+  }, 15_000);
+
+  it('send_file fails clearly when CCBUDDY_OUTBOUND_DIR is missing', async () => {
+    const { registryPath, skillsDir } = makeTmpEnv();
+    const workingDir = mkdtempSync(join(process.cwd(), 'send-file-test-'));
+    tmpDirs.push(workingDir);
+    const sourcePath = join(workingDir, 'report.txt');
+    writeFileSync(sourcePath, 'hello', 'utf8');
+
+    const { client, transport } = await createClient(registryPath, skillsDir, [
+      '--no-approval',
+      '--no-git-commit',
+    ]);
+
+    try {
+      const result = await client.callTool({
+        name: 'send_file',
+        arguments: { file_path: sourcePath },
+      });
+      const parsed = JSON.parse((result.content as Array<{ text: string }>)[0].text);
+      expect(parsed.success).toBe(false);
+      expect(parsed.error).toContain('CCBUDDY_OUTBOUND_DIR');
+    } finally {
+      await transport.close();
+    }
+  }, 15_000);
+
+  it('create_skill writes a local skill instead of mutating the tracked registry', async () => {
     const { registryPath, skillsDir } = makeTmpEnv();
     const { client, transport } = await createClient(registryPath, skillsDir, [
       '--no-approval',
@@ -108,7 +179,134 @@ describe('MCP server integration', () => {
       const content = result.content as Array<{ type: string; text: string }>;
       const parsed = JSON.parse(content[0].text);
       expect(parsed.success).toBe(true);
-      expect(parsed.filePath).toBeDefined();
+      expect(parsed.filePath).toContain(join('skills', 'local'));
+      expect(parsed.filePath).toContain('test-greet.mjs');
+
+      const trackedRegistry = readYamlFile<{ skills: Array<{ definition: { name: string } }> }>(registryPath);
+      expect(trackedRegistry.skills).toEqual([]);
+
+      const localRegistryPath = join(skillsDir, 'local', 'registry.yaml');
+      const localRegistry = readYamlFile<{
+        skills: Array<{ definition: { name: string; filePath: string; source: string } }>;
+        runtimeMetadata: Record<string, unknown>;
+      }>(localRegistryPath);
+      expect(localRegistry.skills).toHaveLength(1);
+      expect(localRegistry.skills[0].definition.name).toBe('test-greet');
+      expect(localRegistry.skills[0].definition.source).toBe('local');
+    } finally {
+      await transport.close();
+    }
+  }, 15_000);
+
+  it('promote_skill moves a local skill into the tracked generated area', async () => {
+    const { registryPath, skillsDir } = makeTmpEnv();
+    const { client, transport } = await createClient(registryPath, skillsDir, [
+      '--no-approval',
+      '--no-git-commit',
+    ]);
+
+    try {
+      await client.callTool({
+        name: 'create_skill',
+        arguments: {
+          name: 'test-greet',
+          description: 'Greets a user by name',
+          code: 'export default async function(input) { return { success: true, result: `Hello ${input.name}` }; }',
+          input_schema: {
+            type: 'object',
+            properties: {
+              name: { type: 'string', description: 'Name to greet' },
+            },
+            required: ['name'],
+          },
+        },
+      });
+
+      const result = await client.callTool({
+        name: 'promote_skill',
+        arguments: {
+          name: 'test-greet',
+        },
+      });
+
+      const content = result.content as Array<{ type: string; text: string }>;
+      const parsed = JSON.parse(content[0].text);
+      expect(parsed.success).toBe(true);
+      expect(parsed.filePath).toContain(join('skills', 'generated'));
+
+      const generatedPath = join(skillsDir, 'generated', 'test-greet.mjs');
+      const localPath = join(skillsDir, 'local', 'test-greet.mjs');
+      expect(parsed.filePath).toBe(generatedPath);
+      expect(readFileSync(generatedPath, 'utf8')).toContain('Hello ${input.name}');
+
+      const trackedRegistry = readYamlFile<{
+        skills: Array<{ definition: { name: string; source: string; filePath: string } }>;
+      }>(registryPath);
+      expect(trackedRegistry.skills).toHaveLength(1);
+      expect(trackedRegistry.skills[0].definition.name).toBe('test-greet');
+      expect(trackedRegistry.skills[0].definition.source).toBe('generated');
+      expect(trackedRegistry.skills[0].definition.filePath).toBe('generated/test-greet.mjs');
+      expect(existsSync(localPath)).toBe(false);
+
+      const localRegistryPath = join(skillsDir, 'local', 'registry.yaml');
+      const localRegistry = readYamlFile<{
+        skills: Array<unknown>;
+        runtimeMetadata: Record<string, { usageCount: number; lastUsed?: string }>;
+      }>(localRegistryPath);
+      expect(localRegistry.skills).toEqual([]);
+      expect(localRegistry.runtimeMetadata['tracked:test-greet']).toEqual({ usageCount: 0 });
+    } finally {
+      await transport.close();
+    }
+  }, 15_000);
+
+  it('skill execution records usage in local state only', async () => {
+    const { registryPath, skillsDir } = makeTmpEnv();
+    const { client, transport } = await createClient(registryPath, skillsDir, [
+      '--no-approval',
+      '--no-git-commit',
+    ]);
+
+    try {
+      await client.callTool({
+        name: 'create_skill',
+        arguments: {
+          name: 'test-greet',
+          description: 'Greets a user by name',
+          code: 'export default async function(input) { return { success: true, result: `Hello ${input.name}` }; }',
+          input_schema: {
+            type: 'object',
+            properties: {
+              name: { type: 'string', description: 'Name to greet' },
+            },
+            required: ['name'],
+          },
+        },
+      });
+
+      const execution = await client.callTool({
+        name: 'skill_test-greet',
+        arguments: {
+          name: 'CCBuddy',
+        },
+      });
+
+      const executionContent = execution.content as Array<{ type: string; text: string }>;
+      const executionParsed = JSON.parse(executionContent[0].text);
+      expect(executionParsed.success).toBe(true);
+      expect(executionParsed.result).toBe('Hello CCBuddy');
+
+      const trackedRegistry = readYamlFile<{ skills: Array<{ definition: { name: string } }> }>(registryPath);
+      expect(trackedRegistry.skills).toEqual([]);
+
+      const localRegistryPath = join(skillsDir, 'local', 'registry.yaml');
+      const localRegistry = readYamlFile<{
+        skills: Array<{ definition: { name: string } }>;
+        runtimeMetadata: Record<string, { usageCount: number; lastUsed?: string }>;
+      }>(localRegistryPath);
+      expect(localRegistry.runtimeMetadata['local:test-greet']).toBeDefined();
+      expect(localRegistry.runtimeMetadata['local:test-greet'].usageCount).toBe(1);
+      expect(localRegistry.skills[0].definition.name).toBe('test-greet');
     } finally {
       await transport.close();
     }

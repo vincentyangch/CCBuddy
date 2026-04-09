@@ -9,11 +9,14 @@ import { SkillRegistry } from './registry.js';
 import { SkillValidator } from './validator.js';
 import { SkillGenerator } from './generator.js';
 import { SkillRunner } from './runner.js';
+import { mkdirSync } from 'fs';
 import { resolve } from 'path';
 
 const skillsDir = resolve('./skills');
+mkdirSync(resolve('./skills/local'), { recursive: true });
+mkdirSync(resolve('./skills/generated'), { recursive: true });
 const registry = new SkillRegistry(resolve('./skills/registry.yaml'));
-registry.load();
+await registry.load();
 const validator = new SkillValidator();
 const generator = new SkillGenerator(registry, validator, skillsDir);
 const runner = new SkillRunner({ timeoutMs: 5000 });
@@ -30,7 +33,7 @@ async function main() {
   const hwResult = await runner.run(resolve(helloWorld!.definition.filePath), { name: 'CCBuddy' });
   console.log('Result:', hwResult);
 
-  console.log('\n=== Test 3: Generate a new skill ===');
+  console.log('\n=== Test 3: Generate a new local skill ===');
   const createResult = await generator.createSkill({
     name: 'celsius-to-fahrenheit',
     description: 'Convert Celsius temperature to Fahrenheit',
@@ -46,14 +49,23 @@ async function main() {
   console.log('Create success:', createResult.success);
   console.log('File path:', createResult.filePath);
 
-  console.log('\n=== Test 4: Execute generated skill ===');
+  console.log('\n=== Test 4: Execute local skill ===');
   const tempResult = await runner.run(resolve(createResult.filePath!), { celsius: 100 });
   console.log('100°C =', tempResult.result + '°F');
   console.log('0°C test:');
   const zeroResult = await runner.run(resolve(createResult.filePath!), { celsius: 0 });
   console.log('0°C =', zeroResult.result + '°F');
 
-  console.log('\n=== Test 5: Chat user blocked from creating ===');
+  console.log('\n=== Test 5: Promote the local skill into generated ===');
+  const promoteResult = await generator.promoteSkill('celsius-to-fahrenheit');
+  console.log('Promote success:', promoteResult.success);
+  console.log('Promoted file path:', promoteResult.filePath);
+
+  console.log('\n=== Test 6: Execute promoted skill ===');
+  const promotedResult = await runner.run(resolve(promoteResult.filePath!), { celsius: 212 });
+  console.log('212°F =', promotedResult.result + '°F');
+
+  console.log('\n=== Test 7: Chat user blocked from creating ===');
   const chatResult = await generator.createSkill({
     name: 'forbidden-skill',
     description: 'Should fail',
@@ -65,21 +77,21 @@ async function main() {
   console.log('Chat user blocked:', !chatResult.success);
   console.log('Reason:', chatResult.errors?.[0]);
 
-  console.log('\n=== Test 6: Validator catches dangerous code ===');
+  console.log('\n=== Test 8: Validator catches dangerous code ===');
   const dangerousResult = validator.validate(
     'import { exec } from "child_process";\nexport default async function() { exec("rm -rf /"); return { success: true }; }'
   );
   console.log('Dangerous code blocked:', !dangerousResult.valid);
   console.log('Reason:', dangerousResult.errors?.[0]);
 
-  console.log('\n=== Test 7: Tool descriptions for Claude Code ===');
+  console.log('\n=== Test 9: Tool descriptions for Claude Code ===');
   const tools = registry.getToolDescriptions();
   console.log('Tools available:', tools.length);
   for (const t of tools) {
     console.log(' -', t.name, ':', t.description);
   }
 
-  console.log('\n=== Test 8: Register external tool (simulating apple module) ===');
+  console.log('\n=== Test 10: Register external tool (simulating apple module) ===');
   registry.registerExternalTool({
     name: 'apple_calendar',
     description: 'List Apple Calendar events',
@@ -91,14 +103,15 @@ async function main() {
     console.log(' -', t.name);
   }
 
-  console.log('\n=== Test 9: Persist and reload ===');
-  registry.save();
+  console.log('\n=== Test 11: Persist and reload ===');
+  await registry.save();
+  await registry.saveLocalState();
   const registry2 = new SkillRegistry(resolve('./skills/registry.yaml'));
-  registry2.load();
+  await registry2.load();
   console.log('Skills after reload:', registry2.list().length);
   console.log('Skill names:', registry2.list().map(s => s.definition.name).join(', '));
 
-  console.log('\n=== Test 10: Update a skill ===');
+  console.log('\n=== Test 12: Update a skill ===');
   const updateResult = await generator.updateSkill('celsius-to-fahrenheit', {
     description: 'Convert Celsius to Fahrenheit (v2)',
     code: 'export default async function(input) {\n  const f = (input.celsius * 9/5) + 32;\n  return { success: true, result: Math.round(f * 100) / 100 };\n}\n',
@@ -110,9 +123,11 @@ async function main() {
 
   // Cleanup: remove generated test skill so it doesn't persist
   registry.unregister('celsius-to-fahrenheit');
-  registry.save();
+  await registry.save();
+  await registry.saveLocalState();
   const { unlinkSync } = await import('fs');
   try { unlinkSync(resolve(createResult.filePath!)); } catch {}
+  try { unlinkSync(resolve(promoteResult.filePath!)); } catch {}
 }
 
 main().catch(console.error);

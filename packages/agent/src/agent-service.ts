@@ -7,6 +7,15 @@ import type { Session } from './session/session-manager.js';
 import type { QueuePriority } from './session/priority-queue.js';
 import { DirectoryLock } from './session/directory-lock.js';
 
+const REQUIRED_RATE_LIMIT_ROLES = ['admin', 'trusted', 'chat', 'system'] as const;
+
+function validateRateLimits(rateLimits: Record<string, number>): void {
+  const missingRoles = REQUIRED_RATE_LIMIT_ROLES.filter((role) => rateLimits[role] === undefined);
+  if (missingRoles.length > 0) {
+    throw new Error(`Missing rate limits for required roles: ${missingRoles.join(', ')}`);
+  }
+}
+
 export interface AgentServiceOptions {
   backend: AgentBackend;
   eventBus?: EventBus;
@@ -46,6 +55,7 @@ export class AgentService {
   }>>();
 
   constructor(options: AgentServiceOptions) {
+    validateRateLimits(options.rateLimits);
     this.backend = options.backend;
     this.eventBus = options.eventBus;
     this.maxConcurrent = options.maxConcurrent;

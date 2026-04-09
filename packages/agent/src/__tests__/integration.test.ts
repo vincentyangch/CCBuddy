@@ -28,7 +28,7 @@ describe('Integration: Event Bus → Agent Service', () => {
       backend: makeMockBackend('Hello from Claude Code!'),
       eventBus: bus,
       maxConcurrent: 3,
-      rateLimits: { admin: 30, chat: 10 },
+      rateLimits: { admin: 30, trusted: 20, chat: 10, system: 5 },
       queueMaxDepth: 10,
       queueTimeoutSeconds: 120,
       sessionTimeoutMinutes: 30,
@@ -75,7 +75,7 @@ describe('Integration: Event Bus → Agent Service', () => {
     const agentService = new AgentService({
       backend: makeMockBackend('response'),
       maxConcurrent: 3,
-      rateLimits: { admin: 30, chat: 10 },
+      rateLimits: { admin: 30, trusted: 20, chat: 10, system: 5 },
       queueMaxDepth: 10,
       queueTimeoutSeconds: 120,
       sessionTimeoutMinutes: 30,
