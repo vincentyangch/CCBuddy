@@ -512,13 +512,19 @@ describe('bootstrap', () => {
   });
 
   it('stop() releases the pid lock after shutdown', async () => {
-    const releasePidLock = vi.fn();
+    const callOrder: string[] = [];
+    const releasePidLock = vi.fn(() => {
+      callOrder.push('release');
+    });
     mockAcquirePidLock.mockReturnValue(releasePidLock);
+    fakeShutdownHandlerInstance.execute.mockImplementation(async () => {
+      callOrder.push('shutdown');
+    });
 
     const { stop } = await bootstrap('/config');
     await stop();
 
-    expect(releasePidLock).toHaveBeenCalledTimes(1);
+    expect(callOrder).toEqual(['shutdown', 'release']);
   });
 
   it('releases the pid lock when bootstrap fails after acquisition', async () => {
