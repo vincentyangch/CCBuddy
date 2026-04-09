@@ -1,4 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Gateway, type GatewayDeps } from '../gateway.js';
 import type { IncomingMessage, PlatformAdapter, AgentEvent, AgentRequest } from '@ccbuddy/core';
 import { SessionStore } from '@ccbuddy/agent';
@@ -117,11 +120,19 @@ describe('Gateway', () => {
   let deps: GatewayDeps;
   let gateway: Gateway;
   let adapter: ReturnType<typeof createMockAdapter>;
+  let tempDirs: string[];
 
   beforeEach(() => {
     deps = createMockDeps();
     gateway = new Gateway(deps);
     adapter = createMockAdapter();
+    tempDirs = [];
+  });
+
+  afterEach(() => {
+    for (const dir of tempDirs) {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   describe('registerAdapter', () => {
@@ -236,6 +247,86 @@ describe('Gateway', () => {
       expect(deps.executeAgentRequest).toHaveBeenCalledWith(
         expect.objectContaining({ permissionLevel: 'chat' }),
       );
+    });
+
+    it('creates a request-scoped outbound directory and passes it into executeAgentRequest', async () => {
+      const outboundRoot = mkdtempSync(join(tmpdir(), 'gateway-outbound-'));
+      tempDirs.push(outboundRoot);
+      const seenDirs: string[] = [];
+
+      deps = createMockDeps({
+        outboundMediaDir: outboundRoot,
+        executeAgentRequest: vi.fn().mockImplementation(async function* (request: AgentRequest) {
+          seenDirs.push(request.outboundMediaDir ?? '');
+          yield {
+            type: 'complete',
+            response: 'ok',
+            sessionId: request.sessionId,
+            userId: request.userId,
+            channelId: request.channelId,
+            platform: request.platform,
+          } satisfies AgentEvent;
+        }),
+      });
+      gateway = new Gateway(deps);
+      gateway.registerAdapter(adapter);
+
+      await adapter.simulateMessage(makeIncomingMsg());
+
+      expect(deps.executeAgentRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          outboundMediaDir: expect.any(String),
+        }),
+      );
+      expect(seenDirs).toHaveLength(1);
+      expect(existsSync(seenDirs[0]!)).toBe(false);
+    });
+
+    it('delivers outbound files only from the current request directory', async () => {
+      const outboundRoot = mkdtempSync(join(tmpdir(), 'gateway-isolation-'));
+      tempDirs.push(outboundRoot);
+      let started = 0;
+      let written = 0;
+      let releaseStarted!: () => void;
+      let releaseWritten!: () => void;
+      const startedBarrier = new Promise<void>((resolve) => { releaseStarted = resolve; });
+      const writtenBarrier = new Promise<void>((resolve) => { releaseWritten = resolve; });
+
+      deps = createMockDeps({
+        outboundMediaDir: outboundRoot,
+        executeAgentRequest: vi.fn().mockImplementation(async function* (request: AgentRequest) {
+          started += 1;
+          if (started === 2) releaseStarted();
+          await startedBarrier;
+
+          const targetDir = request.outboundMediaDir ?? outboundRoot;
+          writeFileSync(join(targetDir, `${request.channelId}.txt`), request.channelId, 'utf8');
+
+          written += 1;
+          if (written === 2) releaseWritten();
+          await writtenBarrier;
+
+          yield {
+            type: 'complete',
+            response: `done:${request.channelId}`,
+            sessionId: request.sessionId,
+            userId: request.userId,
+            channelId: request.channelId,
+            platform: request.platform,
+          } satisfies AgentEvent;
+        }),
+      });
+      gateway = new Gateway(deps);
+      gateway.registerAdapter(adapter);
+
+      await Promise.all([
+        adapter.simulateMessage(makeIncomingMsg({ channelId: 'ch-1', text: 'first' })),
+        adapter.simulateMessage(makeIncomingMsg({ channelId: 'ch-2', text: 'second' })),
+      ]);
+
+      expect(adapter.sendFile).toHaveBeenCalledWith('ch-1', expect.any(Buffer), 'ch-1.txt');
+      expect(adapter.sendFile).toHaveBeenCalledWith('ch-2', expect.any(Buffer), 'ch-2.txt');
+      expect(adapter.sendFile).toHaveBeenCalledTimes(2);
     });
   });
 
