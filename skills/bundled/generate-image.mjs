@@ -6,6 +6,11 @@ export default async function generateImage(input) {
     return { success: false, error: 'GEMINI_API_KEY environment variable is not set' };
   }
 
+  const outboundDir = process.env.CCBUDDY_OUTBOUND_DIR;
+  if (!outboundDir) {
+    throw new Error('CCBUDDY_OUTBOUND_DIR is not set for this request');
+  }
+
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent`;
 
   const body = {
@@ -72,12 +77,11 @@ export default async function generateImage(input) {
   const { join } = await import('node:path');
   const { randomUUID } = await import('node:crypto');
 
-  const outDir = join(process.cwd(), 'data', 'outbound');
-  try { mkdirSync(outDir, { recursive: true }); } catch {}
+  try { mkdirSync(outboundDir, { recursive: true }); } catch {}
 
   const ext = imageMimeType === 'image/jpeg' ? 'jpg' : 'png';
   const filename = `generated-${randomUUID().slice(0, 8)}.${ext}`;
-  const filePath = join(outDir, filename);
+  const filePath = join(outboundDir, filename);
   writeFileSync(filePath, Buffer.from(imageData, 'base64'));
 
   return {

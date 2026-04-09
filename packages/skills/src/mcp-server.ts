@@ -788,7 +788,17 @@ async function main(): Promise<void> {
       } catch {
         return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: `File not found: ${filePath}` }) }] };
       }
-      const outDir = pathJoin(cwd, 'data', 'outbound');
+
+      const outDir = process.env.CCBUDDY_OUTBOUND_DIR;
+      if (!outDir) {
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({ success: false, error: 'CCBUDDY_OUTBOUND_DIR is not set for this request' }),
+          }],
+        };
+      }
+
       try { mkdirSync(outDir, { recursive: true }); } catch { /* exists */ }
       const ext = extname(resolved) || '.bin';
       const outFilename = `${basename(resolved, ext)}-${randomUUID().slice(0, 8)}${ext}`;

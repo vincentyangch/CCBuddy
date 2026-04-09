@@ -3,7 +3,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync, mkdirSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { load as yamlLoad } from 'js-yaml';
 
@@ -40,10 +40,17 @@ async function createClient(
   registryPath: string,
   skillsDir: string,
   extraArgs: string[] = [],
+  extraEnv: Record<string, string> = {},
 ): Promise<{ client: Client; transport: StdioClientTransport }> {
+  const envEntries = Object.entries({ ...process.env, ...extraEnv }).filter(
+    (entry): entry is [string, string] => entry[1] !== undefined,
+  );
+  const env = Object.fromEntries(envEntries);
+
   const transport = new StdioClientTransport({
     command: 'node',
     args: [serverPath, '--registry', registryPath, '--skills-dir', skillsDir, ...extraArgs],
+    env,
   });
   const client = new Client({ name: 'test', version: '1.0.0' });
   await client.connect(transport);
@@ -83,6 +90,63 @@ describe('MCP server integration', () => {
       const content = result.content as Array<{ type: string; text: string }>;
       const skills = JSON.parse(content[0].text);
       expect(skills).toEqual([]);
+    } finally {
+      await transport.close();
+    }
+  }, 15_000);
+
+  it('send_file copies files into CCBUDDY_OUTBOUND_DIR', async () => {
+    const { registryPath, skillsDir } = makeTmpEnv();
+    const workingDir = mkdtempSync(join(process.cwd(), 'send-file-test-'));
+    tmpDirs.push(workingDir);
+    const sourcePath = join(workingDir, 'report.txt');
+    const outboundDir = join(workingDir, 'outbound', 'request-1');
+    mkdirSync(outboundDir, { recursive: true });
+    writeFileSync(sourcePath, 'hello', 'utf8');
+
+    const { client, transport } = await createClient(
+      registryPath,
+      skillsDir,
+      ['--no-approval', '--no-git-commit'],
+      { CCBUDDY_OUTBOUND_DIR: outboundDir },
+    );
+
+    try {
+      const result = await client.callTool({
+        name: 'send_file',
+        arguments: { file_path: sourcePath },
+      });
+      const parsed = JSON.parse((result.content as Array<{ text: string }>)[0].text);
+      expect(parsed.success).toBe(true);
+
+      const queuedFiles = readdirSync(outboundDir);
+      expect(queuedFiles).toHaveLength(1);
+      expect(readFileSync(join(outboundDir, queuedFiles[0]!), 'utf8')).toBe('hello');
+    } finally {
+      await transport.close();
+    }
+  }, 15_000);
+
+  it('send_file fails clearly when CCBUDDY_OUTBOUND_DIR is missing', async () => {
+    const { registryPath, skillsDir } = makeTmpEnv();
+    const workingDir = mkdtempSync(join(process.cwd(), 'send-file-test-'));
+    tmpDirs.push(workingDir);
+    const sourcePath = join(workingDir, 'report.txt');
+    writeFileSync(sourcePath, 'hello', 'utf8');
+
+    const { client, transport } = await createClient(registryPath, skillsDir, [
+      '--no-approval',
+      '--no-git-commit',
+    ]);
+
+    try {
+      const result = await client.callTool({
+        name: 'send_file',
+        arguments: { file_path: sourcePath },
+      });
+      const parsed = JSON.parse((result.content as Array<{ text: string }>)[0].text);
+      expect(parsed.success).toBe(false);
+      expect(parsed.error).toContain('CCBUDDY_OUTBOUND_DIR');
     } finally {
       await transport.close();
     }
