@@ -32,6 +32,7 @@ export interface BootstrapResult {
 export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
   let releasePidLock: (() => void) | undefined;
   let tickInterval: ReturnType<typeof setInterval> | undefined;
+  let shutdownHandler: ShutdownHandler | undefined;
 
   try {
     // 1. Load config
@@ -354,7 +355,7 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
   }, 60_000);
 
   // 11. Create shutdown handler
-  const shutdownHandler = new ShutdownHandler(
+  shutdownHandler = new ShutdownHandler(
     config.agent.graceful_shutdown_timeout_seconds * 1000,
   );
 
@@ -538,6 +539,13 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
   } catch (err) {
     // Clean up interval and PID lock if bootstrap fails after acquisition
     if (tickInterval) clearInterval(tickInterval);
+    if (shutdownHandler) {
+      try {
+        await shutdownHandler.execute();
+      } catch {
+        // Best-effort cleanup; preserve the original bootstrap failure.
+      }
+    }
     releasePidLock?.();
     releasePidLock = undefined;
     throw err;

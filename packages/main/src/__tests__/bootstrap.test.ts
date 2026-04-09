@@ -528,8 +528,14 @@ describe('bootstrap', () => {
   });
 
   it('releases the pid lock when bootstrap fails after acquisition', async () => {
-    const releasePidLock = vi.fn();
+    const callOrder: string[] = [];
+    const releasePidLock = vi.fn(() => {
+      callOrder.push('release');
+    });
     mockAcquirePidLock.mockReturnValue(releasePidLock);
+    fakeShutdownHandlerInstance.execute.mockImplementation(async () => {
+      callOrder.push('shutdown');
+    });
 
     const schedulerService = {
       start: vi.fn().mockRejectedValue(new Error('scheduler boom')),
@@ -538,7 +544,7 @@ describe('bootstrap', () => {
     mockSchedulerService.mockReturnValue(schedulerService);
 
     await expect(bootstrap('/config')).rejects.toThrow('scheduler boom');
-    expect(releasePidLock).toHaveBeenCalledTimes(1);
+    expect(callOrder).toEqual(['shutdown', 'release']);
   });
 
   it('registers shutdown handlers for gateway and database', async () => {
