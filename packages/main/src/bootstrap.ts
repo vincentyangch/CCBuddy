@@ -33,6 +33,9 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
   let releasePidLock: (() => void) | undefined;
   let tickInterval: ReturnType<typeof setInterval> | undefined;
   let shutdownHandler: ShutdownHandler | undefined;
+  let resolveAgentBackendReady: (() => void) | undefined;
+  let agentBackendReady: Promise<void> = Promise.resolve();
+  let agentBackendReadyError: unknown;
 
   try {
     // 1. Load config
@@ -98,6 +101,14 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
     sessionCleanupHours: config.agent.session_cleanup_hours,
     sessionStore,
   });
+
+  // SDK mode starts adapters before importing the SDK; gateway work must wait
+  // until the final backend is installed instead of using the transitional CLI.
+  if (config.agent.backend === 'sdk') {
+    agentBackendReady = new Promise<void>((resolve) => {
+      resolveAgentBackendReady = resolve;
+    });
+  }
 
   // 6. Create memory stores
 
@@ -253,7 +264,12 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
     findUser: (platform, platformId) => userManager.findByPlatformId(platform, platformId),
     buildSessionId: (userName, platform, channelId) =>
       userManager.buildSessionId(userName, platform, channelId),
-    executeAgentRequest: (request) => {
+    executeAgentRequest: async function* (request) {
+      await agentBackendReady;
+      if (agentBackendReadyError !== undefined) {
+        throw agentBackendReadyError;
+      }
+
       const mcpServer = {
         ...skillMcpServer,
         args: [
@@ -266,7 +282,7 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
           ...(request.outboundMediaDir ? { CCBUDDY_OUTBOUND_DIR: request.outboundMediaDir } : {}),
         },
       };
-      return agentService.handleRequest({
+      yield* agentService.handleRequest({
         ...request,
         workingDirectory: request.workingDirectory,
         mcpServers: [mcpServer, haMcpServer],
@@ -415,6 +431,7 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
       trustedAllowedTools: config.agent.trusted_allowed_tools,
       maxTurns: config.agent.max_turns,
     }));
+    resolveAgentBackendReady?.();
   }
 
   // 14. Create proactive sender closure
@@ -536,6 +553,8 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
   };
 
   } catch (err) {
+    agentBackendReadyError = err;
+    resolveAgentBackendReady?.();
     // Clean up interval and PID lock if bootstrap fails after acquisition
     if (tickInterval) clearInterval(tickInterval);
     if (shutdownHandler) {

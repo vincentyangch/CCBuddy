@@ -472,6 +472,48 @@ describe('bootstrap', () => {
     expect(fakeGatewayInstance.start).toHaveBeenCalled();
   });
 
+  it('waits for SDK backend readiness before dispatching gateway requests', async () => {
+    let requestFinished: Promise<void> | undefined;
+
+    fakeGatewayInstance.start.mockImplementation(async () => {
+      const gatewayDeps = (mockGateway as ReturnType<typeof vi.fn>).mock.calls[0][0] as {
+        executeAgentRequest: (request: AgentRequest) => AsyncGenerator<unknown>;
+      };
+
+      const request: AgentRequest = {
+        prompt: 'hello before sdk ready',
+        userId: 'alice',
+        sessionId: 'alice-discord-ch1',
+        channelId: 'ch1',
+        platform: 'discord',
+        permissionLevel: 'admin',
+      };
+
+      requestFinished = (async () => {
+        for await (const _event of gatewayDeps.executeAgentRequest(request)) {
+          // Drain the request.
+        }
+      })();
+
+      await Promise.resolve();
+
+      expect(fakeAgentServiceInstance.setBackend).not.toHaveBeenCalled();
+      expect(fakeAgentServiceInstance.handleRequest).not.toHaveBeenCalled();
+    });
+
+    await bootstrap('/config');
+
+    expect(fakeAgentServiceInstance.setBackend).toHaveBeenCalledWith(fakeSdkBackendInstance);
+    await requestFinished;
+    expect(fakeAgentServiceInstance.handleRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: 'hello before sdk ready',
+        userId: 'alice',
+        sessionId: 'alice-discord-ch1',
+      }),
+    );
+  });
+
   it('does not create Discord adapter when disabled', async () => {
     const cfg = makeConfig();
     cfg.platforms.discord = { enabled: false, token: 'discord-token-123' };
