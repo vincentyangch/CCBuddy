@@ -18,6 +18,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return res.json();
 }
 
+type SettingsResponse = { config: any };
+
 export const api = {
   auth: (token: string) =>
     fetch('/api/auth', {
@@ -45,12 +47,14 @@ export const api = {
     const qs = new URLSearchParams(params).toString();
     return request<{ lines: string[]; file: string }>(`/api/logs?${qs}`);
   },
-  config: () => request<{ config: any }>('/api/config'),
-  updateConfig: (config: any) =>
-    request<{ ok: boolean }>('/api/config', {
+  getLocalSettings: () => request<SettingsResponse>('/api/settings/local'),
+  updateLocalSettings: (config: any) =>
+    request<{ ok: boolean }>('/api/settings/local', {
       method: 'PUT',
       body: JSON.stringify({ config }),
     }),
+  getEffectiveSettings: () => request<SettingsResponse>('/api/settings/effective'),
+  getSettingsMeta: () => request<{ sources: Record<string, string> }>('/api/settings/meta'),
   deleteConversation: (sessionId: string) =>
     fetch(`/api/conversations/${encodeURIComponent(sessionId)}`, {
       method: 'DELETE',
