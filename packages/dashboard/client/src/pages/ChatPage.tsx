@@ -139,7 +139,10 @@ export function ChatPage() {
       <ChatSidebar activeSessionId={activeSessionId} pendingChannelId={activeSessionId ? null : channelId} onSelectSession={handleSelectSession} onNewChat={handleNewChat} onDeleteSession={handleDeleteSession} refreshKey={sidebarRefresh} />
       <div className="flex-1 flex flex-col">
         <div className="px-4 py-3 border-b border-gray-800 flex justify-between items-center">
-          <span className="text-sm font-medium">Chat with Po</span>
+          <div>
+            <div className="text-xs font-medium uppercase tracking-wide text-gray-500">Workspace</div>
+            <div className="text-sm font-medium">Chat with Po</div>
+          </div>
           <span className={`text-xs px-2 py-0.5 rounded ${connected ? 'bg-green-900 text-green-400' : 'bg-red-900 text-red-400'}`}>
             {connected ? 'Connected' : 'Disconnected'}
           </span>

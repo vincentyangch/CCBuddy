@@ -35,7 +35,11 @@ export function ConversationsPage() {
 
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-6">Conversations</h2>
+      <div className="mb-6">
+        <div className="text-xs font-medium uppercase tracking-wide text-gray-500">Workspace</div>
+        <h2 className="mt-1 text-2xl font-bold">Conversations</h2>
+        <p className="mt-1 text-sm text-gray-500">Stored message history across users, platforms, and sessions.</p>
+      </div>
       <div className="flex gap-3 mb-4">
         <input placeholder="Filter user" value={filters.user}
           onChange={e => updateFilter('user', e.target.value)}

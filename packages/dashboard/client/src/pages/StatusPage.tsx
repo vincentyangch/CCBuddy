@@ -50,7 +50,11 @@ export function StatusPage() {
 
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-6">System Status</h2>
+      <div className="mb-6">
+        <div className="text-xs font-medium uppercase tracking-wide text-gray-500">Operations</div>
+        <h2 className="mt-1 text-2xl font-bold">System Status</h2>
+        <p className="mt-1 text-sm text-gray-500">Runtime health, queue depth, active sessions, and uptime.</p>
+      </div>
       {sys && (
         <div className="grid grid-cols-3 gap-4 mb-6">
           <Gauge label="CPU" value={sys.cpuPercent} />

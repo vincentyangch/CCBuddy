@@ -38,7 +38,11 @@ export function SessionsPage() {
 
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-6">Sessions</h2>
+      <div className="mb-6">
+        <div className="text-xs font-medium uppercase tracking-wide text-gray-500">Operations</div>
+        <h2 className="mt-1 text-2xl font-bold">Sessions</h2>
+        <p className="mt-1 text-sm text-gray-500">Runtime session records, status, model, and cleanup.</p>
+      </div>
 
       {/* Filter tabs */}
       <div className="flex gap-2 mb-4">

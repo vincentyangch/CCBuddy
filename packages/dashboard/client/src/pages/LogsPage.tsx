@@ -29,8 +29,12 @@ export function LogsPage() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-3rem)]">
-      <div className="flex items-center gap-3 mb-4">
-        <h2 className="text-2xl font-bold">Logs</h2>
+      <div className="mb-4 flex items-end gap-3">
+        <div>
+          <div className="text-xs font-medium uppercase tracking-wide text-gray-500">Operations</div>
+          <h2 className="mt-1 text-2xl font-bold">Logs</h2>
+          <p className="mt-1 text-sm text-gray-500">Process output for startup, adapters, and agent work.</p>
+        </div>
         <div className="flex gap-1 ml-4">
           {LOG_FILES.map(f => (
             <button key={f} onClick={() => setFile(f)}
