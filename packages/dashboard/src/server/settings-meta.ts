@@ -240,13 +240,18 @@ function getValueAtPath(root: unknown, path: string): unknown {
 export function buildSettingsSourceMap(
   localConfig: Record<string, unknown>,
   effectiveConfig: Record<string, unknown>,
+  defaultConfig: Record<string, unknown> = {},
   runtimeModel: string | null = null,
 ): { sources: Record<string, SettingsSource> } {
   const sources: Record<string, SettingsSource> = {};
   const localLeaves = new Map<string, unknown>();
+  const defaultLeaves = new Map<string, unknown>();
 
   walkLeaves(localConfig, [], (path, value) => {
     localLeaves.set(path, value);
+  });
+  walkLeaves(defaultConfig, [], (path, value) => {
+    defaultLeaves.set(path, value);
   });
 
   if (runtimeModel) {
@@ -260,6 +265,11 @@ export function buildSettingsSourceMap(
 
     if (localLeaves.has(path)) {
       sources[path] = isEnvPlaceholder(localLeaves.get(path)) ? 'env' : 'local';
+      return;
+    }
+
+    if (defaultLeaves.has(path)) {
+      sources[path] = isEnvPlaceholder(defaultLeaves.get(path)) ? 'env' : 'default';
       return;
     }
 
@@ -286,7 +296,12 @@ function validatePrimitive(value: unknown, shape: PrimitiveShape): boolean {
   }
 }
 
-function validateAgainstShape(value: unknown, shape: ShapeNode, path: string[]): string | null {
+function validateAgainstShape(
+  value: unknown,
+  shape: ShapeNode,
+  path: string[],
+  existingValue: unknown = undefined,
+): string | null {
   if (typeof shape === 'string') {
     if (isEnvPlaceholder(value) && shape === 'string') {
       return null;
@@ -301,7 +316,8 @@ function validateAgainstShape(value: unknown, shape: ShapeNode, path: string[]):
       return `${path.join('.')} must be an array`;
     }
     for (const [index, item] of value.entries()) {
-      const itemError = validateAgainstShape(item, shape.$arrayOf, [...path, String(index)]);
+      const existingArrayItem = Array.isArray(existingValue) ? existingValue[index] : undefined;
+      const itemError = validateAgainstShape(item, shape.$arrayOf, [...path, String(index)], existingArrayItem);
       if (itemError) return itemError;
     }
     return null;
@@ -313,9 +329,10 @@ function validateAgainstShape(value: unknown, shape: ShapeNode, path: string[]):
 
   for (const [key, child] of Object.entries(value)) {
     const childPath = [...path, key];
+    const existingChild = isPlainObject(existingValue) ? existingValue[key] : undefined;
 
     if (shape.$dynamic) {
-      const dynamicError = validateAgainstShape(child, shape.$dynamic, childPath);
+      const dynamicError = validateAgainstShape(child, shape.$dynamic, childPath, existingChild);
       if (dynamicError) return dynamicError;
       continue;
     }
@@ -325,12 +342,16 @@ function validateAgainstShape(value: unknown, shape: ShapeNode, path: string[]):
       if (!nextShape || typeof nextShape === 'boolean') {
         return `Unsupported validation shape for ${childPath.join('.')}`;
       }
-      const childError = validateAgainstShape(child, nextShape, childPath);
+      const childError = validateAgainstShape(child, nextShape, childPath, existingChild);
       if (childError) return childError;
       continue;
     }
 
     if (shape.$allowAdditionalStringKeys && typeof child === 'string') {
+      continue;
+    }
+
+    if (isDeepStrictEqual(child, existingChild)) {
       continue;
     }
 
@@ -340,6 +361,9 @@ function validateAgainstShape(value: unknown, shape: ShapeNode, path: string[]):
   return null;
 }
 
-export function validateLocalSettingsConfig(config: Record<string, unknown>): string | null {
-  return validateAgainstShape(config, SETTINGS_SHAPE, ['config']);
+export function validateLocalSettingsConfig(
+  config: Record<string, unknown>,
+  existingConfig: Record<string, unknown> = {},
+): string | null {
+  return validateAgainstShape(config, SETTINGS_SHAPE, ['config'], existingConfig);
 }

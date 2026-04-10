@@ -391,6 +391,52 @@ describe('DashboardServer', () => {
     expect(readFileSync(localPath, 'utf8')).toBe(original);
   });
 
+  it('PUT /api/settings/local preserves unchanged legacy keys already in local.yaml', async () => {
+    const deps = createMockDeps();
+    const dir = mkdtempSync(join(tmpdir(), 'dashboard-settings-api-'));
+    tempDirs.push(dir);
+    deps.configDir = dir;
+    const localPath = join(dir, 'local.yaml');
+    writeFileSync(localPath, [
+      'ccbuddy:',
+      '  permission_gates:',
+      '    enabled: true',
+      '    timeout_ms: 300000',
+      '    rules: []',
+      '  agent:',
+      '    admin_skip_permissions: true',
+      '',
+    ].join('\n'), 'utf8');
+
+    server = new DashboardServer(deps as any);
+    const address = await server.start();
+
+    const res = await fetch(`${address}/api/settings/local`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        config: {
+          permission_gates: {
+            enabled: true,
+            timeout_ms: 300000,
+            rules: [],
+          },
+          agent: {
+            admin_skip_permissions: false,
+          },
+        },
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const raw = readFileSync(localPath, 'utf8');
+    expect(raw).toContain('permission_gates:');
+    expect(raw).toContain('admin_skip_permissions: false');
+  });
+
   it('GET /api/settings/effective returns the resolved runtime config read-only', async () => {
     const deps = createMockDeps();
     (deps.config as any).platforms = {
@@ -440,6 +486,12 @@ describe('DashboardServer', () => {
     const deps = createMockDeps();
     const dir = mkdtempSync(join(tmpdir(), 'dashboard-settings-api-'));
     tempDirs.push(dir);
+    writeFileSync(join(dir, 'default.yaml'), [
+      'ccbuddy:',
+      '  gateway:',
+      '    unknown_user_reply: false',
+      '',
+    ].join('\n'), 'utf8');
     writeFileSync(join(dir, 'local.yaml'), [
       'ccbuddy:',
       '  agent:',
@@ -448,8 +500,12 @@ describe('DashboardServer', () => {
     ].join('\n'), 'utf8');
     deps.configDir = dir;
     (deps.config as any).data_dir = dir;
+    (deps.config as any).agent = {
+      model: 'sonnet',
+      admin_skip_permissions: false,
+    };
     (deps.config as any).gateway = {
-      unknown_user_reply: true,
+      unknown_user_reply: false,
     };
     (deps.config as any).platforms = {
       discord: { enabled: true, token: 'resolved-token' },

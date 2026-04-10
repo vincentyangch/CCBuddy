@@ -273,11 +273,12 @@ export class DashboardServer {
       }
 
       const config = body.config as Record<string, unknown>;
-      const shapeError = validateLocalSettingsConfig(config);
+      const localPath = join(this.deps.configDir, 'local.yaml');
+      const existingConfig = loadLocalSettingsConfig(localPath);
+      const shapeError = validateLocalSettingsConfig(config, existingConfig);
       if (shapeError) {
         return reply.status(400).send({ error: `Invalid config structure: ${shapeError}` });
       }
-      const localPath = join(this.deps.configDir, 'local.yaml');
       const backupPath = localPath + '.bak';
 
       const tempDir = mkdtempSync(join(tmpdir(), 'ccbuddy-dashboard-config-'));
@@ -308,7 +309,9 @@ export class DashboardServer {
     // GET /api/settings/meta — source map for effective vs local values
     this.app.get('/api/settings/meta', async () => {
       const localPath = join(this.deps.configDir, 'local.yaml');
+      const defaultPath = join(this.deps.configDir, 'default.yaml');
       const localConfig = loadLocalSettingsConfig(localPath);
+      const defaultConfig = loadLocalSettingsConfig(defaultPath);
       const runtimePath = join(this.deps.config.data_dir, 'runtime-config.json');
       let runtimeModel: string | null = null;
       try {
@@ -319,6 +322,7 @@ export class DashboardServer {
       return buildSettingsSourceMap(
         localConfig,
         this.deps.config as unknown as Record<string, unknown>,
+        defaultConfig,
         runtimeModel,
       );
     });
