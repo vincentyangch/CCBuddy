@@ -19,11 +19,11 @@ export function SessionDetailPage() {
 
   return (
     <div>
-      <Link to="/sessions" className="text-blue-400 hover:underline text-sm mb-4 inline-block">&larr; Back to Sessions</Link>
+      <Link to="/sessions" className="text-blue-400 hover:underline text-sm mb-4 inline-block">&larr; Back to Runtime Sessions</Link>
       <h2 className="text-2xl font-bold mb-6 font-mono">{decodeURIComponent(key ?? '')}</h2>
       <div className="max-w-3xl">
         {events.length === 0 ? (
-          <p className="text-gray-400">No events recorded for this session</p>
+          <p className="text-gray-400">No events recorded for this runtime session</p>
         ) : (
           events.map((e: any, i: number) => {
             if (e.eventType === 'thinking') return <ThinkingBlock key={i} content={e.content} />;

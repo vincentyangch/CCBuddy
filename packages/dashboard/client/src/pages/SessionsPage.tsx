@@ -29,7 +29,7 @@ export function SessionsPage() {
   useEffect(() => { load(); }, [filter]);
 
   const handleDelete = async (key: string) => {
-    if (!confirm(`Delete session "${key}"? This cannot be undone.`)) return;
+    if (!confirm(`Delete runtime session "${key}"? This cannot be undone.`)) return;
     setDeleting(key);
     await api.deleteSession(key);
     load();
@@ -40,8 +40,8 @@ export function SessionsPage() {
     <div>
       <div className="mb-6">
         <div className="text-xs font-medium uppercase tracking-wide text-gray-500">Operations</div>
-        <h2 className="mt-1 text-2xl font-bold">Sessions</h2>
-        <p className="mt-1 text-sm text-gray-500">Runtime session records, status, model, and cleanup.</p>
+        <h2 className="mt-1 text-2xl font-bold">Runtime Sessions</h2>
+        <p className="mt-1 text-sm text-gray-500">Agent runtime records for status, model use, cleanup, and event replay.</p>
       </div>
 
       {/* Filter tabs */}
@@ -62,14 +62,14 @@ export function SessionsPage() {
       </div>
 
       {sessions.length === 0 ? (
-        <p className="text-gray-400">No sessions found</p>
+        <p className="text-gray-400">No runtime sessions found</p>
       ) : (
         <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-gray-800/50">
               <tr>
                 <th className="px-4 py-3 text-left text-gray-400 font-medium">Status</th>
-                <th className="px-4 py-3 text-left text-gray-400 font-medium">Session Key</th>
+                <th className="px-4 py-3 text-left text-gray-400 font-medium">Runtime Key</th>
                 <th className="px-4 py-3 text-left text-gray-400 font-medium">Type</th>
                 <th className="px-4 py-3 text-left text-gray-400 font-medium">Model</th>
                 <th className="px-4 py-3 text-left text-gray-400 font-medium">Last Activity</th>

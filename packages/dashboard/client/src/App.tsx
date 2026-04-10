@@ -13,7 +13,7 @@ const navGroups = [
     label: 'Operations',
     items: [
       { to: '/', label: 'Status' },
-      { to: '/sessions', label: 'Sessions' },
+      { to: '/sessions', label: 'Runtime Sessions' },
       { to: '/logs', label: 'Logs' },
     ],
   },

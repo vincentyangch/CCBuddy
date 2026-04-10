@@ -53,7 +53,7 @@ export function StatusPage() {
       <div className="mb-6">
         <div className="text-xs font-medium uppercase tracking-wide text-gray-500">Operations</div>
         <h2 className="mt-1 text-2xl font-bold">System Status</h2>
-        <p className="mt-1 text-sm text-gray-500">Runtime health, queue depth, active sessions, and uptime.</p>
+        <p className="mt-1 text-sm text-gray-500">Runtime health, queue depth, active runtime sessions, and uptime.</p>
       </div>
       {sys && (
         <div className="grid grid-cols-3 gap-4 mb-6">
@@ -75,14 +75,14 @@ export function StatusPage() {
         </div>
         <div className="bg-gray-900 rounded-xl p-4 border border-gray-800">
           <div className="text-sm text-gray-400 mb-3">Overview</div>
-          <div className="text-sm mb-1">Active Sessions: <span className="text-white font-medium">{data.sessions.length}</span></div>
+          <div className="text-sm mb-1">Runtime Sessions: <span className="text-white font-medium">{data.sessions.length}</span></div>
           <div className="text-sm mb-1">Queue Depth: <span className="text-white font-medium">{data.queueSize}</span></div>
           <div className="text-sm">Uptime: <span className="text-white font-medium">{upH}h {upM}m</span></div>
         </div>
       </div>
       {data.sessions.length > 0 && (
         <div className="bg-gray-900 rounded-xl p-4 border border-gray-800">
-          <div className="text-sm text-gray-400 mb-3">Active Sessions</div>
+          <div className="text-sm text-gray-400 mb-3">Active Runtime Sessions</div>
           {data.sessions.map((s: any) => (
             <div key={s.sessionKey} className="text-sm mb-1 flex justify-between">
               <span className="font-mono">{s.sessionKey}</span>

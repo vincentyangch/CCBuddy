@@ -38,7 +38,7 @@ export function ConversationsPage() {
       <div className="mb-6">
         <div className="text-xs font-medium uppercase tracking-wide text-gray-500">Workspace</div>
         <h2 className="mt-1 text-2xl font-bold">History</h2>
-        <p className="mt-1 text-sm text-gray-500">Stored message history across users, platforms, and sessions.</p>
+        <p className="mt-1 text-sm text-gray-500">Stored message history across users, platforms, and conversation IDs.</p>
       </div>
       <div className="flex gap-3 mb-4">
         <input placeholder="Filter user" value={filters.user}
@@ -59,7 +59,7 @@ export function ConversationsPage() {
               <span>{m.role === 'user' ? '👤' : '🤖'} {m.userId}</span>
               <span>{m.platform}</span>
               <span>{new Date(m.timestamp).toLocaleString()}</span>
-              <span className="font-mono">{m.sessionId}</span>
+              <span className="font-mono">Conversation {m.sessionId}</span>
             </div>
             <div className="text-sm whitespace-pre-wrap line-clamp-3">{m.content}</div>
           </div>

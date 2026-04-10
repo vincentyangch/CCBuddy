@@ -76,7 +76,7 @@ export function ChatSidebar({ activeSessionId, pendingChannelId, onSelectSession
               <button
                 onClick={(e) => { e.stopPropagation(); onDeleteSession(s.sessionId); }}
                 className="absolute top-1.5 right-1.5 hidden group-hover:block text-gray-600 hover:text-red-400 text-xs"
-                title="Delete session"
+                title="Delete chat"
               >
                 ×
               </button>
