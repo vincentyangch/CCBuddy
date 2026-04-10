@@ -301,6 +301,60 @@ describe('DashboardServer', () => {
     expect(res.status).toBe(400);
   });
 
+  it('PUT /api/settings/local rejects malformed array entries', async () => {
+    const deps = createMockDeps();
+    const dir = mkdtempSync(join(tmpdir(), 'dashboard-settings-api-'));
+    tempDirs.push(dir);
+    deps.configDir = dir;
+
+    server = new DashboardServer(deps as any);
+    const address = await server.start();
+
+    const res = await fetch(`${address}/api/settings/local`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        config: {
+          media: {
+            allowed_mime_types: [false],
+          },
+        },
+      }),
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('PUT /api/settings/local rejects semantically invalid config values', async () => {
+    const deps = createMockDeps();
+    const dir = mkdtempSync(join(tmpdir(), 'dashboard-settings-api-'));
+    tempDirs.push(dir);
+    deps.configDir = dir;
+
+    server = new DashboardServer(deps as any);
+    const address = await server.start();
+
+    const res = await fetch(`${address}/api/settings/local`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        config: {
+          agent: {
+            model: '',
+          },
+        },
+      }),
+    });
+
+    expect(res.status).toBe(400);
+  });
+
   it('PUT /api/settings/local leaves local.yaml unchanged when validation fails', async () => {
     const deps = createMockDeps();
     const dir = mkdtempSync(join(tmpdir(), 'dashboard-settings-api-'));

@@ -3,12 +3,13 @@ import { DEFAULT_CONFIG } from '@ccbuddy/core';
 
 export type SettingsSource = 'local' | 'env' | 'default' | 'effective_only' | 'runtime_override';
 
-type PrimitiveShape = 'string' | 'number' | 'boolean' | 'array';
+type PrimitiveShape = 'string' | 'number' | 'boolean';
 type ShapeNode =
   | PrimitiveShape
   | {
       [key: string]: ShapeNode | boolean | undefined;
       $dynamic?: ShapeNode;
+      $arrayOf?: ShapeNode;
       $allowAdditionalStringKeys?: boolean;
     };
 
@@ -36,14 +37,23 @@ const SETTINGS_SHAPE: ShapeNode = {
     session_timeout_ms: 'number',
     user_input_timeout_ms: 'number',
     max_pause_ms: 'number',
-    trusted_allowed_tools: 'array',
+    trusted_allowed_tools: {
+      $arrayOf: 'string',
+    },
     max_turns: 'number',
     compaction_threshold: 'number',
     compaction_summary_tokens: 'number',
     permission_gates: {
       enabled: 'boolean',
       timeout_ms: 'number',
-      rules: 'array',
+      rules: {
+        $arrayOf: {
+          name: 'string',
+          pattern: 'string',
+          tool: 'string',
+          description: 'string',
+        },
+      },
     },
   },
   memory: {
@@ -135,7 +145,9 @@ const SETTINGS_SHAPE: ShapeNode = {
   },
   media: {
     max_file_size_mb: 'number',
-    allowed_mime_types: 'array',
+    allowed_mime_types: {
+      $arrayOf: 'string',
+    },
     voice_enabled: 'boolean',
     tts_max_chars: 'number',
   },
@@ -271,8 +283,6 @@ function validatePrimitive(value: unknown, shape: PrimitiveShape): boolean {
       return typeof value === 'number' && Number.isFinite(value);
     case 'boolean':
       return typeof value === 'boolean';
-    case 'array':
-      return Array.isArray(value);
   }
 }
 
@@ -284,6 +294,17 @@ function validateAgainstShape(value: unknown, shape: ShapeNode, path: string[]):
     return validatePrimitive(value, shape)
       ? null
       : `${path.join('.')} must be a ${shape}`;
+  }
+
+  if (shape.$arrayOf) {
+    if (!Array.isArray(value)) {
+      return `${path.join('.')} must be an array`;
+    }
+    for (const [index, item] of value.entries()) {
+      const itemError = validateAgainstShape(item, shape.$arrayOf, [...path, String(index)]);
+      if (itemError) return itemError;
+    }
+    return null;
   }
 
   if (!isPlainObject(value)) {
