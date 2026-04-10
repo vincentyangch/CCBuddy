@@ -8,13 +8,28 @@ import { LogsPage } from './pages/LogsPage';
 import { ConfigPage } from './pages/ConfigPage';
 import { ChatPage } from './pages/ChatPage';
 
-const navItems = [
-  { to: '/', label: 'Status' },
-  { to: '/chat', label: 'Chat' },
-  { to: '/sessions', label: 'Sessions' },
-  { to: '/conversations', label: 'Conversations' },
-  { to: '/logs', label: 'Logs' },
-  { to: '/settings', label: 'Settings' },
+const navGroups = [
+  {
+    label: 'Operations',
+    items: [
+      { to: '/', label: 'Status' },
+      { to: '/sessions', label: 'Sessions' },
+      { to: '/logs', label: 'Logs' },
+    ],
+  },
+  {
+    label: 'Workspace',
+    items: [
+      { to: '/chat', label: 'Chat' },
+      { to: '/conversations', label: 'Conversations' },
+    ],
+  },
+  {
+    label: 'Admin',
+    items: [
+      { to: '/settings', label: 'Settings' },
+    ],
+  },
 ];
 
 function Layout({ children }: { children: React.ReactNode }) {
@@ -22,17 +37,26 @@ function Layout({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen flex">
       <nav className="w-48 bg-gray-900 border-r border-gray-800 p-4 flex flex-col gap-1">
         <h1 className="text-lg font-bold mb-4 px-2">CCBuddy</h1>
-        {navItems.map(item => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.to === '/'}
-            className={({ isActive }) =>
-              `px-3 py-2 rounded-lg text-sm ${isActive ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`
-            }
-          >
-            {item.label}
-          </NavLink>
+        {navGroups.map(group => (
+          <div key={group.label} className="mb-3">
+            <div className="mb-1 px-2 text-[11px] font-medium uppercase tracking-wide text-gray-600">
+              {group.label}
+            </div>
+            <div className="flex flex-col gap-1">
+              {group.items.map(item => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.to === '/'}
+                  className={({ isActive }) =>
+                    `px-3 py-2 rounded-lg text-sm ${isActive ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`
+                  }
+                >
+                  {item.label}
+                </NavLink>
+              ))}
+            </div>
+          </div>
         ))}
         <button
           onClick={() => { localStorage.removeItem('dashboard_token'); window.location.reload(); }}
