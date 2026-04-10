@@ -249,7 +249,32 @@ describe('DashboardServer', () => {
     expect(res.status).toBe(400);
   });
 
-  it('PUT /api/settings/local rejects invalid config payloads', async () => {
+  it('PUT /api/settings/local rejects unknown top-level keys', async () => {
+    const deps = createMockDeps();
+    const dir = mkdtempSync(join(tmpdir(), 'dashboard-settings-api-'));
+    tempDirs.push(dir);
+    deps.configDir = dir;
+
+    server = new DashboardServer(deps as any);
+    const address = await server.start();
+
+    const res = await fetch(`${address}/api/settings/local`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        config: {
+          unexpected_top_level_key: true,
+        },
+      }),
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('PUT /api/settings/local rejects type mismatches', async () => {
     const deps = createMockDeps();
     const dir = mkdtempSync(join(tmpdir(), 'dashboard-settings-api-'));
     tempDirs.push(dir);
@@ -267,13 +292,49 @@ describe('DashboardServer', () => {
       body: JSON.stringify({
         config: {
           agent: {
-            model: '',
+            admin_skip_permissions: 'false',
           },
         },
       }),
     });
 
     expect(res.status).toBe(400);
+  });
+
+  it('PUT /api/settings/local leaves local.yaml unchanged when validation fails', async () => {
+    const deps = createMockDeps();
+    const dir = mkdtempSync(join(tmpdir(), 'dashboard-settings-api-'));
+    tempDirs.push(dir);
+    deps.configDir = dir;
+    const localPath = join(dir, 'local.yaml');
+    const original = [
+      'ccbuddy:',
+      '  agent:',
+      '    model: opus',
+      '',
+    ].join('\n');
+    writeFileSync(localPath, original, 'utf8');
+
+    server = new DashboardServer(deps as any);
+    const address = await server.start();
+
+    const res = await fetch(`${address}/api/settings/local`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        config: {
+          agent: {
+            admin_skip_permissions: 'false',
+          },
+        },
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(readFileSync(localPath, 'utf8')).toBe(original);
   });
 
   it('GET /api/settings/effective returns the resolved runtime config read-only', async () => {
@@ -293,22 +354,46 @@ describe('DashboardServer', () => {
     expect(data.config.platforms.discord.token).toBe('••••••');
   });
 
-  it('GET /api/settings/meta reports runtime, default, local, and effective-only sources', async () => {
+  it('GET /api/settings/meta reports env-backed placeholders as env', async () => {
+    const deps = createMockDeps();
+    const dir = mkdtempSync(join(tmpdir(), 'dashboard-settings-api-'));
+    tempDirs.push(dir);
+    writeFileSync(join(dir, 'local.yaml'), [
+      'ccbuddy:',
+      '  platforms:',
+      '    discord:',
+      '      token: ${DISCORD_TOKEN}',
+      '',
+    ].join('\n'), 'utf8');
+    deps.configDir = dir;
+    (deps.config as any).platforms = {
+      discord: { enabled: true, token: 'resolved-token' },
+    };
+
+    server = new DashboardServer(deps as any);
+    const address = await server.start();
+
+    const res = await fetch(`${address}/api/settings/meta`, {
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.sources['platforms.discord.token']).toBe('env');
+  });
+
+  it('GET /api/settings/meta reports runtime, default, and effective-only sources', async () => {
     const deps = createMockDeps();
     const dir = mkdtempSync(join(tmpdir(), 'dashboard-settings-api-'));
     tempDirs.push(dir);
     writeFileSync(join(dir, 'local.yaml'), [
       'ccbuddy:',
       '  agent:',
-      '    model: opus',
+      '    admin_skip_permissions: false',
       '',
     ].join('\n'), 'utf8');
     deps.configDir = dir;
     (deps.config as any).data_dir = dir;
-    (deps.config as any).agent = {
-      model: 'opus',
-      admin_skip_permissions: true,
-    };
     (deps.config as any).gateway = {
       unknown_user_reply: true,
     };

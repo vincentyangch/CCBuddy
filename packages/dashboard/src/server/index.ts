@@ -10,7 +10,7 @@ import websocket from '@fastify/websocket';
 import { setupWebSocket } from './websocket.js';
 import { WebChatAdapter } from './webchat-adapter.js';
 import { loadLocalSettingsConfig, saveLocalSettingsConfig } from './settings-store.js';
-import { buildSettingsSourceMap } from './settings-meta.js';
+import { buildSettingsSourceMap, validateLocalSettingsConfig } from './settings-meta.js';
 import { loadConfig } from '@ccbuddy/core';
 import type { EventBus, CCBuddyConfig } from '@ccbuddy/core';
 import { isValidModel } from '@ccbuddy/core';
@@ -273,6 +273,10 @@ export class DashboardServer {
       }
 
       const config = body.config as Record<string, unknown>;
+      const shapeError = validateLocalSettingsConfig(config);
+      if (shapeError) {
+        return reply.status(400).send({ error: `Invalid config structure: ${shapeError}` });
+      }
       const localPath = join(this.deps.configDir, 'local.yaml');
       const backupPath = localPath + '.bak';
 
