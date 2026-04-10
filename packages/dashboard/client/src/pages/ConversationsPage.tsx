@@ -37,7 +37,7 @@ export function ConversationsPage() {
     <div>
       <div className="mb-6">
         <div className="text-xs font-medium uppercase tracking-wide text-gray-500">Workspace</div>
-        <h2 className="mt-1 text-2xl font-bold">Conversations</h2>
+        <h2 className="mt-1 text-2xl font-bold">History</h2>
         <p className="mt-1 text-sm text-gray-500">Stored message history across users, platforms, and sessions.</p>
       </div>
       <div className="flex gap-3 mb-4">

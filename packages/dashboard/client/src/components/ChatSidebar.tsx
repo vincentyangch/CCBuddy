@@ -50,7 +50,7 @@ export function ChatSidebar({ activeSessionId, pendingChannelId, onSelectSession
       <button onClick={onNewChat} className="mb-3 px-3 py-2 bg-blue-600 rounded-lg text-sm text-white hover:bg-blue-500 w-full">
         + New Chat
       </button>
-      <div className="text-xs text-gray-500 uppercase mb-2 px-1">Sessions</div>
+      <div className="text-xs text-gray-500 uppercase mb-2 px-1">Recent chats</div>
       <div className="flex-1 overflow-auto space-y-1">
         {pendingChannelId && !sessions.some(s => s.channelId === pendingChannelId) && (
           <div

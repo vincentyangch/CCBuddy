@@ -21,7 +21,7 @@ const navGroups = [
     label: 'Workspace',
     items: [
       { to: '/chat', label: 'Chat' },
-      { to: '/conversations', label: 'Conversations' },
+      { to: '/conversations', label: 'History' },
     ],
   },
   {
