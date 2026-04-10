@@ -1,6 +1,5 @@
 import { join, dirname } from 'node:path';
-import { writeFileSync, renameSync, readFileSync, unlinkSync, existsSync, mkdirSync, openSync, closeSync, constants as fsConstants } from 'node:fs';
-import { execSync } from 'node:child_process';
+import { writeFileSync, renameSync, readFileSync } from 'node:fs';
 import { loadConfig, createEventBus, UserManager, TranscriptionService, SpeechService, isValidModel } from '@ccbuddy/core';
 import { AgentService, CliBackend, SessionStore } from '@ccbuddy/agent';
 import {
@@ -24,66 +23,21 @@ import { ShutdownHandler } from '@ccbuddy/orchestrator';
 import { SchedulerService, NotificationService, resolvePreferences } from '@ccbuddy/scheduler';
 import { chunkMessage } from '@ccbuddy/gateway';
 import { DashboardServer } from '@ccbuddy/dashboard';
+import { acquirePidLock } from './pid-lock.js';
 
 export interface BootstrapResult {
   stop: () => Promise<void>;
 }
 
-/**
- * Acquire a PID lockfile, killing any stale CCBuddy process first.
- * Uses atomic write-to-temp + rename to avoid TOCTOU races.
- * Returns a cleanup function that removes the lockfile on shutdown.
- */
-function acquirePidLock(dataDir: string): () => void {
-  mkdirSync(dataDir, { recursive: true });
-  const lockPath = join(dataDir, 'ccbuddy.pid');
-  const tmpPath = join(dataDir, `ccbuddy.pid.${process.pid}.tmp`);
-
-  if (existsSync(lockPath)) {
-    const oldPid = parseInt(readFileSync(lockPath, 'utf8').trim(), 10);
-    if (oldPid && oldPid !== process.pid) {
-      let alive = false;
-      try {
-        process.kill(oldPid, 0); // signal 0 = existence check
-        alive = true;
-      } catch {
-        // Old process no longer exists — stale lockfile
-      }
-      if (alive) {
-        console.log(`[PID Lock] Killing stale CCBuddy process (PID ${oldPid})`);
-        process.kill(oldPid, 'SIGTERM');
-        // Wait for graceful exit, then force kill if needed
-        const deadline = Date.now() + 3000;
-        while (Date.now() < deadline) {
-          try { process.kill(oldPid, 0); } catch { break; }
-          execSync('sleep 0.2', { stdio: 'ignore' });
-        }
-        try { process.kill(oldPid, 0); process.kill(oldPid, 'SIGKILL'); } catch { /* already gone */ }
-      }
-    }
-  }
-
-  // Atomic write: write our PID to a temp file, then rename over the lockfile.
-  // rename() is atomic on POSIX — no window where the lockfile is empty or half-written.
-  writeFileSync(tmpPath, String(process.pid), 'utf8');
-  renameSync(tmpPath, lockPath);
-
-  return () => {
-    try {
-      // Only remove if it's still our PID (avoid race with a new instance)
-      if (existsSync(lockPath) && readFileSync(lockPath, 'utf8').trim() === String(process.pid)) {
-        unlinkSync(lockPath);
-      }
-    } catch {
-      // Non-fatal
-    }
-  };
-}
-
 export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
-  // 1. Load config
-  const resolvedConfigDir = configDir ?? join(process.cwd(), 'config');
-  const config = loadConfig(resolvedConfigDir);
+  let releasePidLock: (() => void) | undefined;
+  let tickInterval: ReturnType<typeof setInterval> | undefined;
+  let shutdownHandler: ShutdownHandler | undefined;
+
+  try {
+    // 1. Load config
+    const resolvedConfigDir = configDir ?? join(process.cwd(), 'config');
+    const config = loadConfig(resolvedConfigDir);
 
   // 1a. Apply runtime model override (from dashboard)
   const runtimeConfigPath = join(config.data_dir, 'runtime-config.json');
@@ -96,7 +50,12 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
   } catch { /* no runtime config */ }
 
   // 1b. Acquire PID lock — kills any existing CCBuddy process
-  const releasePidLock = acquirePidLock(config.data_dir);
+  releasePidLock = acquirePidLock(config.data_dir);
+
+  // 1c. Create shutdown handler early so startup failures can reuse cleanup logic
+  shutdownHandler = new ShutdownHandler(
+    config.agent.graceful_shutdown_timeout_seconds * 1000,
+  );
 
   // 2. Create event bus
   const eventBus = createEventBus();
@@ -112,6 +71,9 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
   const resolve = (p: string) => join(projectRoot, p);
   const database = new MemoryDatabase(config.memory.db_path);
   database.init();
+  shutdownHandler.register('database', async () => {
+    database.close();
+  });
 
   const sessionDb = new SessionDatabase(database.raw());
   const sessionStore = new SessionStore(config.agent.session_timeout_ms, {
@@ -394,27 +356,14 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
 
   // 10. Set up SessionManager.tick() interval (every 60 seconds)
   let notificationService: NotificationService | undefined;
-  let tickInterval: ReturnType<typeof setInterval> | undefined;
-
-  try {
-
-  tickInterval = setInterval(() => {
+    tickInterval = setInterval(() => {
     agentService.tick();
     sessionStore.tick();
     notificationService?.tick();
   }, 60_000);
 
-  // 11. Create shutdown handler
-  const shutdownHandler = new ShutdownHandler(
-    config.agent.graceful_shutdown_timeout_seconds * 1000,
-  );
-
   shutdownHandler.register('gateway', async () => {
     await gateway.stop();
-  });
-
-  shutdownHandler.register('database', async () => {
-    database.close();
   });
 
   // 12. Start gateway (connects Discord/Telegram)
@@ -580,14 +529,24 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
   return {
     stop: async () => {
       if (tickInterval) clearInterval(tickInterval);
-      await shutdownHandler.execute();
-      releasePidLock();
+      await shutdownHandler!.execute();
+      releasePidLock?.();
+      releasePidLock = undefined;
     },
   };
 
   } catch (err) {
-    // Clean up tick interval if bootstrap fails after creating it
+    // Clean up interval and PID lock if bootstrap fails after acquisition
     if (tickInterval) clearInterval(tickInterval);
+    if (shutdownHandler) {
+      try {
+        await shutdownHandler.execute();
+      } catch {
+        // Best-effort cleanup; preserve the original bootstrap failure.
+      }
+    }
+    releasePidLock?.();
+    releasePidLock = undefined;
     throw err;
   }
 }

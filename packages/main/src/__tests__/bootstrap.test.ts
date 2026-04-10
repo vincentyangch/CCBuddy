@@ -4,9 +4,14 @@ import { bootstrap } from '../bootstrap.js';
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
+const mockAcquirePidLock = vi.fn();
 const mockLoadConfig = vi.fn();
 const mockCreateEventBus = vi.fn();
 const mockUserManager = vi.fn();
+
+vi.mock('../pid-lock.js', () => ({
+  acquirePidLock: (...args: unknown[]) => mockAcquirePidLock(...args),
+}));
 
 vi.mock('@ccbuddy/core', () => ({
   loadConfig: (...args: unknown[]) => mockLoadConfig(...args),
@@ -325,6 +330,7 @@ describe('bootstrap', () => {
 
     mockLoadConfig.mockReturnValue(fakeConfig);
     mockCreateEventBus.mockReturnValue(fakeEventBus);
+    mockAcquirePidLock.mockReturnValue(vi.fn());
     mockUserManager.mockReturnValue(fakeUserManagerInstance);
     mockSdkBackend.mockReturnValue(fakeSdkBackendInstance);
     mockCliBackend.mockReturnValue({});
@@ -503,6 +509,60 @@ describe('bootstrap', () => {
     expect(fakeAgentServiceInstance.tick).toHaveBeenCalledTimes(1);
 
     expect(fakeShutdownHandlerInstance.execute).toHaveBeenCalled();
+  });
+
+  it('stop() releases the pid lock after shutdown', async () => {
+    const callOrder: string[] = [];
+    const releasePidLock = vi.fn(() => {
+      callOrder.push('release');
+    });
+    mockAcquirePidLock.mockReturnValue(releasePidLock);
+    fakeShutdownHandlerInstance.execute.mockImplementation(async () => {
+      callOrder.push('shutdown');
+    });
+
+    const { stop } = await bootstrap('/config');
+    await stop();
+
+    expect(callOrder).toEqual(['shutdown', 'release']);
+  });
+
+  it('releases the pid lock when bootstrap fails after acquisition', async () => {
+    const callOrder: string[] = [];
+    const releasePidLock = vi.fn(() => {
+      callOrder.push('release');
+    });
+    mockAcquirePidLock.mockReturnValue(releasePidLock);
+    fakeShutdownHandlerInstance.execute.mockImplementation(async () => {
+      callOrder.push('shutdown');
+    });
+
+    const schedulerService = {
+      start: vi.fn().mockRejectedValue(new Error('scheduler boom')),
+      stop: vi.fn().mockResolvedValue(undefined),
+    };
+    mockSchedulerService.mockReturnValue(schedulerService);
+
+    await expect(bootstrap('/config')).rejects.toThrow('scheduler boom');
+    expect(callOrder).toEqual(['shutdown', 'release']);
+  });
+
+  it('runs shutdown cleanup before releasing the pid lock when skill registry loading fails', async () => {
+    const callOrder: string[] = [];
+    const releasePidLock = vi.fn(() => {
+      callOrder.push('release');
+    });
+    mockAcquirePidLock.mockReturnValue(releasePidLock);
+    fakeShutdownHandlerInstance.execute.mockImplementation(async () => {
+      callOrder.push('shutdown');
+    });
+    mockSkillRegistry.mockReturnValue({
+      load: vi.fn().mockRejectedValue(new Error('registry boom')),
+      registerExternalTool: vi.fn(),
+    });
+
+    await expect(bootstrap('/config')).rejects.toThrow('registry boom');
+    expect(callOrder).toEqual(['shutdown', 'release']);
   });
 
   it('registers shutdown handlers for gateway and database', async () => {
