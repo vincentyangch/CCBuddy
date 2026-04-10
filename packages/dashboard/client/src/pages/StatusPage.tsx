@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useWebSocket } from '../hooks/useWebSocket';
 
@@ -78,19 +79,11 @@ export function StatusPage() {
           <div className="text-sm mb-1">Runtime Sessions: <span className="text-white font-medium">{data.sessions.length}</span></div>
           <div className="text-sm mb-1">Queue Depth: <span className="text-white font-medium">{data.queueSize}</span></div>
           <div className="text-sm">Uptime: <span className="text-white font-medium">{upH}h {upM}m</span></div>
+          <Link to="/sessions" className="mt-3 inline-block text-sm text-blue-400 hover:underline">
+            Open runtime sessions
+          </Link>
         </div>
       </div>
-      {data.sessions.length > 0 && (
-        <div className="bg-gray-900 rounded-xl p-4 border border-gray-800">
-          <div className="text-sm text-gray-400 mb-3">Active Runtime Sessions</div>
-          {data.sessions.map((s: any) => (
-            <div key={s.sessionKey} className="text-sm mb-1 flex justify-between">
-              <span className="font-mono">{s.sessionKey}</span>
-              <span className="text-gray-500">{new Date(s.lastActivity).toLocaleTimeString()}</span>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
