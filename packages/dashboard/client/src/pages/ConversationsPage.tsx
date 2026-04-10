@@ -1,11 +1,19 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 
 export function ConversationsPage() {
   const [messages, setMessages] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [filters, setFilters] = useState({ user: '', platform: '', search: '' });
+  const [searchParams] = useSearchParams();
+  const sessionIdQuery = searchParams.get('sessionId') ?? '';
+  const [filters, setFilters] = useState(() => ({
+    user: '',
+    platform: '',
+    search: '',
+    conversationId: sessionIdQuery,
+  }));
   const pageSize = 50;
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
@@ -14,10 +22,16 @@ export function ConversationsPage() {
     if (f.user) params.user = f.user;
     if (f.platform) params.platform = f.platform;
     if (f.search) params.search = f.search;
+    if (f.conversationId) params.sessionId = f.conversationId;
     const data = await api.conversations(params);
     setMessages(data.messages);
     setTotal(data.total);
   }, []);
+
+  useEffect(() => {
+    setFilters(f => f.conversationId === sessionIdQuery ? f : { ...f, conversationId: sessionIdQuery });
+    setPage(1);
+  }, [sessionIdQuery]);
 
   // Debounce filter changes by 400ms, but load immediately on page change
   useEffect(() => {
@@ -47,6 +61,9 @@ export function ConversationsPage() {
         <input placeholder="Filter platform" value={filters.platform}
           onChange={e => updateFilter('platform', e.target.value)}
           className="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg text-sm w-40" />
+        <input placeholder="Conversation ID" value={filters.conversationId}
+          onChange={e => updateFilter('conversationId', e.target.value)}
+          className="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg text-sm w-56" />
         <input placeholder="Search..." value={filters.search}
           onChange={e => updateFilter('search', e.target.value)}
           className="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg text-sm flex-1" />

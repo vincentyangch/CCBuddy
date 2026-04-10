@@ -16,6 +16,19 @@ const STATUS_LABELS: Record<string, string> = {
 
 const FILTERS = ['all', 'active', 'paused', 'archived'] as const;
 
+function historyConversationId(session: any, runtimeKey: string): string {
+  const isGroup = session.is_group_channel ?? session.isGroupChannel;
+  const userId = session.user_id ?? session.userId;
+  const platform = session.platform;
+  const channelId = session.channel_id ?? session.channelId;
+
+  if (isGroup && userId && platform && channelId) {
+    return `${String(userId).toLowerCase()}-${String(platform).toLowerCase()}-${String(channelId).toLowerCase()}`;
+  }
+
+  return runtimeKey;
+}
+
 export function SessionsPage() {
   const [sessions, setSessions] = useState<any[]>([]);
   const [filter, setFilter] = useState<string>('all');
@@ -73,6 +86,7 @@ export function SessionsPage() {
                 <th className="px-4 py-3 text-left text-gray-400 font-medium">Type</th>
                 <th className="px-4 py-3 text-left text-gray-400 font-medium">Model</th>
                 <th className="px-4 py-3 text-left text-gray-400 font-medium">Last Activity</th>
+                <th className="px-4 py-3 text-left text-gray-400 font-medium">History</th>
                 <th className="px-4 py-3 text-left text-gray-400 font-medium"></th>
               </tr>
             </thead>
@@ -108,6 +122,14 @@ export function SessionsPage() {
                     </td>
                     <td className="px-4 py-3 text-gray-400">
                       {new Date(s.last_activity ?? s.lastActivity).toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3">
+                      <Link
+                        to={`/conversations?sessionId=${encodeURIComponent(historyConversationId(s, key))}`}
+                        className="text-xs text-blue-400 hover:underline"
+                      >
+                        History
+                      </Link>
                     </td>
                     <td className="px-4 py-3">
                       <button

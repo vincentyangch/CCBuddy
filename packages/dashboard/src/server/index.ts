@@ -212,6 +212,7 @@ export class DashboardServer {
         pageSize: parseInt(q.pageSize ?? '50', 10),
         user: q.user || undefined,
         platform: q.platform || undefined,
+        sessionId: q.sessionId || undefined,
         search: q.search || undefined,
         dateFrom: q.dateFrom ? parseInt(q.dateFrom, 10) : undefined,
         dateTo: q.dateTo ? parseInt(q.dateTo, 10) : undefined,

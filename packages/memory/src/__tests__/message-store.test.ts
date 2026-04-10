@@ -342,6 +342,21 @@ describe('MessageStore', () => {
       expect(result.messages.every(m => m.platform === 'discord')).toBe(true);
     });
 
+    it('filters by sessionId', () => {
+      store.add({
+        userId: 'u1',
+        sessionId: 's2',
+        platform: 'discord',
+        content: 'other-session-message',
+        role: 'user',
+        timestamp: 2000,
+      });
+
+      const result = store.query({ sessionId: 's2', page: 1, pageSize: 50 });
+      expect(result.total).toBe(1);
+      expect(result.messages[0].sessionId).toBe('s2');
+    });
+
     it('filters by date range', () => {
       const result = store.query({ dateFrom: 1005, dateTo: 1010, page: 1, pageSize: 50 });
       expect(result.total).toBe(6);

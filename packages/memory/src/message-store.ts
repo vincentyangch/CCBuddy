@@ -27,6 +27,7 @@ export interface AddMessageParams {
 export interface MessageQueryParams {
   user?: string;
   platform?: string;
+  sessionId?: string;
   dateFrom?: number;
   dateTo?: number;
   search?: string;
@@ -246,6 +247,10 @@ export class MessageStore {
     if (params.platform) {
       conditions.push('platform = ?');
       values.push(params.platform);
+    }
+    if (params.sessionId) {
+      conditions.push('session_id = ?');
+      values.push(params.sessionId);
     }
     if (params.dateFrom !== undefined) {
       conditions.push('timestamp >= ?');

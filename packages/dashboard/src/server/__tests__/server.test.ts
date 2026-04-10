@@ -125,13 +125,14 @@ describe('DashboardServer', () => {
     server = new DashboardServer(deps as any);
     const address = await server.start();
 
-    await fetch(`${address}/api/conversations?user=dad&platform=discord&page=2&pageSize=10`, {
+    await fetch(`${address}/api/conversations?user=dad&platform=discord&sessionId=dad-discord-ch1&page=2&pageSize=10`, {
       headers: { Authorization: `Bearer ${TOKEN}` },
     });
 
     expect(deps.messageStore.query).toHaveBeenCalledWith({
       user: 'dad',
       platform: 'discord',
+      sessionId: 'dad-discord-ch1',
       page: 2,
       pageSize: 10,
       search: undefined,
