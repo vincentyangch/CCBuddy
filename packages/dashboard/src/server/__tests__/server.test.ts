@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { DashboardServer } from '../index.js';
 
 function createMockDeps() {
@@ -29,6 +32,7 @@ function createMockDeps() {
 describe('DashboardServer', () => {
   let server: DashboardServer;
   const TOKEN = 'test-secret-123';
+  const tempDirs: string[] = [];
 
   beforeEach(() => {
     process.env.TEST_DASHBOARD_TOKEN = TOKEN;
@@ -37,6 +41,9 @@ describe('DashboardServer', () => {
   afterEach(async () => {
     if (server) await server.stop();
     delete process.env.TEST_DASHBOARD_TOKEN;
+    for (const dir of tempDirs) {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('starts and stops cleanly', async () => {
@@ -148,5 +155,125 @@ describe('DashboardServer', () => {
     const data = await res.json();
     expect(data.config.platforms.discord.token).toBe('••••••');
     expect(data.config.platforms.telegram.token).toBe('••••••');
+  });
+
+  it('GET /api/settings/local returns persisted local config instead of effective config', async () => {
+    const deps = createMockDeps();
+    const dir = mkdtempSync(join(tmpdir(), 'dashboard-settings-api-'));
+    tempDirs.push(dir);
+    writeFileSync(join(dir, 'local.yaml'), [
+      'ccbuddy:',
+      '  platforms:',
+      '    discord:',
+      '      token: ${DISCORD_TOKEN}',
+      '',
+    ].join('\n'), 'utf8');
+    deps.configDir = dir;
+    (deps.config as any).platforms = {
+      discord: { enabled: true, token: 'resolved-token' },
+    };
+
+    server = new DashboardServer(deps as any);
+    const address = await server.start();
+
+    const res = await fetch(`${address}/api/settings/local`, {
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.config.platforms.discord.token).toBe('${DISCORD_TOKEN}');
+  });
+
+  it('PUT /api/settings/local preserves placeholders while updating editable values', async () => {
+    const deps = createMockDeps();
+    const dir = mkdtempSync(join(tmpdir(), 'dashboard-settings-api-'));
+    tempDirs.push(dir);
+    writeFileSync(join(dir, 'local.yaml'), [
+      'ccbuddy:',
+      '  platforms:',
+      '    discord:',
+      '      token: ${DISCORD_TOKEN}',
+      '',
+    ].join('\n'), 'utf8');
+    deps.configDir = dir;
+
+    server = new DashboardServer(deps as any);
+    const address = await server.start();
+
+    const res = await fetch(`${address}/api/settings/local`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        config: {
+          platforms: {
+            discord: {
+              token: '${DISCORD_TOKEN}',
+              enabled: true,
+            },
+          },
+          agent: {
+            admin_skip_permissions: false,
+          },
+        },
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const raw = readFileSync(join(dir, 'local.yaml'), 'utf8');
+    expect(raw).toContain('${DISCORD_TOKEN}');
+    expect(raw).toContain('admin_skip_permissions: false');
+  });
+
+  it('GET /api/settings/effective returns the resolved runtime config read-only', async () => {
+    const deps = createMockDeps();
+    (deps.config as any).platforms = {
+      discord: { enabled: true, token: 'resolved-token' },
+    };
+    server = new DashboardServer(deps as any);
+    const address = await server.start();
+
+    const res = await fetch(`${address}/api/settings/effective`, {
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.config.platforms.discord.token).toBe('••••••');
+  });
+
+  it('GET /api/settings/meta reports field sources for local and env-backed values', async () => {
+    const deps = createMockDeps();
+    const dir = mkdtempSync(join(tmpdir(), 'dashboard-settings-api-'));
+    tempDirs.push(dir);
+    writeFileSync(join(dir, 'local.yaml'), [
+      'ccbuddy:',
+      '  agent:',
+      '    model: opus',
+      '',
+    ].join('\n'), 'utf8');
+    deps.configDir = dir;
+    (deps.config as any).agent = {
+      model: 'opus',
+      admin_skip_permissions: true,
+    };
+    (deps.config as any).platforms = {
+      discord: { enabled: true, token: 'resolved-token' },
+    };
+
+    server = new DashboardServer(deps as any);
+    const address = await server.start();
+
+    const res = await fetch(`${address}/api/settings/meta`, {
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.sources['agent.model']).toBe('local');
+    expect(data.sources['platforms.discord.token']).toBe('effective_only');
   });
 });

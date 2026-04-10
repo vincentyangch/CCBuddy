@@ -6,9 +6,10 @@ import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import type { FastifyInstance } from 'fastify';
 import websocket from '@fastify/websocket';
-import yaml from 'js-yaml';
 import { setupWebSocket } from './websocket.js';
 import { WebChatAdapter } from './webchat-adapter.js';
+import { loadLocalSettingsConfig, saveLocalSettingsConfig } from './settings-store.js';
+import { buildSettingsSourceMap } from './settings-meta.js';
 import type { EventBus, CCBuddyConfig } from '@ccbuddy/core';
 import { isValidModel } from '@ccbuddy/core';
 import type { SessionInfo } from '@ccbuddy/agent';
@@ -53,6 +54,16 @@ function safeTokenEqual(a: string, b: string): boolean {
   const bufB = Buffer.from(b);
   if (bufA.length !== bufB.length) return false;
   return timingSafeEqual(bufA, bufB);
+}
+
+function redactConfigTokens(config: CCBuddyConfig): CCBuddyConfig {
+  const redacted = JSON.parse(JSON.stringify(config)) as CCBuddyConfig;
+  if (redacted.platforms) {
+    for (const key of Object.keys(redacted.platforms)) {
+      if (redacted.platforms[key]?.token) redacted.platforms[key]!.token = '••••••';
+    }
+  }
+  return redacted;
 }
 
 export class DashboardServer {
@@ -233,20 +244,19 @@ export class DashboardServer {
       }
     });
 
-    // GET /api/config — current config with secrets redacted
+    // GET /api/config — temporary compatibility alias for the effective config
     this.app.get('/api/config', async () => {
-      const config = JSON.parse(JSON.stringify(this.deps.config));
-      // Redact all platform tokens (not just Discord/Telegram)
-      if (config.platforms) {
-        for (const key of Object.keys(config.platforms)) {
-          if (config.platforms[key]?.token) config.platforms[key].token = '••••••';
-        }
-      }
-      return { config };
+      return { config: redactConfigTokens(this.deps.config) };
     });
 
-    // PUT /api/config — update config/local.yaml with validation
-    this.app.put('/api/config', async (request, reply) => {
+    // GET /api/settings/local — persisted editable config
+    this.app.get('/api/settings/local', async () => {
+      const localPath = join(this.deps.configDir, 'local.yaml');
+      return { config: loadLocalSettingsConfig(localPath) };
+    });
+
+    // PUT /api/settings/local — update config/local.yaml directly
+    this.app.put('/api/settings/local', async (request, reply) => {
       const body = request.body as { config: Record<string, unknown> } | null;
       if (!body?.config) {
         return reply.status(400).send({ error: 'Missing config in request body' });
@@ -255,36 +265,25 @@ export class DashboardServer {
       const localPath = join(this.deps.configDir, 'local.yaml');
       const backupPath = localPath + '.bak';
 
-      // Restore redacted platform tokens from current config
-      const incoming = body.config as any;
-      const current = this.deps.config as any;
-      if (incoming.platforms && current.platforms) {
-        for (const key of Object.keys(incoming.platforms)) {
-          if (incoming.platforms[key]?.token === '••••••' && current.platforms[key]?.token) {
-            incoming.platforms[key].token = current.platforms[key].token;
-          }
-        }
-      }
-
-      // Validate: ensure the config is valid YAML by round-tripping
-      try {
-        const yamlContent = yaml.dump({ ccbuddy: incoming }, { lineWidth: 120 });
-        const parsed = yaml.load(yamlContent) as any;
-        if (!parsed?.ccbuddy) {
-          return reply.status(400).send({ error: 'Invalid config structure' });
-        }
-      } catch (err) {
-        return reply.status(400).send({ error: `Invalid config: ${(err as Error).message}` });
-      }
-
       try {
         try { copyFileSync(localPath, backupPath); } catch { /* no existing file */ }
-        const yamlContent = yaml.dump({ ccbuddy: incoming }, { lineWidth: 120 });
-        writeFileSync(localPath, yamlContent, 'utf8');
+        saveLocalSettingsConfig(localPath, body.config as Record<string, unknown>);
         return { ok: true, backup: backupPath };
       } catch (err) {
         return reply.status(500).send({ error: (err as Error).message });
       }
+    });
+
+    // GET /api/settings/effective — current runtime config, redacted
+    this.app.get('/api/settings/effective', async () => {
+      return { config: redactConfigTokens(this.deps.config) };
+    });
+
+    // GET /api/settings/meta — source map for effective vs local values
+    this.app.get('/api/settings/meta', async () => {
+      const localPath = join(this.deps.configDir, 'local.yaml');
+      const localConfig = loadLocalSettingsConfig(localPath);
+      return buildSettingsSourceMap(localConfig, this.deps.config as unknown as Record<string, unknown>);
     });
 
     // GET /api/config/model — current default model
