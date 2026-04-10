@@ -7,8 +7,11 @@ export function PermissionGatesToggle() {
   const [status, setStatus] = useState('');
 
   useEffect(() => {
-    api.config().then(data => {
-      setEnabled(!data.config.agent?.admin_skip_permissions);
+    Promise.all([
+      api.getLocalSettings(),
+      api.getEffectiveSettings(),
+    ]).then(([, effective]) => {
+      setEnabled(!effective.config.agent?.admin_skip_permissions);
       setLoading(false);
     });
   }, []);
@@ -17,10 +20,13 @@ export function PermissionGatesToggle() {
     const newValue = !enabled;
     setStatus('');
     try {
-      const data = await api.config();
-      const config = data.config;
+      const [local] = await Promise.all([
+        api.getLocalSettings(),
+        api.getEffectiveSettings(),
+      ]);
+      const config = local.config;
       config.agent = { ...config.agent, admin_skip_permissions: !newValue };
-      await api.updateConfig(config);
+      await api.updateLocalSettings(config);
       setEnabled(newValue);
       setStatus('Applied — restart required');
       setTimeout(() => setStatus(''), 3000);
