@@ -1,5 +1,6 @@
-import { readFileSync, copyFileSync, writeFileSync, existsSync, openSync, readSync, closeSync, statSync, mkdirSync } from 'node:fs';
+import { readFileSync, copyFileSync, writeFileSync, existsSync, openSync, readSync, closeSync, statSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { timingSafeEqual } from 'node:crypto';
 import Fastify from 'fastify';
@@ -10,6 +11,7 @@ import { setupWebSocket } from './websocket.js';
 import { WebChatAdapter } from './webchat-adapter.js';
 import { loadLocalSettingsConfig, saveLocalSettingsConfig } from './settings-store.js';
 import { buildSettingsSourceMap } from './settings-meta.js';
+import { loadConfig } from '@ccbuddy/core';
 import type { EventBus, CCBuddyConfig } from '@ccbuddy/core';
 import { isValidModel } from '@ccbuddy/core';
 import type { SessionInfo } from '@ccbuddy/agent';
@@ -54,6 +56,10 @@ function safeTokenEqual(a: string, b: string): boolean {
   const bufB = Buffer.from(b);
   if (bufA.length !== bufB.length) return false;
   return timingSafeEqual(bufA, bufB);
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function redactConfigTokens(config: CCBuddyConfig): CCBuddyConfig {
@@ -257,17 +263,33 @@ export class DashboardServer {
 
     // PUT /api/settings/local — update config/local.yaml directly
     this.app.put('/api/settings/local', async (request, reply) => {
-      const body = request.body as { config: Record<string, unknown> } | null;
-      if (!body?.config) {
+      if (!isPlainObject(request.body)) {
+        return reply.status(400).send({ error: 'Request body must be an object' });
+      }
+
+      const body = request.body as { config?: unknown };
+      if (!isPlainObject(body.config)) {
         return reply.status(400).send({ error: 'Missing config in request body' });
       }
 
+      const config = body.config as Record<string, unknown>;
       const localPath = join(this.deps.configDir, 'local.yaml');
       const backupPath = localPath + '.bak';
 
+      const tempDir = mkdtempSync(join(tmpdir(), 'ccbuddy-dashboard-config-'));
+      try {
+        const tempLocalPath = join(tempDir, 'local.yaml');
+        saveLocalSettingsConfig(tempLocalPath, config);
+        loadConfig(tempDir);
+      } catch (err) {
+        return reply.status(400).send({ error: `Invalid config: ${(err as Error).message}` });
+      } finally {
+        rmSync(tempDir, { recursive: true, force: true });
+      }
+
       try {
         try { copyFileSync(localPath, backupPath); } catch { /* no existing file */ }
-        saveLocalSettingsConfig(localPath, body.config as Record<string, unknown>);
+        saveLocalSettingsConfig(localPath, config);
         return { ok: true, backup: backupPath };
       } catch (err) {
         return reply.status(500).send({ error: (err as Error).message });
@@ -283,7 +305,18 @@ export class DashboardServer {
     this.app.get('/api/settings/meta', async () => {
       const localPath = join(this.deps.configDir, 'local.yaml');
       const localConfig = loadLocalSettingsConfig(localPath);
-      return buildSettingsSourceMap(localConfig, this.deps.config as unknown as Record<string, unknown>);
+      const runtimePath = join(this.deps.config.data_dir, 'runtime-config.json');
+      let runtimeModel: string | null = null;
+      try {
+        const data = JSON.parse(readFileSync(runtimePath, 'utf8'));
+        runtimeModel = typeof data?.model === 'string' ? data.model : null;
+      } catch { /* no runtime override */ }
+
+      return buildSettingsSourceMap(
+        localConfig,
+        this.deps.config as unknown as Record<string, unknown>,
+        runtimeModel,
+      );
     });
 
     // GET /api/config/model — current default model

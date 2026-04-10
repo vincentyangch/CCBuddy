@@ -228,6 +228,54 @@ describe('DashboardServer', () => {
     expect(raw).toContain('admin_skip_permissions: false');
   });
 
+  it('PUT /api/settings/local rejects non-object payloads', async () => {
+    const deps = createMockDeps();
+    const dir = mkdtempSync(join(tmpdir(), 'dashboard-settings-api-'));
+    tempDirs.push(dir);
+    deps.configDir = dir;
+
+    server = new DashboardServer(deps as any);
+    const address = await server.start();
+
+    const res = await fetch(`${address}/api/settings/local`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(null),
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('PUT /api/settings/local rejects invalid config payloads', async () => {
+    const deps = createMockDeps();
+    const dir = mkdtempSync(join(tmpdir(), 'dashboard-settings-api-'));
+    tempDirs.push(dir);
+    deps.configDir = dir;
+
+    server = new DashboardServer(deps as any);
+    const address = await server.start();
+
+    const res = await fetch(`${address}/api/settings/local`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        config: {
+          agent: {
+            model: '',
+          },
+        },
+      }),
+    });
+
+    expect(res.status).toBe(400);
+  });
+
   it('GET /api/settings/effective returns the resolved runtime config read-only', async () => {
     const deps = createMockDeps();
     (deps.config as any).platforms = {
@@ -245,7 +293,7 @@ describe('DashboardServer', () => {
     expect(data.config.platforms.discord.token).toBe('••••••');
   });
 
-  it('GET /api/settings/meta reports field sources for local and env-backed values', async () => {
+  it('GET /api/settings/meta reports runtime, default, local, and effective-only sources', async () => {
     const deps = createMockDeps();
     const dir = mkdtempSync(join(tmpdir(), 'dashboard-settings-api-'));
     tempDirs.push(dir);
@@ -256,13 +304,18 @@ describe('DashboardServer', () => {
       '',
     ].join('\n'), 'utf8');
     deps.configDir = dir;
+    (deps.config as any).data_dir = dir;
     (deps.config as any).agent = {
       model: 'opus',
       admin_skip_permissions: true,
     };
+    (deps.config as any).gateway = {
+      unknown_user_reply: true,
+    };
     (deps.config as any).platforms = {
       discord: { enabled: true, token: 'resolved-token' },
     };
+    writeFileSync(join(dir, 'runtime-config.json'), JSON.stringify({ model: 'sonnet' }), 'utf8');
 
     server = new DashboardServer(deps as any);
     const address = await server.start();
@@ -273,7 +326,8 @@ describe('DashboardServer', () => {
 
     expect(res.status).toBe(200);
     const data = await res.json();
-    expect(data.sources['agent.model']).toBe('local');
+    expect(data.sources['agent.model']).toBe('runtime_override');
+    expect(data.sources['gateway.unknown_user_reply']).toBe('default');
     expect(data.sources['platforms.discord.token']).toBe('effective_only');
   });
 });
