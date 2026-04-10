@@ -14,7 +14,7 @@ const navItems = [
   { to: '/sessions', label: 'Sessions' },
   { to: '/conversations', label: 'Conversations' },
   { to: '/logs', label: 'Logs' },
-  { to: '/config', label: 'Config' },
+  { to: '/settings', label: 'Settings' },
 ];
 
 function Layout({ children }: { children: React.ReactNode }) {
@@ -57,6 +57,7 @@ export default function App() {
             <Route path="/sessions/:key" element={<SessionDetailPage />} />
             <Route path="/conversations" element={<ConversationsPage />} />
             <Route path="/logs" element={<LogsPage />} />
+            <Route path="/settings" element={<ConfigPage />} />
             <Route path="/config" element={<ConfigPage />} />
             <Route path="/chat" element={<ChatPage />} />
           </Routes>

@@ -1,8 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { api } from '../lib/api';
 import { useWebSocket } from '../hooks/useWebSocket';
-import { ModelSelector } from '../components/ModelSelector';
-import { PermissionGatesToggle } from '../components/PermissionGatesToggle';
 
 interface StatusData {
   heartbeat: {
@@ -76,12 +74,6 @@ export function StatusPage() {
           <div className="text-sm mb-1">Active Sessions: <span className="text-white font-medium">{data.sessions.length}</span></div>
           <div className="text-sm mb-1">Queue Depth: <span className="text-white font-medium">{data.queueSize}</span></div>
           <div className="text-sm">Uptime: <span className="text-white font-medium">{upH}h {upM}m</span></div>
-        </div>
-      </div>
-      <div className="mb-6">
-        <ModelSelector />
-        <div className="mt-4">
-          <PermissionGatesToggle />
         </div>
       </div>
       {data.sessions.length > 0 && (

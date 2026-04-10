@@ -1,11 +1,18 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { api } from '../lib/api';
+import { ModelSelector } from '../components/ModelSelector';
 
-const TABS = ['General', 'Agent', 'Users', 'Platforms', 'Scheduler', 'Memory', 'Media', 'Skills', 'Webhooks', 'Apple', 'Dashboard'] as const;
+const SETTINGS_GROUPS = [
+  { label: 'Core', tabs: ['Agent', 'General', 'Users'] },
+  { label: 'Interfaces', tabs: ['Platforms', 'Gateway', 'Media', 'Image Generation', 'Apple', 'Dashboard'] },
+  { label: 'Automation', tabs: ['Scheduler', 'Notifications', 'Webhooks', 'Heartbeat'] },
+  { label: 'Data & Tools', tabs: ['Memory', 'Skills'] },
+] as const;
 const TAB_KEYS: Record<string, string> = {
   General: '_root', Agent: 'agent', Users: 'users', Platforms: 'platforms',
-  Scheduler: 'scheduler', Memory: 'memory', Media: 'media', Skills: 'skills',
-  Webhooks: 'webhooks', Apple: 'apple', Dashboard: 'dashboard',
+  Scheduler: 'scheduler', Gateway: 'gateway', Memory: 'memory', Heartbeat: 'heartbeat',
+  Notifications: 'notifications', Media: 'media', 'Image Generation': 'image_generation',
+  Skills: 'skills', Webhooks: 'webhooks', Apple: 'apple', Dashboard: 'dashboard',
 };
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -60,9 +67,11 @@ function ConfigField({
   type?: string;
 }) {
   const editable = isEditableSource(source);
-  const displayValue = editable
-    ? getDisplayValue(localValue, effectiveValue)
-    : (localValue ?? '');
+  const displayValue = source === 'runtime_override'
+    ? (localValue ?? '')
+    : editable
+      ? getDisplayValue(localValue, effectiveValue)
+      : (localValue ?? '');
   const effectiveText = String(effectiveValue ?? '');
 
   if (typeof displayValue === 'boolean') {
@@ -114,6 +123,7 @@ function renderFields(
   path: string[],
   sourceMap: Record<string, string>,
   onChange: (path: string[], value: any) => void,
+  hiddenPaths: Set<string> = new Set(),
 ): ReactNode[] {
   const keys = Array.from(new Set([
     ...Object.keys(localObj ?? {}),
@@ -126,6 +136,10 @@ function renderFields(
     const localValue = localObj?.[key];
     const effectiveValue = effectiveObj?.[key];
 
+    if (hiddenPaths.has(pathKey)) {
+      return null;
+    }
+
     if (isPlainObject(localValue) || isPlainObject(effectiveValue)) {
       return (
         <div key={pathKey} className="mb-4 rounded-xl border border-gray-800 p-4">
@@ -136,6 +150,7 @@ function renderFields(
             fullPath,
             sourceMap,
             onChange,
+            hiddenPaths,
           )}
         </div>
       );
@@ -156,17 +171,66 @@ function renderFields(
   });
 }
 
+function PermissionGatesControl({
+  localConfig,
+  effectiveConfig,
+  source,
+  onChange,
+}: {
+  localConfig: Record<string, any>;
+  effectiveConfig: Record<string, any>;
+  source?: string;
+  onChange: (path: string[], value: any) => void;
+}) {
+  const localSkip = localConfig.agent?.admin_skip_permissions;
+  const effectiveSkip = effectiveConfig.agent?.admin_skip_permissions;
+  const enabled = typeof localSkip === 'boolean'
+    ? !localSkip
+    : !Boolean(effectiveSkip);
+
+  const handleToggle = () => {
+    const nextEnabled = !enabled;
+    onChange(['agent', 'admin_skip_permissions'], !nextEnabled);
+  };
+
+  return (
+    <div className="bg-gray-900 rounded-xl p-4 border border-gray-800">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <div className="text-sm font-medium text-gray-200">Permission gates</div>
+            <SourceBadge source={source} />
+          </div>
+          <div className="mt-1 text-xs text-gray-500">
+            {enabled ? 'Prompts before privileged operations.' : 'Privileged operations auto-approve for admins.'}
+          </div>
+          <div className="mt-2 text-xs text-yellow-400">Save local settings to persist. Restart required.</div>
+        </div>
+        <button
+          type="button"
+          onClick={handleToggle}
+          aria-pressed={enabled}
+          className={`relative h-6 w-11 rounded-full transition-colors ${enabled ? 'bg-green-600' : 'bg-gray-700'}`}
+        >
+          <span className={`absolute top-1 block h-4 w-4 rounded-full bg-white transition-transform ${enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function ConfigPage() {
   const [localConfig, setLocalConfig] = useState<Record<string, any> | null>(null);
   const [effectiveConfig, setEffectiveConfig] = useState<Record<string, any> | null>(null);
   const [sourceMap, setSourceMap] = useState<Record<string, string>>({});
-  const [tab, setTab] = useState<string>('General');
+  const [tab, setTab] = useState<string>('Agent');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [status, setStatus] = useState('');
+  const [dirty, setDirty] = useState(false);
 
-  const loadSettings = async (cancelled = false) => {
+  const loadSettings = async (cancelled = false, clearDirty = false) => {
     const loadLocal = api.getLocalSettings()
       .then(({ config }) => {
         if (!cancelled) setLocalConfig(config);
@@ -192,7 +256,10 @@ export function ConfigPage() {
       });
 
     await Promise.allSettled([loadLocal, loadEffective, loadMeta]);
-    if (!cancelled) setLoading(false);
+    if (!cancelled) {
+      setLoading(false);
+      if (clearDirty) setDirty(false);
+    }
   };
 
   useEffect(() => {
@@ -207,6 +274,8 @@ export function ConfigPage() {
   }, []);
 
   const handleChange = (path: string[], value: any) => {
+    setDirty(true);
+    setStatus('');
     setLocalConfig((prev) => {
       const next = JSON.parse(JSON.stringify(prev ?? {}));
       let obj = next;
@@ -225,7 +294,7 @@ export function ConfigPage() {
     setStatus('');
     try {
       await api.updateLocalSettings(localConfig);
-      await loadSettings();
+      await loadSettings(false, true);
       setStatus('Saved local settings');
     } catch (err) {
       setStatus(`Error: ${(err as Error).message}`);
@@ -253,6 +322,9 @@ export function ConfigPage() {
   const effectiveSection = tabKey === '_root'
     ? { data_dir: effectiveConfig.data_dir, log_level: effectiveConfig.log_level }
     : effectiveConfig[tabKey] ?? {};
+  const hiddenPaths = tabKey === 'agent'
+    ? new Set(['agent.admin_skip_permissions'])
+    : new Set<string>();
 
   return (
     <div>
@@ -270,9 +342,12 @@ export function ConfigPage() {
               {status}
             </span>
           )}
+          {dirty && !status && (
+            <span className="text-sm text-yellow-400">Unsaved local settings</span>
+          )}
           <button
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || !dirty}
             className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
           >
             {saving ? 'Saving...' : 'Save Local Settings'}
@@ -280,17 +355,36 @@ export function ConfigPage() {
         </div>
       </div>
 
-      <div className="mb-6 flex flex-wrap gap-1">
-        {TABS.map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`rounded-lg px-3 py-1.5 text-sm ${tab === t ? 'bg-blue-600' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}
-          >
-            {t}
-          </button>
+      <div className="mb-6 grid gap-3 xl:grid-cols-4">
+        {SETTINGS_GROUPS.map((group) => (
+          <div key={group.label} className="rounded-xl border border-gray-800 bg-gray-900 p-3">
+            <div className="mb-2 px-1 text-xs font-medium uppercase text-gray-500">{group.label}</div>
+            <div className="flex flex-wrap gap-1">
+              {group.tabs.map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setTab(t)}
+                  className={`rounded-lg px-3 py-1.5 text-sm ${tab === t ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
         ))}
       </div>
+
+      {tabKey === 'agent' && (
+        <div className="mb-6 grid gap-4 lg:grid-cols-2">
+          <ModelSelector />
+          <PermissionGatesControl
+            localConfig={localConfig}
+            effectiveConfig={effectiveConfig}
+            source={sourceMap['agent.admin_skip_permissions']}
+            onChange={handleChange}
+          />
+        </div>
+      )}
 
       <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
         <div className="mb-4 flex items-center gap-2 text-xs text-gray-500">
@@ -304,6 +398,7 @@ export function ConfigPage() {
           tabKey === '_root' ? [] : [tabKey],
           sourceMap,
           handleChange,
+          hiddenPaths,
         )}
       </div>
     </div>

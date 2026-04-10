@@ -33,7 +33,10 @@ export function ModelSelector() {
 
   return (
     <div className="bg-gray-900 rounded-xl p-4 border border-gray-800">
-      <div className="text-sm text-gray-400 mb-3">Default Model</div>
+      <div className="mb-3">
+        <div className="text-sm font-medium text-gray-200">Runtime model</div>
+        <div className="mt-1 text-xs text-gray-500">Applies immediately and overrides the local default.</div>
+      </div>
       <div className="flex items-center gap-3">
         <select
           value={model}
