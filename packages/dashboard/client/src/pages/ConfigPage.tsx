@@ -52,6 +52,7 @@ function SourceBadge({ source }: { source?: string }) {
 }
 
 function ConfigField({
+  id,
   label,
   localValue,
   effectiveValue,
@@ -59,6 +60,7 @@ function ConfigField({
   onChange,
   type = 'text',
 }: {
+  id: string;
   label: string;
   localValue: any;
   effectiveValue: any;
@@ -78,18 +80,20 @@ function ConfigField({
     return (
       <div className="flex items-center justify-between gap-3 border-b border-[color:var(--sd-border)] py-2 last:border-b-0">
         <div>
-          <div className="text-sm text-[color:var(--sd-text)]">{label}</div>
-          <div className="mt-1 text-xs text-[color:var(--sd-muted)]">
+          <label htmlFor={id} className="text-sm text-[color:var(--sd-text)]">{label}</label>
+          <div id={`${id}-effective`} className="mt-1 text-xs text-[color:var(--sd-muted)]">
             Effective value: {effectiveText}
           </div>
         </div>
         <div className="flex items-center gap-2">
           <SourceBadge source={source} />
           <input
+            id={id}
             type="checkbox"
             checked={Boolean(displayValue)}
             onChange={(e) => onChange(e.target.checked)}
             disabled={!editable}
+            aria-describedby={`${id}-effective`}
             className="rounded border-[color:var(--sd-control-border)] bg-[color:var(--sd-input)] disabled:cursor-not-allowed disabled:opacity-50"
             style={{ accentColor: 'var(--sd-accent)' }}
           />
@@ -101,17 +105,19 @@ function ConfigField({
   return (
     <div className="border-b border-[color:var(--sd-border)] py-3 last:border-b-0">
       <div className="mb-2 flex items-center justify-between gap-3">
-        <label className="text-sm text-[color:var(--sd-text)]">{label}</label>
+        <label htmlFor={id} className="text-sm text-[color:var(--sd-text)]">{label}</label>
         <SourceBadge source={source} />
       </div>
       <input
+        id={id}
         type={type}
         value={String(displayValue)}
         onChange={(e) => onChange(type === 'number' ? Number(e.target.value) : e.target.value)}
         readOnly={!editable}
+        aria-describedby={`${id}-effective`}
         className={`sd-input w-full text-sm ${editable ? '' : 'cursor-not-allowed opacity-60'}`}
       />
-      <div className="mt-1 text-xs text-[color:var(--sd-muted)]">
+      <div id={`${id}-effective`} className="mt-1 text-xs text-[color:var(--sd-muted)]">
         Effective value: {effectiveText}
       </div>
     </div>
@@ -158,9 +164,11 @@ function renderFields(
     }
 
     const type = typeof getDisplayValue(localValue, effectiveValue) === 'number' ? 'number' : 'text';
+    const fieldId = `config-field-${(pathKey || key).replace(/[^A-Za-z0-9_-]/g, '-')}`;
     return (
       <ConfigField
         key={pathKey}
+        id={fieldId}
         label={key}
         localValue={localValue}
         effectiveValue={effectiveValue}
@@ -211,10 +219,11 @@ function PermissionGatesControl({
           type="button"
           onClick={handleToggle}
           aria-pressed={enabled}
-          className="relative h-6 w-11 rounded-full transition-colors"
+          aria-label={enabled ? 'Disable permission gates' : 'Enable permission gates'}
+          className="relative h-8 w-14 rounded-full transition-colors"
           style={{ backgroundColor: enabled ? 'var(--sd-success)' : 'var(--sd-border-strong)' }}
         >
-          <span className={`absolute top-1 block h-4 w-4 rounded-full bg-white transition-transform ${enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+          <span className={`absolute top-1 block h-6 w-6 rounded-full bg-white transition-transform ${enabled ? 'translate-x-7' : 'translate-x-1'}`} />
         </button>
       </div>
     </Panel>
@@ -335,15 +344,17 @@ export function ConfigPage() {
         title="Settings"
         description="Edits write to config/local.yaml. Effective values stay read-only for reference."
         actions={(
-          <div className="flex items-center gap-3">
-            {status && (
-              <span className={`text-sm ${status.startsWith('Error') ? 'text-[color:var(--sd-danger)]' : 'text-[color:var(--sd-success)]'}`}>
-                {status}
-              </span>
-            )}
-            {dirty && !status && (
-              <span className="text-sm text-[color:var(--sd-warning)]">Unsaved local settings</span>
-            )}
+          <div className="flex flex-wrap items-center gap-3">
+            <div role="status" aria-live="polite">
+              {status && (
+                <span className={`text-sm ${status.startsWith('Error') ? 'text-[color:var(--sd-danger)]' : 'text-[color:var(--sd-success)]'}`}>
+                  {status}
+                </span>
+              )}
+              {dirty && !status && (
+                <span className="text-sm text-[color:var(--sd-warning)]">Unsaved local settings</span>
+              )}
+            </div>
             <Button
               onClick={handleSave}
               disabled={saving || !dirty}

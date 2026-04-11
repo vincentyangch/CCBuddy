@@ -35,15 +35,16 @@ export function ModelSelector() {
   return (
     <Panel className="p-4">
       <div className="mb-3">
-        <div className="text-sm font-medium text-[color:var(--sd-text)]">Runtime model</div>
+        <label htmlFor="runtime-model-select" className="text-sm font-medium text-[color:var(--sd-text)]">Runtime model</label>
         <div className="mt-1 text-xs text-[color:var(--sd-muted)]">Applies immediately and overrides the local default.</div>
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <select
+          id="runtime-model-select"
           value={model}
           onChange={e => handleChange(e.target.value)}
           disabled={saving}
-          className="sd-input flex-1 text-sm"
+          className="sd-input min-w-48 flex-1 text-sm"
         >
           {MODEL_OPTIONS.map(m => (
             <option key={m} value={m}>{m}</option>
@@ -53,7 +54,13 @@ export function ModelSelector() {
           {source === 'runtime_override' ? 'runtime override' : 'config default'}
         </StatusPill>
         {status && (
-          <span className={`text-xs ${status.startsWith('Error') ? 'text-[color:var(--sd-danger)]' : 'text-[color:var(--sd-success)]'}`}>{status}</span>
+          <span
+            role="status"
+            aria-live="polite"
+            className={`text-xs ${status.startsWith('Error') ? 'text-[color:var(--sd-danger)]' : 'text-[color:var(--sd-success)]'}`}
+          >
+            {status}
+          </span>
         )}
       </div>
     </Panel>

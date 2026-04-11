@@ -23,7 +23,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-[color:var(--sd-bg)] p-6 text-[color:var(--sd-text)]">
-      <Panel className="w-80 p-8">
+      <Panel className="w-full max-w-80 p-8">
         <form onSubmit={handleLogin}>
           <h1 className="mb-6 text-center font-serif text-xl font-bold">CCBuddy Dashboard</h1>
           <input
@@ -31,6 +31,8 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
             value={token}
             onChange={e => setToken(e.target.value)}
             placeholder="Enter dashboard token"
+            aria-label="Dashboard token"
+            aria-invalid={error ? 'true' : 'false'}
             className="sd-input mb-4 w-full text-sm"
             autoFocus
           />
