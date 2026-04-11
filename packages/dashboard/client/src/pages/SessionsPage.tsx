@@ -66,7 +66,7 @@ export function SessionsPage() {
               onClick={() => setFilter(f)}
               className={`rounded-[var(--sd-radius)] px-3 py-1 text-sm ${
                 filter === f
-                  ? 'bg-[color:var(--sd-accent)] text-[color:var(--sd-accent-ink)]'
+                  ? 'sd-button bg-[color:var(--sd-accent)] text-[color:var(--sd-accent-ink)]'
                   : 'sd-button-secondary'
               }`}
             >
