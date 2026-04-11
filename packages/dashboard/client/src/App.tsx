@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, NavLink, useLocation } from 'react-router-dom';
 import { AuthGuard } from './components/AuthGuard';
 import { ThemeToggle } from './components/ui';
 import { StatusPage } from './pages/StatusPage';
@@ -34,6 +34,9 @@ const navGroups = [
 ];
 
 function Layout({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
+  const isMigrated = location.pathname === '/';
+
   return (
     <div className="sd-shell">
       <nav className="sd-sidebar">
@@ -71,7 +74,7 @@ function Layout({ children }: { children: React.ReactNode }) {
           </button>
         </div>
       </nav>
-      <main className="sd-main">{children}</main>
+      <main className={`sd-main ${isMigrated ? '' : 'sd-main-legacy'}`}>{children}</main>
     </div>
   );
 }

@@ -248,6 +248,12 @@ select:focus-visible {
   }
 }
 
+/* Temporary rollout guard until all dashboard pages are Signal Deck migrated. */
+:root[data-theme="light"] .sd-main-legacy {
+  background: #10110f;
+  color: #f7f9f2;
+}
+
 @media (max-width: 900px) {
   .sd-shell {
     flex-direction: column;
