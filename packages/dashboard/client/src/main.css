@@ -172,6 +172,7 @@ select:focus-visible {
 :root[data-theme="light"] form.bg-gray-900 {
   background: #10110f;
   color: #f7f9f2;
+  --sd-focus: #c7f28f;
 }
 
 @media (max-width: 900px) {
