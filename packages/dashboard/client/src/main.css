@@ -12,11 +12,12 @@
   --sd-border-strong: #47503f;
   --sd-text: #f7f9f2;
   --sd-muted: #a7aea0;
-  --sd-subtle: #687060;
+  --sd-subtle: #b5bdae;
   --sd-accent: #8bdc5a;
   --sd-accent-ink: #102008;
   --sd-success: #8bdc5a;
   --sd-warning: #e5c452;
+  --sd-warning-ink: #e5c452;
   --sd-danger: #ff5d57;
   --sd-info: #56d6c9;
   --sd-focus: #c7f28f;
@@ -34,11 +35,12 @@
   --sd-border-strong: #77836e;
   --sd-text: #151713;
   --sd-muted: #50584a;
-  --sd-subtle: #7b8473;
+  --sd-subtle: #5c6455;
   --sd-accent: #2f6418;
   --sd-accent-ink: #f4f8ed;
   --sd-success: #2f6418;
-  --sd-warning: #9b7414;
+  --sd-warning: #7a5b11;
+  --sd-warning-ink: #7a5b11;
   --sd-danger: #b73835;
   --sd-info: #24756c;
   --sd-focus: #2f6418;
@@ -112,18 +114,45 @@ select:focus-visible {
   border-radius: var(--sd-radius);
   background: var(--sd-input);
   color: var(--sd-text);
+  min-height: 2.5rem;
+  padding: 0.625rem 0.875rem;
+  line-height: 1.25rem;
 }
 
 .sd-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+  padding: 0.625rem 0.875rem;
+  border: 1px solid transparent;
   border-radius: var(--sd-radius);
   background: var(--sd-accent);
   color: var(--sd-accent-ink);
   font-weight: 600;
+  cursor: pointer;
+  line-height: 1.25rem;
 }
 
 .sd-button-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+  padding: 0.625rem 0.875rem;
   border: 1px solid var(--sd-border);
   border-radius: var(--sd-radius);
   background: var(--sd-panel-raised);
   color: var(--sd-muted);
+  cursor: pointer;
+  line-height: 1.25rem;
+}
+
+.sd-input:disabled,
+.sd-button:disabled,
+.sd-button-secondary:disabled {
+  cursor: not-allowed;
+  opacity: 0.64;
 }
