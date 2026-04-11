@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { api } from '../lib/api';
 import { ModelSelector } from '../components/ModelSelector';
+import { Button, PageHeader, Panel, StatusPill } from '../components/ui';
 
 const SETTINGS_GROUPS = [
   { label: 'Core', tabs: ['Agent', 'General', 'Users'] },
@@ -35,19 +36,18 @@ function isEditableSource(source?: string) {
   return source !== 'env' && source !== 'effective_only';
 }
 
-function sourceClassName(source?: string) {
-  if (source === 'local') return 'bg-blue-950 text-blue-300 border-blue-900';
-  if (source === 'env') return 'bg-emerald-950 text-emerald-300 border-emerald-900';
-  if (source === 'effective_only') return 'bg-gray-800 text-gray-400 border-gray-700';
-  if (source === 'runtime_override') return 'bg-amber-950 text-amber-300 border-amber-900';
-  return 'bg-gray-900 text-gray-500 border-gray-800';
+function sourceTone(source?: string): 'success' | 'warning' | 'neutral' | 'info' {
+  if (source === 'local') return 'info';
+  if (source === 'env') return 'success';
+  if (source === 'runtime_override') return 'warning';
+  return 'neutral';
 }
 
 function SourceBadge({ source }: { source?: string }) {
   return (
-    <span className={`inline-flex items-center rounded border px-2 py-0.5 text-[11px] uppercase tracking-wide ${sourceClassName(source)}`}>
+    <StatusPill tone={sourceTone(source)}>
       {SOURCE_LABELS[source ?? ''] ?? source ?? 'Unknown'}
-    </span>
+    </StatusPill>
   );
 }
 
@@ -76,10 +76,10 @@ function ConfigField({
 
   if (typeof displayValue === 'boolean') {
     return (
-      <div className="flex items-center justify-between gap-3 border-b border-gray-800 py-2 last:border-b-0">
+      <div className="flex items-center justify-between gap-3 border-b border-[color:var(--sd-border)] py-2 last:border-b-0">
         <div>
-          <div className="text-sm text-white">{label}</div>
-          <div className="mt-1 text-xs text-gray-500">
+          <div className="text-sm text-[color:var(--sd-text)]">{label}</div>
+          <div className="mt-1 text-xs text-[color:var(--sd-muted)]">
             Effective value: {effectiveText}
           </div>
         </div>
@@ -90,7 +90,8 @@ function ConfigField({
             checked={Boolean(displayValue)}
             onChange={(e) => onChange(e.target.checked)}
             disabled={!editable}
-            className="rounded border-gray-600 bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded border-[color:var(--sd-control-border)] bg-[color:var(--sd-input)] disabled:cursor-not-allowed disabled:opacity-50"
+            style={{ accentColor: 'var(--sd-accent)' }}
           />
         </div>
       </div>
@@ -98,9 +99,9 @@ function ConfigField({
   }
 
   return (
-    <div className="border-b border-gray-800 py-3 last:border-b-0">
+    <div className="border-b border-[color:var(--sd-border)] py-3 last:border-b-0">
       <div className="mb-2 flex items-center justify-between gap-3">
-        <label className="text-sm text-white">{label}</label>
+        <label className="text-sm text-[color:var(--sd-text)]">{label}</label>
         <SourceBadge source={source} />
       </div>
       <input
@@ -108,9 +109,9 @@ function ConfigField({
         value={String(displayValue)}
         onChange={(e) => onChange(type === 'number' ? Number(e.target.value) : e.target.value)}
         readOnly={!editable}
-        className={`w-full rounded-lg border border-gray-700 px-3 py-2 text-sm ${editable ? 'bg-gray-800' : 'bg-gray-900 text-gray-500 cursor-not-allowed'}`}
+        className={`sd-input w-full text-sm ${editable ? '' : 'cursor-not-allowed opacity-60'}`}
       />
-      <div className="mt-1 text-xs text-gray-500">
+      <div className="mt-1 text-xs text-[color:var(--sd-muted)]">
         Effective value: {effectiveText}
       </div>
     </div>
@@ -142,8 +143,8 @@ function renderFields(
 
     if (isPlainObject(localValue) || isPlainObject(effectiveValue)) {
       return (
-        <div key={pathKey} className="mb-4 rounded-xl border border-gray-800 p-4">
-          <div className="mb-3 text-sm font-medium text-gray-200">{key}</div>
+        <div key={pathKey} className="mb-4 rounded-[var(--sd-radius)] border border-[color:var(--sd-border)] p-4">
+          <div className="mb-3 text-sm font-medium text-[color:var(--sd-muted)]">{key}</div>
           {renderFields(
             isPlainObject(localValue) ? localValue : {},
             isPlainObject(effectiveValue) ? effectiveValue : {},
@@ -194,28 +195,29 @@ function PermissionGatesControl({
   };
 
   return (
-    <div className="bg-gray-900 rounded-xl p-4 border border-gray-800">
+    <Panel className="p-4">
       <div className="flex items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <div className="text-sm font-medium text-gray-200">Permission gates</div>
+            <div className="text-sm font-medium text-[color:var(--sd-text)]">Permission gates</div>
             <SourceBadge source={source} />
           </div>
-          <div className="mt-1 text-xs text-gray-500">
+          <div className="mt-1 text-xs text-[color:var(--sd-muted)]">
             {enabled ? 'Prompts before privileged operations.' : 'Privileged operations auto-approve for admins.'}
           </div>
-          <div className="mt-2 text-xs text-yellow-400">Save local settings to persist. Restart required.</div>
+          <div className="mt-2 text-xs text-[color:var(--sd-warning)]">Save local settings to persist. Restart required.</div>
         </div>
         <button
           type="button"
           onClick={handleToggle}
           aria-pressed={enabled}
-          className={`relative h-6 w-11 rounded-full transition-colors ${enabled ? 'bg-green-600' : 'bg-gray-700'}`}
+          className="relative h-6 w-11 rounded-full transition-colors"
+          style={{ backgroundColor: enabled ? 'var(--sd-success)' : 'var(--sd-border-strong)' }}
         >
           <span className={`absolute top-1 block h-4 w-4 rounded-full bg-white transition-transform ${enabled ? 'translate-x-6' : 'translate-x-1'}`} />
         </button>
       </div>
-    </div>
+    </Panel>
   );
 }
 
@@ -304,14 +306,14 @@ export function ConfigPage() {
   };
 
   if (loading) {
-    return <p className="text-gray-400">Loading...</p>;
+    return <p className="text-[color:var(--sd-muted)]">Loading...</p>;
   }
 
   if (loadError || !localConfig || !effectiveConfig) {
     return (
-      <div className="rounded-xl border border-red-900 bg-red-950/40 p-4 text-sm text-red-200">
+      <Panel className="p-4 text-sm text-[color:var(--sd-danger)]">
         {loadError || 'Unable to load settings.'}
-      </div>
+      </Panel>
     );
   }
 
@@ -328,49 +330,50 @@ export function ConfigPage() {
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold">Settings</h2>
-          <p className="mt-1 text-sm text-gray-500">
-            Edits write to <code className="rounded bg-gray-800 px-1 py-0.5 text-gray-300">config/local.yaml</code>.
-            Effective values stay read-only for reference.
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {status && (
-            <span className={`text-sm ${status.startsWith('Error') ? 'text-red-400' : 'text-green-400'}`}>
-              {status}
-            </span>
-          )}
-          {dirty && !status && (
-            <span className="text-sm text-yellow-400">Unsaved local settings</span>
-          )}
-          <button
-            onClick={handleSave}
-            disabled={saving || !dirty}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-          >
-            {saving ? 'Saving...' : 'Save Local Settings'}
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        domain="Admin"
+        title="Settings"
+        description="Edits write to config/local.yaml. Effective values stay read-only for reference."
+        actions={(
+          <div className="flex items-center gap-3">
+            {status && (
+              <span className={`text-sm ${status.startsWith('Error') ? 'text-[color:var(--sd-danger)]' : 'text-[color:var(--sd-success)]'}`}>
+                {status}
+              </span>
+            )}
+            {dirty && !status && (
+              <span className="text-sm text-[color:var(--sd-warning)]">Unsaved local settings</span>
+            )}
+            <Button
+              onClick={handleSave}
+              disabled={saving || !dirty}
+            >
+              {saving ? 'Saving...' : 'Save Local Settings'}
+            </Button>
+          </div>
+        )}
+      />
 
       <div className="mb-6 grid gap-3 xl:grid-cols-4">
         {SETTINGS_GROUPS.map((group) => (
-          <div key={group.label} className="rounded-xl border border-gray-800 bg-gray-900 p-3">
-            <div className="mb-2 px-1 text-xs font-medium uppercase text-gray-500">{group.label}</div>
+          <Panel key={group.label} className="p-3">
+            <div className="mb-2 px-1 text-xs font-medium uppercase text-[color:var(--sd-subtle)]">{group.label}</div>
             <div className="flex flex-wrap gap-1">
               {group.tabs.map((t) => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
-                  className={`rounded-lg px-3 py-1.5 text-sm ${tab === t ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}
+                  className={`rounded-[var(--sd-radius)] px-3 py-1.5 text-sm ${
+                    tab === t
+                      ? 'sd-button min-h-0 bg-[color:var(--sd-accent)] text-[color:var(--sd-accent-ink)]'
+                      : 'sd-button-secondary min-h-0 hover:text-[color:var(--sd-text)]'
+                  }`}
                 >
                   {t}
                 </button>
               ))}
             </div>
-          </div>
+          </Panel>
         ))}
       </div>
 
@@ -386,8 +389,8 @@ export function ConfigPage() {
         </div>
       )}
 
-      <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
-        <div className="mb-4 flex items-center gap-2 text-xs text-gray-500">
+      <Panel className="p-6">
+        <div className="mb-4 flex items-center gap-2 text-xs text-[color:var(--sd-muted)]">
           <span>Local edits only</span>
           <span>•</span>
           <span>Effective values below are read-only</span>
@@ -400,7 +403,7 @@ export function ConfigPage() {
           handleChange,
           hiddenPaths,
         )}
-      </div>
+      </Panel>
     </div>
   );
 }

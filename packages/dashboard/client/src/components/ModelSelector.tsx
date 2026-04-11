@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
+import { Panel, StatusPill } from './ui';
 
 const MODEL_OPTIONS = ['sonnet', 'opus', 'haiku', 'opus[1m]', 'sonnet[1m]', 'opusplan'];
 
@@ -32,29 +33,29 @@ export function ModelSelector() {
   };
 
   return (
-    <div className="bg-gray-900 rounded-xl p-4 border border-gray-800">
+    <Panel className="p-4">
       <div className="mb-3">
-        <div className="text-sm font-medium text-gray-200">Runtime model</div>
-        <div className="mt-1 text-xs text-gray-500">Applies immediately and overrides the local default.</div>
+        <div className="text-sm font-medium text-[color:var(--sd-text)]">Runtime model</div>
+        <div className="mt-1 text-xs text-[color:var(--sd-muted)]">Applies immediately and overrides the local default.</div>
       </div>
       <div className="flex items-center gap-3">
         <select
           value={model}
           onChange={e => handleChange(e.target.value)}
           disabled={saving}
-          className="flex-1 px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white disabled:opacity-50"
+          className="sd-input flex-1 text-sm"
         >
           {MODEL_OPTIONS.map(m => (
             <option key={m} value={m}>{m}</option>
           ))}
         </select>
-        <span className={`text-xs px-2 py-1 rounded ${source === 'runtime_override' ? 'bg-yellow-900 text-yellow-300' : 'bg-gray-800 text-gray-500'}`}>
+        <StatusPill tone={source === 'runtime_override' ? 'warning' : 'neutral'}>
           {source === 'runtime_override' ? 'runtime override' : 'config default'}
-        </span>
+        </StatusPill>
         {status && (
-          <span className={`text-xs ${status.startsWith('Error') ? 'text-red-400' : 'text-green-400'}`}>{status}</span>
+          <span className={`text-xs ${status.startsWith('Error') ? 'text-[color:var(--sd-danger)]' : 'text-[color:var(--sd-success)]'}`}>{status}</span>
         )}
       </div>
-    </div>
+    </Panel>
   );
 }

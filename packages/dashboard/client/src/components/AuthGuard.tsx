@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api } from '../lib/api';
+import { Panel } from './ui';
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const [authed, setAuthed] = useState(() => !!localStorage.getItem('dashboard_token'));
@@ -21,22 +22,24 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center">
-      <form onSubmit={handleLogin} className="bg-gray-900 p-8 rounded-xl border border-gray-800 w-80">
-        <h1 className="text-xl font-bold mb-6 text-center">CCBuddy Dashboard</h1>
-        <input
-          type="password"
-          value={token}
-          onChange={e => setToken(e.target.value)}
-          placeholder="Enter dashboard token"
-          className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg mb-4 text-sm"
-          autoFocus
-        />
-        {error && <p className="text-red-400 text-sm mb-4">{error}</p>}
-        <button type="submit" className="w-full py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium">
-          Sign In
-        </button>
-      </form>
+    <div className="flex min-h-screen items-center justify-center bg-[color:var(--sd-bg)] p-6 text-[color:var(--sd-text)]">
+      <Panel className="w-80 p-8">
+        <form onSubmit={handleLogin}>
+          <h1 className="mb-6 text-center font-serif text-xl font-bold">CCBuddy Dashboard</h1>
+          <input
+            type="password"
+            value={token}
+            onChange={e => setToken(e.target.value)}
+            placeholder="Enter dashboard token"
+            className="sd-input mb-4 w-full text-sm"
+            autoFocus
+          />
+          {error && <p className="mb-4 text-sm text-[color:var(--sd-danger)]">{error}</p>}
+          <button type="submit" className="sd-button w-full text-sm">
+            Sign In
+          </button>
+        </form>
+      </Panel>
     </div>
   );
 }
