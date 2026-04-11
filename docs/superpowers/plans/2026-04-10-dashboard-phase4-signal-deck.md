@@ -875,10 +875,20 @@ git commit -m "feat(dashboard): apply signal deck operations pages"
 ## Task 5: Workspace Pages
 
 **Files:**
+- Modify: `packages/dashboard/client/src/App.tsx`
 - Modify: `packages/dashboard/client/src/pages/ChatPage.tsx`
 - Modify: `packages/dashboard/client/src/components/ChatSidebar.tsx`
 - Modify: `packages/dashboard/client/src/components/ChatInput.tsx`
 - Modify: `packages/dashboard/client/src/pages/ConversationsPage.tsx`
+
+- [ ] **Step 0: Mark Workspace routes as migrated**
+
+Update the migrated route guard in `packages/dashboard/client/src/App.tsx` so these routes no longer receive `sd-main-legacy`:
+
+- `/chat`
+- `/conversations`
+
+Use the same normalized `pathname` value introduced by the Operations migration.
 
 - [ ] **Step 1: Migrate Chat shell**
 
@@ -950,7 +960,8 @@ Expected: all PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add packages/dashboard/client/src/pages/ChatPage.tsx \
+git add packages/dashboard/client/src/App.tsx \
+  packages/dashboard/client/src/pages/ChatPage.tsx \
   packages/dashboard/client/src/components/ChatSidebar.tsx \
   packages/dashboard/client/src/components/ChatInput.tsx \
   packages/dashboard/client/src/pages/ConversationsPage.tsx
@@ -962,9 +973,19 @@ git commit -m "feat(dashboard): apply signal deck workspace pages"
 ## Task 6: Settings And Auth
 
 **Files:**
+- Modify: `packages/dashboard/client/src/App.tsx`
 - Modify: `packages/dashboard/client/src/pages/ConfigPage.tsx`
 - Modify: `packages/dashboard/client/src/components/ModelSelector.tsx`
 - Modify: `packages/dashboard/client/src/components/AuthGuard.tsx`
+
+- [ ] **Step 0: Mark Settings routes as migrated**
+
+Update the migrated route guard in `packages/dashboard/client/src/App.tsx` so these routes no longer receive `sd-main-legacy`:
+
+- `/settings`
+- `/config`
+
+Use the same normalized `pathname` value introduced by the Operations migration.
 
 - [ ] **Step 1: Migrate Settings page shell**
 
@@ -1028,7 +1049,8 @@ Expected: all PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add packages/dashboard/client/src/pages/ConfigPage.tsx \
+git add packages/dashboard/client/src/App.tsx \
+  packages/dashboard/client/src/pages/ConfigPage.tsx \
   packages/dashboard/client/src/components/ModelSelector.tsx \
   packages/dashboard/client/src/components/AuthGuard.tsx
 git commit -m "feat(dashboard): apply signal deck settings and auth"
