@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { api } from '../lib/api';
 import { useWebSocket } from '../hooks/useWebSocket';
+import { Button, PageHeader, Panel } from '../components/ui';
 
 const LOG_FILES = ['stdout', 'stderr', 'app'] as const;
 
@@ -29,33 +30,42 @@ export function LogsPage() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-3rem)]">
-      <div className="mb-4 flex items-end gap-3">
-        <div>
-          <div className="text-xs font-medium uppercase tracking-wide text-gray-500">Operations</div>
-          <h2 className="mt-1 text-2xl font-bold">Logs</h2>
-          <p className="mt-1 text-sm text-gray-500">Process output for startup, adapters, and agent work.</p>
-        </div>
-        <div className="flex gap-1 ml-4">
-          {LOG_FILES.map(f => (
-            <button key={f} onClick={() => setFile(f)}
-              className={`px-3 py-1 rounded text-sm ${file === f ? 'bg-blue-600' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>
-              {f}
-            </button>
-          ))}
-        </div>
-        <input placeholder="Filter..." value={filter} onChange={e => setFilter(e.target.value)}
-          className="px-3 py-1 bg-gray-800 border border-gray-700 rounded text-sm ml-auto w-48" />
-        <button onClick={() => setAutoScroll(!autoScroll)}
-          className={`px-3 py-1 rounded text-sm ${autoScroll ? 'bg-green-700' : 'bg-gray-800 text-gray-400'}`}>
-          {autoScroll ? 'Auto-scroll ON' : 'Auto-scroll OFF'}
-        </button>
-      </div>
-      <div className="flex-1 bg-gray-900 rounded-xl border border-gray-800 overflow-auto font-mono text-xs p-3">
+      <PageHeader
+        domain="Operations"
+        title="Logs"
+        description="Process output for startup, adapters, and agent work."
+        actions={(
+          <>
+            <div className="flex flex-wrap gap-1">
+              {LOG_FILES.map(f => (
+                <Button
+                  key={f}
+                  onClick={() => setFile(f)}
+                  variant={file === f ? 'primary' : 'secondary'}
+                  className="px-3 py-1 text-sm"
+                >
+                  {f}
+                </Button>
+              ))}
+            </div>
+            <input
+              placeholder="Filter..."
+              value={filter}
+              onChange={e => setFilter(e.target.value)}
+              className="sd-input w-48 text-sm"
+            />
+            <Button onClick={() => setAutoScroll(!autoScroll)} variant={autoScroll ? 'primary' : 'secondary'} className="px-3 py-1 text-sm">
+              {autoScroll ? 'Auto-scroll ON' : 'Auto-scroll OFF'}
+            </Button>
+          </>
+        )}
+      />
+      <Panel className="flex-1 overflow-auto p-3 font-mono text-xs">
         {filtered.map((line, i) => (
-          <div key={i} className="py-0.5 hover:bg-gray-800/50 whitespace-pre-wrap">{line}</div>
+          <div key={i} className="whitespace-pre-wrap py-0.5 hover:bg-[color:var(--sd-panel-raised)]">{line}</div>
         ))}
         <div ref={endRef} />
-      </div>
+      </Panel>
     </div>
   );
 }

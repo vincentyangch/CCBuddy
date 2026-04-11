@@ -1,12 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
-
-const STATUS_COLORS: Record<string, string> = {
-  active: 'bg-green-500',
-  paused: 'bg-yellow-500',
-  archived: 'bg-gray-500',
-};
+import { PageHeader, Panel, StatusPill } from '../components/ui';
 
 const STATUS_LABELS: Record<string, string> = {
   active: 'Active',
@@ -15,6 +10,12 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const FILTERS = ['all', 'active', 'paused', 'archived'] as const;
+
+function statusTone(status: string): 'success' | 'warning' | 'neutral' {
+  if (status === 'active') return 'success';
+  if (status === 'paused') return 'warning';
+  return 'neutral';
+}
 
 function historyConversationId(session: any, runtimeKey: string): string {
   const isGroup = session.is_group_channel ?? session.isGroupChannel;
@@ -51,102 +52,100 @@ export function SessionsPage() {
 
   return (
     <div>
-      <div className="mb-6">
-        <div className="text-xs font-medium uppercase tracking-wide text-gray-500">Operations</div>
-        <h2 className="mt-1 text-2xl font-bold">Runtime Sessions</h2>
-        <p className="mt-1 text-sm text-gray-500">Agent runtime records for status, model use, cleanup, and event replay.</p>
-      </div>
+      <PageHeader
+        domain="Operations"
+        title="Runtime Sessions"
+        description="Agent runtime records for status, model use, cleanup, and event replay."
+      />
 
-      {/* Filter tabs */}
-      <div className="flex gap-2 mb-4">
-        {FILTERS.map(f => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`px-3 py-1 rounded text-sm ${
-              filter === f
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-            }`}
-          >
-            {f.charAt(0).toUpperCase() + f.slice(1)}
-          </button>
-        ))}
-      </div>
-
-      {sessions.length === 0 ? (
-        <p className="text-gray-400">No runtime sessions found</p>
-      ) : (
-        <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-800/50">
-              <tr>
-                <th className="px-4 py-3 text-left text-gray-400 font-medium">Status</th>
-                <th className="px-4 py-3 text-left text-gray-400 font-medium">Runtime Key</th>
-                <th className="px-4 py-3 text-left text-gray-400 font-medium">Type</th>
-                <th className="px-4 py-3 text-left text-gray-400 font-medium">Model</th>
-                <th className="px-4 py-3 text-left text-gray-400 font-medium">Last Activity</th>
-                <th className="px-4 py-3 text-left text-gray-400 font-medium">History</th>
-                <th className="px-4 py-3 text-left text-gray-400 font-medium"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {sessions.map((s: any) => {
-                const status = s.status ?? 'active';
-                const key = s.session_key ?? s.sessionKey;
-                return (
-                  <tr key={key} className="border-t border-gray-800 hover:bg-gray-800/30">
-                    <td className="px-4 py-3">
-                      <span className="flex items-center gap-2">
-                        <span className={`w-2 h-2 rounded-full ${STATUS_COLORS[status] ?? 'bg-gray-500'}`} />
-                        <span className="text-xs text-gray-400">{STATUS_LABELS[status] ?? status}</span>
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Link
-                        to={`/sessions/${encodeURIComponent(key)}`}
-                        className="text-blue-400 hover:underline font-mono"
-                      >
-                        {key}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3 text-gray-400">
-                      {s.is_group_channel ?? s.isGroupChannel ? 'Group' : 'DM'}
-                    </td>
-                    <td className="px-4 py-3">
-                      {s.model ? (
-                        <span className="text-xs px-2 py-0.5 rounded bg-blue-900 text-blue-300">{s.model}</span>
-                      ) : (
-                        <span className="text-gray-600">-</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-gray-400">
-                      {new Date(s.last_activity ?? s.lastActivity).toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3">
-                      <Link
-                        to={`/conversations?sessionId=${encodeURIComponent(historyConversationId(s, key))}`}
-                        className="text-xs text-blue-400 hover:underline"
-                      >
-                        History
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3">
-                      <button
-                        onClick={() => handleDelete(key)}
-                        disabled={deleting === key}
-                        className="text-xs text-red-400 hover:text-red-300 disabled:opacity-50"
-                      >
-                        {deleting === key ? '...' : 'Delete'}
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+      <Panel className="overflow-hidden">
+        <div className="flex flex-wrap gap-2 border-b border-[color:var(--sd-border)] p-4">
+          {FILTERS.map(f => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`rounded-[var(--sd-radius)] px-3 py-1 text-sm ${
+                filter === f
+                  ? 'bg-[color:var(--sd-accent)] text-[color:var(--sd-accent-ink)]'
+                  : 'sd-button-secondary'
+              }`}
+            >
+              {f.charAt(0).toUpperCase() + f.slice(1)}
+            </button>
+          ))}
         </div>
-      )}
+
+        {sessions.length === 0 ? (
+          <p className="p-4 text-sm text-[color:var(--sd-muted)]">No runtime sessions found</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-[color:var(--sd-panel-raised)]">
+                <tr>
+                  <th className="px-4 py-3 text-left font-medium text-[color:var(--sd-muted)]">Status</th>
+                  <th className="px-4 py-3 text-left font-medium text-[color:var(--sd-muted)]">Runtime Key</th>
+                  <th className="px-4 py-3 text-left font-medium text-[color:var(--sd-muted)]">Type</th>
+                  <th className="px-4 py-3 text-left font-medium text-[color:var(--sd-muted)]">Model</th>
+                  <th className="px-4 py-3 text-left font-medium text-[color:var(--sd-muted)]">Last Activity</th>
+                  <th className="px-4 py-3 text-left font-medium text-[color:var(--sd-muted)]">History</th>
+                  <th className="px-4 py-3 text-left font-medium text-[color:var(--sd-muted)]"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {sessions.map((s: any) => {
+                  const status = s.status ?? 'active';
+                  const key = s.session_key ?? s.sessionKey;
+                  return (
+                    <tr key={key} className="border-t border-[color:var(--sd-border)] hover:bg-[color:var(--sd-panel-raised)]">
+                      <td className="px-4 py-3">
+                        <StatusPill tone={statusTone(status)}>{STATUS_LABELS[status] ?? status}</StatusPill>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Link
+                          to={`/sessions/${encodeURIComponent(key)}`}
+                          className="font-mono text-[color:var(--sd-accent)] hover:underline"
+                        >
+                          {key}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-3 text-[color:var(--sd-muted)]">
+                        {s.is_group_channel ?? s.isGroupChannel ? 'Group' : 'DM'}
+                      </td>
+                      <td className="px-4 py-3">
+                        {s.model ? (
+                          <span className="rounded-[var(--sd-radius)] border border-[color:var(--sd-border)] bg-[color:var(--sd-panel-raised)] px-2 py-0.5 text-xs text-[color:var(--sd-info)]">{s.model}</span>
+                        ) : (
+                          <span className="text-[color:var(--sd-subtle)]">-</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-[color:var(--sd-muted)]">
+                        {new Date(s.last_activity ?? s.lastActivity).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Link
+                          to={`/conversations?sessionId=${encodeURIComponent(historyConversationId(s, key))}`}
+                          className="text-xs text-[color:var(--sd-accent)] hover:underline"
+                        >
+                          History
+                        </Link>
+                      </td>
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => handleDelete(key)}
+                          disabled={deleting === key}
+                          className="text-xs text-[color:var(--sd-danger)] hover:underline disabled:opacity-50"
+                        >
+                          {deleting === key ? '...' : 'Delete'}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Panel>
     </div>
   );
 }

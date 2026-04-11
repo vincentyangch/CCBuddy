@@ -1,15 +1,16 @@
 import { useState } from 'react';
+import { Panel } from './ui';
 
 export function ThinkingBlock({ content }: { content: string }) {
   const [expanded, setExpanded] = useState(false);
   return (
-    <div className="my-2 border border-gray-700 rounded-lg overflow-hidden">
+    <Panel className="my-2 overflow-hidden">
       <button onClick={() => setExpanded(!expanded)}
-        className="w-full px-3 py-2 text-left text-sm text-gray-400 bg-gray-800/50 hover:bg-gray-800 flex justify-between items-center">
+        className="flex w-full items-center justify-between bg-[color:var(--sd-panel-raised)] px-3 py-2 text-left text-sm text-[color:var(--sd-muted)] hover:text-[color:var(--sd-text)]">
         <span>Thinking...</span>
         <span>{expanded ? '▼' : '▶'}</span>
       </button>
-      {expanded && <pre className="px-3 py-2 text-xs text-gray-300 whitespace-pre-wrap max-h-96 overflow-auto">{content}</pre>}
-    </div>
+      {expanded && <pre className="max-h-96 overflow-auto whitespace-pre-wrap px-3 py-2 text-xs text-[color:var(--sd-text)]">{content}</pre>}
+    </Panel>
   );
 }
