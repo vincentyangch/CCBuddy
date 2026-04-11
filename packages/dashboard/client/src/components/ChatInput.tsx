@@ -74,7 +74,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
           {attachments.map((a, i) => (
             <div key={i} className="flex items-center gap-1 rounded-[var(--sd-radius)] border border-[color:var(--sd-border)] bg-[color:var(--sd-panel-raised)] px-2 py-1 text-xs text-[color:var(--sd-muted)]">
               <span>{a.filename}</span>
-              <button onClick={() => removeAttachment(i)} className="text-[color:var(--sd-subtle)] hover:text-[color:var(--sd-danger)]">×</button>
+              <button onClick={() => removeAttachment(i)} className="text-[color:var(--sd-subtle)] hover:text-[color:var(--sd-danger)]" aria-label={`Remove attachment ${a.filename}`}>×</button>
             </div>
           ))}
         </div>
@@ -90,13 +90,19 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
           className="sd-input flex-1 resize-none text-sm placeholder:text-[color:var(--sd-subtle)]"
         />
         <input ref={fileRef} type="file" multiple className="hidden" onChange={handleFileSelect} />
-        <Button onClick={() => fileRef.current?.click()} variant="secondary" className="h-10 w-10 min-h-0 p-0" title="Attach file">
+        <Button onClick={() => fileRef.current?.click()} variant="secondary" className="h-10 w-10 min-h-0 p-0" title="Attach file" aria-label="Attach file">
           📎
         </Button>
-        <Button onClick={toggleRecording} variant="secondary" className={`h-10 w-10 min-h-0 p-0 ${recording ? 'animate-pulse border-[color:var(--sd-danger)] bg-[color:var(--sd-danger)] text-white' : ''}`} title="Record voice">
+        <Button
+          onClick={toggleRecording}
+          variant="secondary"
+          className={`h-10 w-10 min-h-0 p-0 ${recording ? 'animate-pulse border-[color:var(--sd-danger)] bg-[color:var(--sd-danger)] text-white' : ''}`}
+          title={recording ? 'Stop recording' : 'Record voice'}
+          aria-label={recording ? 'Stop recording' : 'Record voice'}
+        >
           🎤
         </Button>
-        <Button onClick={handleSend} disabled={disabled || (!text.trim() && attachments.length === 0)} className="h-10 w-10 min-h-0 p-0">
+        <Button onClick={handleSend} disabled={disabled || (!text.trim() && attachments.length === 0)} className="h-10 w-10 min-h-0 p-0" aria-label="Send message">
           →
         </Button>
       </div>

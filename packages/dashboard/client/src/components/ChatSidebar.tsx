@@ -47,7 +47,7 @@ export function ChatSidebar({ activeSessionId, pendingChannelId, onSelectSession
   }, [refreshKey]);
 
   return (
-    <div className="flex w-56 flex-col border-r border-[color:var(--sd-border)] bg-[color:var(--sd-panel)] p-3">
+    <div className="flex max-h-64 w-full flex-col border-b border-[color:var(--sd-border)] bg-[color:var(--sd-panel)] p-3 lg:max-h-none lg:w-56 lg:border-b-0 lg:border-r">
       <Button onClick={onNewChat} className="mb-3 w-full px-3 py-2 text-sm">
         + New Chat
       </Button>
@@ -64,19 +64,26 @@ export function ChatSidebar({ activeSessionId, pendingChannelId, onSelectSession
         {sessions.map(s => (
           <div
             key={s.sessionId}
-            className={`group relative w-full cursor-pointer truncate rounded-[var(--sd-radius)] px-3 py-2 text-left text-xs ${
+            className={`flex w-full items-stretch gap-1 rounded-[var(--sd-radius)] ${
               s.sessionId === activeSessionId
                 ? 'border border-[color:var(--sd-accent)] bg-[color-mix(in_srgb,var(--sd-accent)_14%,transparent)] text-[color:var(--sd-text)]'
                 : 'text-[color:var(--sd-muted)] hover:bg-[color:var(--sd-panel-raised)] hover:text-[color:var(--sd-text)]'
             }`}
-            onClick={() => onSelectSession(s)}
           >
-            <div className="truncate pr-5">{s.lastMessage || 'New conversation'}</div>
-            <div className="mt-0.5 text-[10px] text-[color:var(--sd-subtle)]">{new Date(s.timestamp).toLocaleDateString()}</div>
+            <button
+              type="button"
+              onClick={() => onSelectSession(s)}
+              className="min-w-0 flex-1 rounded-[var(--sd-radius)] px-3 py-2 text-left text-xs text-inherit"
+            >
+              <div className="truncate">{s.lastMessage || 'New conversation'}</div>
+              <div className="mt-0.5 text-[10px] text-[color:var(--sd-subtle)]">{new Date(s.timestamp).toLocaleDateString()}</div>
+            </button>
             {onDeleteSession && (
               <button
-                onClick={(e) => { e.stopPropagation(); onDeleteSession(s.sessionId); }}
-                className="absolute right-1.5 top-1.5 hidden text-xs text-[color:var(--sd-subtle)] hover:text-[color:var(--sd-danger)] group-hover:block"
+                type="button"
+                onClick={() => onDeleteSession(s.sessionId)}
+                className="flex w-8 flex-none items-center justify-center rounded-[var(--sd-radius)] text-xs text-[color:var(--sd-subtle)] hover:bg-[color:var(--sd-panel-raised)] hover:text-[color:var(--sd-danger)]"
+                aria-label={`Delete chat ${s.lastMessage || s.sessionId}`}
                 title="Delete chat"
               >
                 ×

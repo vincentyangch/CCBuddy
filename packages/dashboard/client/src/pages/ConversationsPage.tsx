@@ -56,16 +56,16 @@ export function ConversationsPage() {
         description="Stored message history across users, platforms, and conversation IDs."
       />
       <div className="mb-4 flex flex-wrap gap-3">
-        <input placeholder="Filter user" value={filters.user}
+        <input aria-label="Filter by user" placeholder="Filter user" value={filters.user}
           onChange={e => updateFilter('user', e.target.value)}
           className="sd-input w-40 text-sm" />
-        <input placeholder="Filter platform" value={filters.platform}
+        <input aria-label="Filter by platform" placeholder="Filter platform" value={filters.platform}
           onChange={e => updateFilter('platform', e.target.value)}
           className="sd-input w-40 text-sm" />
-        <input placeholder="Conversation ID" value={filters.conversationId}
+        <input aria-label="Filter by conversation ID" placeholder="Conversation ID" value={filters.conversationId}
           onChange={e => updateFilter('conversationId', e.target.value)}
           className="sd-input w-56 text-sm" />
-        <input placeholder="Search..." value={filters.search}
+        <input aria-label="Search message history" placeholder="Search..." value={filters.search}
           onChange={e => updateFilter('search', e.target.value)}
           className="sd-input min-w-48 flex-1 text-sm" />
       </div>
@@ -77,9 +77,9 @@ export function ConversationsPage() {
               <span>{m.role === 'user' ? '👤' : '🤖'} {m.userId}</span>
               <span>{m.platform}</span>
               <span>{new Date(m.timestamp).toLocaleString()}</span>
-              <span className="font-mono">Conversation {m.sessionId}</span>
+              <span className="min-w-0 break-all font-mono">Conversation {m.sessionId}</span>
             </div>
-            <div className="text-sm whitespace-pre-wrap line-clamp-3">{m.content}</div>
+            <div className="text-sm whitespace-pre-wrap break-words line-clamp-3">{m.content}</div>
           </Panel>
         ))}
       </div>

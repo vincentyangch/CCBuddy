@@ -136,9 +136,9 @@ export function ChatPage() {
   }, [entries]);
 
   return (
-    <div className="flex h-[calc(100vh-3rem)] overflow-hidden rounded-[var(--sd-radius)] border border-[color:var(--sd-border)] bg-[color:var(--sd-panel)]">
+    <div className="flex h-[calc(100vh-3rem)] flex-col overflow-hidden rounded-[var(--sd-radius)] border border-[color:var(--sd-border)] bg-[color:var(--sd-panel)] lg:flex-row">
       <ChatSidebar activeSessionId={activeSessionId} pendingChannelId={activeSessionId ? null : channelId} onSelectSession={handleSelectSession} onNewChat={handleNewChat} onDeleteSession={handleDeleteSession} refreshKey={sidebarRefresh} />
-      <div className="flex-1 flex flex-col">
+      <div className="flex min-h-0 flex-1 flex-col">
         <div className="border-b border-[color:var(--sd-border)] px-4 py-3">
           <div className="flex items-center justify-between">
             <div>
