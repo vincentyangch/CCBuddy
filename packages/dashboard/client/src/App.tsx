@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
 import { AuthGuard } from './components/AuthGuard';
+import { ThemeToggle } from './components/ui';
 import { StatusPage } from './pages/StatusPage';
 import { SessionsPage } from './pages/SessionsPage';
 import { SessionDetailPage } from './pages/SessionDetailPage';
@@ -34,12 +35,14 @@ const navGroups = [
 
 function Layout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen flex">
-      <nav className="w-48 bg-gray-900 border-r border-gray-800 p-4 flex flex-col gap-1">
-        <h1 className="text-lg font-bold mb-4 px-2">CCBuddy</h1>
+    <div className="sd-shell">
+      <nav className="sd-sidebar">
+        <h1 className="mb-5 border border-[color:var(--sd-border)] px-3 py-3 font-mono text-sm font-bold text-[color:var(--sd-accent)]">
+          CCBuddy
+        </h1>
         {navGroups.map(group => (
           <div key={group.label} className="mb-3">
-            <div className="mb-1 px-2 text-[11px] font-medium uppercase tracking-wide text-gray-600">
+            <div className="mb-1 px-2 text-[11px] font-medium uppercase tracking-wide text-[color:var(--sd-subtle)]">
               {group.label}
             </div>
             <div className="flex flex-col gap-1">
@@ -49,7 +52,7 @@ function Layout({ children }: { children: React.ReactNode }) {
                   to={item.to}
                   end={item.to === '/'}
                   className={({ isActive }) =>
-                    `px-3 py-2 rounded-lg text-sm ${isActive ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`
+                    `rounded-[var(--sd-radius)] px-3 py-2 text-sm ${isActive ? 'bg-[color:var(--sd-accent)] text-[color:var(--sd-accent-ink)]' : 'text-[color:var(--sd-muted)] hover:bg-[color:var(--sd-panel-raised)] hover:text-[color:var(--sd-text)]'}`
                   }
                 >
                   {item.label}
@@ -58,14 +61,17 @@ function Layout({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         ))}
-        <button
-          onClick={() => { localStorage.removeItem('dashboard_token'); window.location.reload(); }}
-          className="mt-auto px-3 py-2 rounded-lg text-sm text-gray-500 hover:text-red-400 hover:bg-gray-800"
-        >
-          Sign Out
-        </button>
+        <div className="mt-auto flex flex-col gap-2">
+          <ThemeToggle />
+          <button
+            onClick={() => { localStorage.removeItem('dashboard_token'); window.location.reload(); }}
+            className="sd-button-secondary px-3 py-2 text-left text-sm hover:text-[color:var(--sd-danger)]"
+          >
+            Sign Out
+          </button>
+        </div>
       </nav>
-      <main className="flex-1 p-6 overflow-auto">{children}</main>
+      <main className="sd-main">{children}</main>
     </div>
   );
 }

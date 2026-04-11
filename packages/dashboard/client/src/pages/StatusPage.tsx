@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useWebSocket } from '../hooks/useWebSocket';
+import { PageHeader, Panel, StatusPill } from '../components/ui';
 
 interface StatusData {
   heartbeat: {
@@ -14,21 +15,29 @@ interface StatusData {
 }
 
 function Gauge({ label, value }: { label: string; value: number }) {
-  const color = value > 80 ? 'bg-red-500' : value > 60 ? 'bg-yellow-500' : 'bg-blue-500';
+  const tone = value > 80 ? 'danger' : value > 60 ? 'warning' : 'info';
+  const color = tone === 'danger'
+    ? 'var(--sd-danger)'
+    : tone === 'warning'
+      ? 'var(--sd-warning)'
+      : 'var(--sd-info)';
+
   return (
-    <div className="bg-gray-900 rounded-xl p-4 border border-gray-800">
-      <div className="text-sm text-gray-400 mb-2">{label}</div>
-      <div className="text-2xl font-bold mb-2">{Math.round(value)}%</div>
-      <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
-        <div className={`h-full ${color} rounded-full transition-all`} style={{ width: `${Math.min(value, 100)}%` }} />
+    <Panel accent className="p-4">
+      <div className="mb-2 text-sm text-[color:var(--sd-muted)]">{label}</div>
+      <div className="mb-2 text-3xl font-bold">{Math.round(value)}%</div>
+      <div className="h-2 w-full overflow-hidden rounded-[var(--sd-radius)] bg-[color:var(--sd-input)]">
+        <div className="h-full rounded-[var(--sd-radius)] transition-all" style={{ width: `${Math.min(value, 100)}%`, background: color }} />
       </div>
-    </div>
+    </Panel>
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const colors: Record<string, string> = { healthy: 'bg-green-500', degraded: 'bg-yellow-500', down: 'bg-red-500' };
-  return <span className={`inline-block w-2.5 h-2.5 rounded-full ${colors[status] ?? 'bg-gray-500'} mr-2`} />;
+function moduleTone(status: string): 'success' | 'warning' | 'danger' | 'neutral' {
+  if (status === 'healthy') return 'success';
+  if (status === 'degraded') return 'warning';
+  if (status === 'down') return 'danger';
+  return 'neutral';
 }
 
 export function StatusPage() {
@@ -51,38 +60,43 @@ export function StatusPage() {
 
   return (
     <div>
-      <div className="mb-6">
-        <div className="text-xs font-medium uppercase tracking-wide text-gray-500">Operations</div>
-        <h2 className="mt-1 text-2xl font-bold">System Status</h2>
-        <p className="mt-1 text-sm text-gray-500">Runtime health, queue depth, active runtime sessions, and uptime.</p>
-      </div>
+      <PageHeader
+        domain="Operations"
+        title="System Status"
+        description="Runtime health, queue depth, active runtime sessions, and uptime."
+      />
       {sys && (
-        <div className="grid grid-cols-3 gap-4 mb-6">
+        <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
           <Gauge label="CPU" value={sys.cpuPercent} />
           <Gauge label="Memory" value={sys.memoryPercent} />
           <Gauge label="Disk" value={sys.diskPercent} />
         </div>
       )}
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        <div className="bg-gray-900 rounded-xl p-4 border border-gray-800">
-          <div className="text-sm text-gray-400 mb-3">Modules</div>
-          {Object.entries(mods).map(([name, status]) => (
-            <div key={name} className="flex items-center mb-1 text-sm">
-              <StatusBadge status={status} />
-              <span className="capitalize">{name}</span>
-              <span className="ml-auto text-gray-500">{status}</span>
-            </div>
-          ))}
-        </div>
-        <div className="bg-gray-900 rounded-xl p-4 border border-gray-800">
-          <div className="text-sm text-gray-400 mb-3">Overview</div>
-          <div className="text-sm mb-1">Runtime Sessions: <span className="text-white font-medium">{data.sessions.length}</span></div>
-          <div className="text-sm mb-1">Queue Depth: <span className="text-white font-medium">{data.queueSize}</span></div>
-          <div className="text-sm">Uptime: <span className="text-white font-medium">{upH}h {upM}m</span></div>
-          <Link to="/sessions" className="mt-3 inline-block text-sm text-blue-400 hover:underline">
+      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Panel className="p-4">
+          <div className="mb-3 text-sm text-[color:var(--sd-muted)]">Modules</div>
+          <div className="space-y-2">
+            {Object.entries(mods).map(([name, status]) => (
+              <div key={name} className="flex items-center gap-2 text-sm">
+                <span className="capitalize">{name}</span>
+                <span className="ml-auto">
+                  <StatusPill tone={moduleTone(status)}>{status}</StatusPill>
+                </span>
+              </div>
+            ))}
+          </div>
+        </Panel>
+        <Panel className="p-4">
+          <div className="mb-3 text-sm text-[color:var(--sd-muted)]">Overview</div>
+          <div className="space-y-1 text-sm">
+            <div>Runtime Sessions: <span className="font-medium text-[color:var(--sd-text)]">{data.sessions.length}</span></div>
+            <div>Queue Depth: <span className="font-medium text-[color:var(--sd-text)]">{data.queueSize}</span></div>
+            <div>Uptime: <span className="font-medium text-[color:var(--sd-text)]">{upH}h {upM}m</span></div>
+          </div>
+          <Link to="/sessions" className="mt-3 inline-block text-sm text-[color:var(--sd-accent)] hover:underline">
             Open runtime sessions
           </Link>
-        </div>
+        </Panel>
       </div>
     </div>
   );
