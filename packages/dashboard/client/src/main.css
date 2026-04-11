@@ -49,6 +49,35 @@
   --sd-input: #ffffff;
 }
 
+/* Temporary light-mode compatibility for legacy dark utility surfaces. */
+:root[data-theme="light"] :is(
+  .bg-gray-900,
+  .bg-gray-950,
+  .bg-slate-900,
+  .bg-zinc-900,
+  .bg-neutral-900,
+  .bg-gray-800,
+  .bg-slate-800,
+  .bg-zinc-800,
+  .bg-neutral-800
+) {
+  background-color: var(--sd-panel) !important;
+  color: var(--sd-text) !important;
+}
+
+:root[data-theme="light"] :is(
+  .border-gray-800,
+  .border-gray-900,
+  .border-slate-800,
+  .border-slate-900,
+  .border-zinc-800,
+  .border-zinc-900,
+  .border-neutral-800,
+  .border-neutral-900
+) {
+  border-color: var(--sd-border) !important;
+}
+
 body {
   margin: 0;
   min-width: 320px;
@@ -158,5 +187,17 @@ select:focus-visible {
   .sd-button-secondary:disabled {
     cursor: not-allowed;
     opacity: 0.64;
+  }
+}
+
+@media (max-width: 900px) {
+  .sd-shell {
+    flex-direction: column;
+  }
+
+  .sd-sidebar {
+    width: 100%;
+    border-right: 0;
+    border-bottom: 1px solid var(--sd-border);
   }
 }

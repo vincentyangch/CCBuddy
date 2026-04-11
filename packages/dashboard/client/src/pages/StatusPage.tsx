@@ -23,10 +23,10 @@ function Gauge({ label, value }: { label: string; value: number }) {
       : 'var(--sd-info)';
 
   return (
-    <Panel accent className="p-4">
+    <Panel className="p-4">
       <div className="mb-2 text-sm text-[color:var(--sd-muted)]">{label}</div>
       <div className="mb-2 text-3xl font-bold">{Math.round(value)}%</div>
-      <div className="h-2 w-full overflow-hidden rounded-[var(--sd-radius)] bg-[color:var(--sd-input)]">
+      <div className="h-2 w-full overflow-hidden rounded-[var(--sd-radius)] bg-[color:var(--sd-border)]">
         <div className="h-full rounded-[var(--sd-radius)] transition-all" style={{ width: `${Math.min(value, 100)}%`, background: color }} />
       </div>
     </Panel>
@@ -51,7 +51,7 @@ export function StatusPage() {
     }
   }, []));
 
-  if (!data) return <p className="text-gray-400">Loading...</p>;
+  if (!data) return <p className="text-[color:var(--sd-muted)]">Loading...</p>;
 
   const sys = data.heartbeat.system;
   const mods = data.heartbeat.modules ?? {};
