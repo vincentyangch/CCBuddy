@@ -35,7 +35,11 @@ const navGroups = [
 
 function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
-  const isMigrated = location.pathname === '/';
+  const isMigrated =
+    location.pathname === '/' ||
+    location.pathname === '/sessions' ||
+    location.pathname.startsWith('/sessions/') ||
+    location.pathname === '/logs';
 
   return (
     <div className="sd-shell">
