@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
+import { PageHeader, Panel } from '../components/ui';
 
 export function ConversationsPage() {
   const [messages, setMessages] = useState<any[]>([]);
@@ -49,46 +50,46 @@ export function ConversationsPage() {
 
   return (
     <div>
-      <div className="mb-6">
-        <div className="text-xs font-medium uppercase tracking-wide text-gray-500">Workspace</div>
-        <h2 className="mt-1 text-2xl font-bold">History</h2>
-        <p className="mt-1 text-sm text-gray-500">Stored message history across users, platforms, and conversation IDs.</p>
-      </div>
-      <div className="flex gap-3 mb-4">
+      <PageHeader
+        domain="Workspace"
+        title="History"
+        description="Stored message history across users, platforms, and conversation IDs."
+      />
+      <div className="mb-4 flex flex-wrap gap-3">
         <input placeholder="Filter user" value={filters.user}
           onChange={e => updateFilter('user', e.target.value)}
-          className="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg text-sm w-40" />
+          className="sd-input w-40 text-sm" />
         <input placeholder="Filter platform" value={filters.platform}
           onChange={e => updateFilter('platform', e.target.value)}
-          className="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg text-sm w-40" />
+          className="sd-input w-40 text-sm" />
         <input placeholder="Conversation ID" value={filters.conversationId}
           onChange={e => updateFilter('conversationId', e.target.value)}
-          className="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg text-sm w-56" />
+          className="sd-input w-56 text-sm" />
         <input placeholder="Search..." value={filters.search}
           onChange={e => updateFilter('search', e.target.value)}
-          className="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg text-sm flex-1" />
+          className="sd-input min-w-48 flex-1 text-sm" />
       </div>
-      <div className="text-sm text-gray-400 mb-3">{total} messages</div>
+      <div className="mb-3 text-sm text-[color:var(--sd-muted)]">{total} messages</div>
       <div className="space-y-2">
         {messages.map((m: any) => (
-          <div key={m.id} className="bg-gray-900 rounded-lg border border-gray-800 p-3">
-            <div className="flex gap-4 text-xs text-gray-500 mb-2">
+          <Panel key={m.id} className="p-3">
+            <div className="mb-2 flex flex-wrap gap-4 text-xs text-[color:var(--sd-muted)]">
               <span>{m.role === 'user' ? '👤' : '🤖'} {m.userId}</span>
               <span>{m.platform}</span>
               <span>{new Date(m.timestamp).toLocaleString()}</span>
               <span className="font-mono">Conversation {m.sessionId}</span>
             </div>
             <div className="text-sm whitespace-pre-wrap line-clamp-3">{m.content}</div>
-          </div>
+          </Panel>
         ))}
       </div>
       {totalPages > 1 && (
         <div className="flex gap-2 mt-4 justify-center">
           <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
-            className="px-3 py-1 bg-gray-800 rounded text-sm disabled:opacity-50">Prev</button>
-          <span className="px-3 py-1 text-sm text-gray-400">{page} / {totalPages}</span>
+            className="sd-button-secondary min-h-0 px-3 py-1 text-sm">Prev</button>
+          <span className="px-3 py-1 text-sm text-[color:var(--sd-muted)]">{page} / {totalPages}</span>
           <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}
-            className="px-3 py-1 bg-gray-800 rounded text-sm disabled:opacity-50">Next</button>
+            className="sd-button-secondary min-h-0 px-3 py-1 text-sm">Next</button>
         </div>
       )}
     </div>

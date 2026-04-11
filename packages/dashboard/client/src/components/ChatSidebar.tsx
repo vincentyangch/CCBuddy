@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
+import { Button } from './ui';
 
 interface Session {
   sessionId: string;
@@ -46,36 +47,36 @@ export function ChatSidebar({ activeSessionId, pendingChannelId, onSelectSession
   }, [refreshKey]);
 
   return (
-    <div className="w-56 bg-gray-900 border-r border-gray-800 p-3 flex flex-col">
-      <button onClick={onNewChat} className="mb-3 px-3 py-2 bg-blue-600 rounded-lg text-sm text-white hover:bg-blue-500 w-full">
+    <div className="flex w-56 flex-col border-r border-[color:var(--sd-border)] bg-[color:var(--sd-panel)] p-3">
+      <Button onClick={onNewChat} className="mb-3 w-full px-3 py-2 text-sm">
         + New Chat
-      </button>
-      <div className="text-xs text-gray-500 uppercase mb-2 px-1">Recent chats</div>
+      </Button>
+      <div className="mb-2 px-1 text-xs uppercase text-[color:var(--sd-subtle)]">Recent chats</div>
       <div className="flex-1 overflow-auto space-y-1">
         {pendingChannelId && !sessions.some(s => s.channelId === pendingChannelId) && (
           <div
-            className="w-full text-left px-3 py-2 rounded-lg text-xs truncate bg-blue-900/30 border border-blue-800 text-white"
+            className="w-full truncate rounded-[var(--sd-radius)] border border-[color:var(--sd-accent)] bg-[color-mix(in_srgb,var(--sd-accent)_14%,transparent)] px-3 py-2 text-left text-xs text-[color:var(--sd-text)]"
           >
             <div className="truncate">New conversation</div>
-            <div className="text-gray-600 text-[10px] mt-0.5">now</div>
+            <div className="mt-0.5 text-[10px] text-[color:var(--sd-muted)]">now</div>
           </div>
         )}
         {sessions.map(s => (
           <div
             key={s.sessionId}
-            className={`group relative w-full text-left px-3 py-2 rounded-lg text-xs truncate cursor-pointer ${
+            className={`group relative w-full cursor-pointer truncate rounded-[var(--sd-radius)] px-3 py-2 text-left text-xs ${
               s.sessionId === activeSessionId
-                ? 'bg-blue-900/30 border border-blue-800 text-white'
-                : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                ? 'border border-[color:var(--sd-accent)] bg-[color-mix(in_srgb,var(--sd-accent)_14%,transparent)] text-[color:var(--sd-text)]'
+                : 'text-[color:var(--sd-muted)] hover:bg-[color:var(--sd-panel-raised)] hover:text-[color:var(--sd-text)]'
             }`}
             onClick={() => onSelectSession(s)}
           >
             <div className="truncate pr-5">{s.lastMessage || 'New conversation'}</div>
-            <div className="text-gray-600 text-[10px] mt-0.5">{new Date(s.timestamp).toLocaleDateString()}</div>
+            <div className="mt-0.5 text-[10px] text-[color:var(--sd-subtle)]">{new Date(s.timestamp).toLocaleDateString()}</div>
             {onDeleteSession && (
               <button
                 onClick={(e) => { e.stopPropagation(); onDeleteSession(s.sessionId); }}
-                className="absolute top-1.5 right-1.5 hidden group-hover:block text-gray-600 hover:text-red-400 text-xs"
+                className="absolute right-1.5 top-1.5 hidden text-xs text-[color:var(--sd-subtle)] hover:text-[color:var(--sd-danger)] group-hover:block"
                 title="Delete chat"
               >
                 ×

@@ -4,6 +4,7 @@ import { ChatInput } from '../components/ChatInput';
 import { ChatSidebar } from '../components/ChatSidebar';
 import { api } from '../lib/api';
 import ReactMarkdown from 'react-markdown';
+import { Button, Panel, StatusPill } from '../components/ui';
 
 interface ChatEntry {
   id: string;
@@ -135,49 +136,53 @@ export function ChatPage() {
   }, [entries]);
 
   return (
-    <div className="flex h-[calc(100vh-theme(spacing.12))] -m-6">
+    <div className="flex h-[calc(100vh-3rem)] overflow-hidden rounded-[var(--sd-radius)] border border-[color:var(--sd-border)] bg-[color:var(--sd-panel)]">
       <ChatSidebar activeSessionId={activeSessionId} pendingChannelId={activeSessionId ? null : channelId} onSelectSession={handleSelectSession} onNewChat={handleNewChat} onDeleteSession={handleDeleteSession} refreshKey={sidebarRefresh} />
       <div className="flex-1 flex flex-col">
-        <div className="px-4 py-3 border-b border-gray-800 flex justify-between items-center">
-          <div>
-            <div className="text-xs font-medium uppercase tracking-wide text-gray-500">Workspace</div>
-            <div className="text-sm font-medium">Chat with Po</div>
+        <div className="border-b border-[color:var(--sd-border)] px-4 py-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-xs font-medium uppercase tracking-wide text-[color:var(--sd-subtle)]">Workspace</div>
+              <div className="text-sm font-medium">Chat with Po</div>
+            </div>
+            <StatusPill tone={connected ? 'success' : 'danger'}>
+              {connected ? 'Connected' : 'Disconnected'}
+            </StatusPill>
           </div>
-          <span className={`text-xs px-2 py-0.5 rounded ${connected ? 'bg-green-900 text-green-400' : 'bg-red-900 text-red-400'}`}>
-            {connected ? 'Connected' : 'Disconnected'}
-          </span>
         </div>
         <div ref={scrollRef} className="flex-1 overflow-auto p-4 space-y-3">
           {entries.map(entry => {
             if (entry.type === 'thinking') {
               return (
                 <div key={entry.id} className="flex justify-start">
-                  <details className="max-w-[75%] rounded-lg px-3 py-2 text-xs bg-gray-900 border border-gray-800 cursor-pointer">
-                    <summary className="text-purple-400">💭 Thinking...</summary>
-                    <pre className="mt-1 text-gray-500 whitespace-pre-wrap text-[11px] max-h-40 overflow-auto">{entry.content}</pre>
-                  </details>
+                  <Panel className="max-w-[75%] px-3 py-2 text-xs">
+                    <details className="cursor-pointer">
+                      <summary className="text-[color:var(--sd-info)]">💭 Thinking...</summary>
+                      <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap text-[11px] text-[color:var(--sd-muted)]">{entry.content}</pre>
+                    </details>
+                  </Panel>
                 </div>
               );
             }
             if (entry.type === 'tool_use') {
               return (
                 <div key={entry.id} className="flex justify-start">
-                  <div className="max-w-[75%] rounded-lg px-3 py-2 text-xs bg-gray-900 border border-gray-800">
-                    <span className="text-yellow-400">🔧 Using {entry.content}...</span>
-                  </div>
+                  <Panel className="max-w-[75%] px-3 py-2 text-xs">
+                    <span className="text-[color:var(--sd-warning)]">🔧 Using {entry.content}...</span>
+                  </Panel>
                 </div>
               );
             }
             return (
               <div key={entry.id} className={`flex ${entry.type === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[75%] rounded-lg px-3 py-2 text-sm ${
-                  entry.type === 'user' ? 'bg-blue-900/30 border border-blue-800/50' : 'bg-gray-800 border border-gray-700'
+                <div className={`max-w-[75%] rounded-[var(--sd-radius)] border px-3 py-2 text-sm ${
+                  entry.type === 'user' ? 'border-[color:var(--sd-accent)] bg-[color-mix(in_srgb,var(--sd-accent)_14%,transparent)]' : 'border-[color:var(--sd-border)] bg-[color:var(--sd-panel-raised)]'
                 }`}>
                   {entry.attachments?.map((a, i) => (
                     <div key={i} className="mb-2">
                       {a.type === 'image' && <img src={`data:image/png;base64,${a.data}`} className="max-w-full rounded" />}
                       {a.type === 'voice' && <audio controls src={`data:audio/webm;base64,${a.data}`} className="max-w-full" />}
-                      {a.type === 'file' && <div className="text-blue-400 text-xs">📎 {a.filename}</div>}
+                      {a.type === 'file' && <div className="text-xs text-[color:var(--sd-accent)]">📎 {a.filename}</div>}
                     </div>
                   ))}
                   {entry.content && (
@@ -191,23 +196,23 @@ export function ChatPage() {
           })}
           {typing && (
             <div className="flex justify-start">
-              <div className="rounded-lg px-3 py-2 text-sm bg-gray-800 border border-gray-700 text-gray-500">
+              <div className="rounded-[var(--sd-radius)] border border-[color:var(--sd-border)] bg-[color:var(--sd-panel-raised)] px-3 py-2 text-sm text-[color:var(--sd-muted)]">
                 Po is typing...
               </div>
             </div>
           )}
           {buttons && (
             <div className="flex justify-start">
-              <div className="max-w-[75%] rounded-lg px-3 py-2 bg-gray-800 border border-gray-700">
+              <Panel className="max-w-[75%] px-3 py-2">
                 <div className="text-sm mb-2 whitespace-pre-wrap">{buttons.text}</div>
                 <div className="flex gap-2 flex-wrap">
                   {buttons.buttons.map(b => (
-                    <button key={b.id} onClick={() => handleButtonClick(buttons.messageId, b.label)} className="px-3 py-1 bg-blue-600 rounded text-xs text-white hover:bg-blue-500">
+                    <Button key={b.id} onClick={() => handleButtonClick(buttons.messageId, b.label)} className="min-h-0 px-3 py-1 text-xs">
                       {b.label}
-                    </button>
+                    </Button>
                   ))}
                 </div>
-              </div>
+              </Panel>
             </div>
           )}
         </div>

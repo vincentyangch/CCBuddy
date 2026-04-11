@@ -40,7 +40,9 @@ function Layout({ children }: { children: React.ReactNode }) {
     pathname === '/' ||
     pathname === '/sessions' ||
     pathname.startsWith('/sessions/') ||
-    pathname === '/logs';
+    pathname === '/logs' ||
+    pathname === '/chat' ||
+    pathname === '/conversations';
 
   return (
     <div className="sd-shell">

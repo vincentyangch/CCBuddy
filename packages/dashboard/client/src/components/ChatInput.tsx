@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { Button } from './ui';
 
 interface ChatInputProps {
   onSend: (text: string, attachments: Array<{ data: string; mimeType: string; filename: string }>) => void;
@@ -67,13 +68,13 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
   };
 
   return (
-    <div className="border-t border-gray-800 p-3">
+    <div className="border-t border-[color:var(--sd-border)] p-3">
       {attachments.length > 0 && (
         <div className="flex gap-2 mb-2 flex-wrap">
           {attachments.map((a, i) => (
-            <div key={i} className="flex items-center gap-1 bg-gray-800 rounded px-2 py-1 text-xs text-gray-400">
+            <div key={i} className="flex items-center gap-1 rounded-[var(--sd-radius)] border border-[color:var(--sd-border)] bg-[color:var(--sd-panel-raised)] px-2 py-1 text-xs text-[color:var(--sd-muted)]">
               <span>{a.filename}</span>
-              <button onClick={() => removeAttachment(i)} className="text-gray-600 hover:text-red-400">×</button>
+              <button onClick={() => removeAttachment(i)} className="text-[color:var(--sd-subtle)] hover:text-[color:var(--sd-danger)]">×</button>
             </div>
           ))}
         </div>
@@ -86,18 +87,18 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
           placeholder="Type a message..."
           disabled={disabled}
           rows={1}
-          className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 resize-none disabled:opacity-50 focus:outline-none focus:border-blue-600"
+          className="sd-input flex-1 resize-none text-sm placeholder:text-[color:var(--sd-subtle)]"
         />
         <input ref={fileRef} type="file" multiple className="hidden" onChange={handleFileSelect} />
-        <button onClick={() => fileRef.current?.click()} className="w-8 h-8 flex items-center justify-center bg-gray-800 rounded-lg text-gray-400 hover:text-white hover:bg-gray-700" title="Attach file">
+        <Button onClick={() => fileRef.current?.click()} variant="secondary" className="h-10 w-10 min-h-0 p-0" title="Attach file">
           📎
-        </button>
-        <button onClick={toggleRecording} className={`w-8 h-8 flex items-center justify-center rounded-lg ${recording ? 'bg-red-600 text-white animate-pulse' : 'bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700'}`} title="Record voice">
+        </Button>
+        <Button onClick={toggleRecording} variant="secondary" className={`h-10 w-10 min-h-0 p-0 ${recording ? 'animate-pulse border-[color:var(--sd-danger)] bg-[color:var(--sd-danger)] text-white' : ''}`} title="Record voice">
           🎤
-        </button>
-        <button onClick={handleSend} disabled={disabled || (!text.trim() && attachments.length === 0)} className="w-8 h-8 flex items-center justify-center bg-blue-600 rounded-lg text-white disabled:opacity-50 hover:bg-blue-500">
+        </Button>
+        <Button onClick={handleSend} disabled={disabled || (!text.trim() && attachments.length === 0)} className="h-10 w-10 min-h-0 p-0">
           →
-        </button>
+        </Button>
       </div>
     </div>
   );
