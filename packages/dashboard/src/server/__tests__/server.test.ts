@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DashboardServer } from '../index.js';
@@ -139,6 +139,39 @@ describe('DashboardServer', () => {
       dateFrom: undefined,
       dateTo: undefined,
     });
+  });
+
+  it('serves built asset files instead of falling back to index.html', async () => {
+    const deps = createMockDeps();
+    const clientDir = join(process.cwd(), 'dist-client');
+    const assetsDir = join(clientDir, 'assets');
+    const assetPath = join(assetsDir, '__dashboard-server-test.txt');
+    mkdirSync(assetsDir, { recursive: true });
+    writeFileSync(assetPath, 'dashboard-asset-ok', 'utf8');
+
+    server = new DashboardServer(deps as any);
+    const address = await server.start();
+
+    const res = await fetch(`${address}/assets/__dashboard-server-test.txt`);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('dashboard-asset-ok');
+  });
+
+  it('serves asset files added after startup', async () => {
+    const deps = createMockDeps();
+    const clientDir = join(process.cwd(), 'dist-client');
+    const assetsDir = join(clientDir, 'assets');
+    mkdirSync(assetsDir, { recursive: true });
+
+    server = new DashboardServer(deps as any);
+    const address = await server.start();
+
+    const assetPath = join(assetsDir, '__dashboard-server-late-asset.txt');
+    writeFileSync(assetPath, 'late-asset-ok', 'utf8');
+
+    const res = await fetch(`${address}/assets/__dashboard-server-late-asset.txt`);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('late-asset-ok');
   });
 
   it('GET /api/config redacts platform tokens', async () => {

@@ -105,7 +105,6 @@ export class DashboardServer {
     if (existsSync(clientDir)) {
       await this.app.register(fastifyStatic, {
         root: clientDir,
-        wildcard: false,
       });
       // SPA fallback — serve index.html for all non-API, non-WS routes
       this.app.setNotFoundHandler(async (request, reply) => {
