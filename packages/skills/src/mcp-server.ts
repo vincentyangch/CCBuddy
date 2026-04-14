@@ -905,6 +905,12 @@ async function main(): Promise<void> {
       return { content: [{ type: 'text', text: JSON.stringify({ success: true }) }] };
     }
 
+    // ── apple_reminders_create_list ───────────────────────────────────────
+    if (remindersService && name === 'apple_reminders_create_list') {
+      await remindersService.createList(toolArgs.name as string);
+      return { content: [{ type: 'text', text: JSON.stringify({ success: true }) }] };
+    }
+
     // ── apple_shortcuts_list ───────────────────────────────────────────────
     if (shortcutsService && name === 'apple_shortcuts_list') {
       const shortcuts = await shortcutsService.listShortcuts();

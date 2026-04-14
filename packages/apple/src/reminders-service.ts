@@ -57,6 +57,11 @@ export class AppleRemindersService {
     this.assertSuccess(result);
   }
 
+  async createList(name: string): Promise<void> {
+    const result = await this.bridge.exec(['reminders', 'create-list', '--name', name]);
+    this.assertSuccess(result);
+  }
+
   getToolDefinitions(): ToolDescription[] {
     return [
       {
@@ -105,6 +110,17 @@ export class AppleRemindersService {
             id: { type: 'string', description: 'Reminder ID to delete' },
           },
           required: ['id'],
+        },
+      },
+      {
+        name: 'apple_reminders_create_list',
+        description: 'Create a new Apple Reminders list.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'Name for the new reminders list' },
+          },
+          required: ['name'],
         },
       },
     ];

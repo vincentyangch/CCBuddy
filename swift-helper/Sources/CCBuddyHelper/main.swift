@@ -34,6 +34,7 @@ struct RemindersCommand: ParsableCommand {
             RemindersCreate.self,
             RemindersComplete.self,
             RemindersDelete.self,
+            RemindersCreateList.self,
         ]
     )
 }

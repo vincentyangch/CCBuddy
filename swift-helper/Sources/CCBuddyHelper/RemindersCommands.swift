@@ -206,3 +206,31 @@ struct RemindersDelete: ParsableCommand {
         printJSON(SuccessResult(success: true))
     }
 }
+
+// MARK: - Create List
+
+struct RemindersCreateList: ParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "create-list")
+
+    @Option(help: "List name")
+    var name: String
+
+    func run() throws {
+        try requestRemindersAccess()
+
+        let reminderCalendars = reminderStore.calendars(for: .reminder)
+        if reminderCalendars.first(where: { $0.title == name }) != nil {
+            printError("Reminder list '\(name)' already exists.")
+            return
+        }
+
+        let calendar = EKCalendar(for: .reminder, eventStore: reminderStore)
+        calendar.title = name
+        if let source = reminderStore.defaultCalendarForNewReminders()?.source {
+            calendar.source = source
+        }
+
+        try reminderStore.saveCalendar(calendar, commit: true)
+        printJSON(SuccessResult(success: true))
+    }
+}

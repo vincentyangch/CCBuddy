@@ -135,15 +135,34 @@ describe('AppleRemindersService', () => {
     });
   });
 
+  describe('createList()', () => {
+    it('calls bridge with create-list args', async () => {
+      bridge.exec.mockResolvedValue({ success: true });
+
+      await service.createList('CCBuddy Open Items');
+
+      expect(bridge.exec).toHaveBeenCalledWith([
+        'reminders', 'create-list', '--name', 'CCBuddy Open Items',
+      ]);
+    });
+
+    it('throws when bridge returns error', async () => {
+      bridge.exec.mockResolvedValue({ success: false, error: 'List already exists' });
+
+      await expect(service.createList('Reminders')).rejects.toThrow('List already exists');
+    });
+  });
+
   describe('getToolDefinitions()', () => {
-    it('returns 4 tool definitions', () => {
+    it('returns 5 tool definitions', () => {
       const tools = service.getToolDefinitions();
-      expect(tools).toHaveLength(4);
+      expect(tools).toHaveLength(5);
       const names = tools.map(t => t.name);
       expect(names).toContain('apple_reminders_list');
       expect(names).toContain('apple_reminders_create');
       expect(names).toContain('apple_reminders_complete');
       expect(names).toContain('apple_reminders_delete');
+      expect(names).toContain('apple_reminders_create_list');
     });
   });
 });
