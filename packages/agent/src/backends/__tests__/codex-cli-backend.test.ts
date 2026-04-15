@@ -223,6 +223,86 @@ describe('CodexCliBackend', () => {
     expect(args).toContain('thread-abc');
   });
 
+  it('returns thread ID from NDJSON thread.started event as sdkSessionId', async () => {
+    const proc = makeMockProcess();
+    mockSpawn.mockReturnValue(proc as any);
+
+    const backend = new CodexCliBackend();
+    const events: any[] = [];
+    const gen = backend.execute(makeRequest());
+    const nextPromise = gen.next();
+
+    process.nextTick(() => {
+      proc.stdout.emit('data', Buffer.from(
+        '{"type":"thread.started","thread_id":"thread-xyz-123"}\n' +
+        '{"type":"item.completed","item":{"id":"msg1","type":"agent_message","text":"Hello"}}\n'
+      ));
+      proc.emit('close', 0);
+    });
+
+    const result = await nextPromise;
+    if (!result.done) events.push(result.value);
+
+    const complete = events.find(e => e.type === 'complete');
+    expect(complete).toBeDefined();
+    expect(complete.sdkSessionId).toBe('thread-xyz-123');
+    expect(complete.response).toBe('Hello');
+  });
+
+  it('falls back to request sdkSessionId when no thread.started in NDJSON', async () => {
+    const proc = makeMockProcess();
+    mockSpawn.mockReturnValue(proc as any);
+
+    const backend = new CodexCliBackend();
+    const events: any[] = [];
+    const gen = backend.execute(makeRequest({ sdkSessionId: 'existing-id' }));
+    const nextPromise = gen.next();
+
+    process.nextTick(() => {
+      proc.stdout.emit('data', Buffer.from(
+        '{"type":"item.completed","item":{"id":"msg1","type":"agent_message","text":"ok"}}\n'
+      ));
+      proc.emit('close', 0);
+    });
+
+    const result = await nextPromise;
+    if (!result.done) events.push(result.value);
+
+    const complete = events.find(e => e.type === 'complete');
+    expect(complete).toBeDefined();
+    expect(complete.sdkSessionId).toBe('existing-id');
+  });
+
+  it('escapes TOML special characters in MCP config', async () => {
+    const proc = makeMockProcess();
+    mockSpawn.mockReturnValue(proc as any);
+
+    const backend = new CodexCliBackend();
+    const request = makeRequest({
+      mcpServers: [{
+        name: 'test',
+        command: '/path/with "quotes"',
+        args: ['--flag', 'val\\ue'],
+      }],
+    });
+
+    const gen = backend.execute(request);
+    const nextPromise = gen.next();
+
+    process.nextTick(() => {
+      proc.stdout.emit('data', Buffer.from('{"type":"item.completed","item":{"id":"msg1","type":"agent_message","text":"ok"}}\n'));
+      proc.emit('close', 0);
+    });
+
+    await nextPromise;
+
+    const [, args] = mockSpawn.mock.calls[0];
+    expect(args).toContain('--config');
+    // Verify the config arg has a path (the file exists temporarily)
+    const configIdx = (args as string[]).indexOf('--config');
+    expect((args as string[])[configIdx + 1]).toContain('config_file=');
+  });
+
   it('aborts the running process on abort()', async () => {
     const proc = makeMockProcess();
     mockSpawn.mockReturnValue(proc as any);
