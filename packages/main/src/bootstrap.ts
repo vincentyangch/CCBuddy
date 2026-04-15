@@ -54,6 +54,16 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
       console.log(`[Bootstrap] Runtime backend override applied: ${runtimeConfig.backend}`);
     }
 
+    // Restore custom model lists
+    if (Array.isArray(runtimeConfig.claude_models) && runtimeConfig.claude_models.every((m: unknown) => typeof m === 'string')) {
+      config.agent.claude_models = runtimeConfig.claude_models;
+      console.log(`[Bootstrap] Runtime claude_models override applied (${runtimeConfig.claude_models.length} models)`);
+    }
+    if (Array.isArray(runtimeConfig.codex_models) && runtimeConfig.codex_models.every((m: unknown) => typeof m === 'string')) {
+      config.agent.codex_models = runtimeConfig.codex_models;
+      console.log(`[Bootstrap] Runtime codex_models override applied (${runtimeConfig.codex_models.length} models)`);
+    }
+
     // Restore model, validating against the (possibly overridden) backend
     if (runtimeConfig.model && isValidModel(runtimeConfig.model)) {
       if (isValidModelForBackend(runtimeConfig.model, config.agent.backend as BackendType)) {
@@ -229,9 +239,9 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
       '--heartbeat-status-file', resolve(join(config.data_dir, 'heartbeat-status.json')),
       '--data-dir', resolve(config.data_dir),
       ...(ownerUserId ? ['--owner-user-id', ownerUserId] : []),
-      '--backend', config.agent.backend,
     ],
     env: forwardedEnv,
+    get backend() { return config.agent.backend; },
   };
 
   // Home Assistant MCP server (ha-mcp via uvx)
@@ -293,6 +303,7 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
         ...skillMcpServer,
         args: [
           ...skillMcpServer.args,
+          '--backend', skillMcpServer.backend,
           '--session-key', request.sessionId,
           '--channel-key', `${request.platform}-${request.channelId}`,
         ],
@@ -421,6 +432,12 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
       },
       sessionStore,
       switchBackend: async (backendName: string) => {
+        // Archive all active sessions — their IDs are invalid for the new backend
+        const archived = sessionStore.archiveAll();
+        if (archived > 0) {
+          console.log(`[Dashboard] Archived ${archived} session(s) for backend switch`);
+        }
+
         if (backendName === 'sdk') {
           const { SdkBackend } = await import('@ccbuddy/agent');
           agentService.setBackend(new SdkBackend({
@@ -545,7 +562,10 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
     executeAgentRequest: (request) => agentService.handleRequest({
       ...request,
       workingDirectory: request.workingDirectory,
-      mcpServers: [skillMcpServer, haMcpServer],
+      mcpServers: [{
+        ...skillMcpServer,
+        args: [...skillMcpServer.args, '--backend', skillMcpServer.backend],
+      }, haMcpServer],
       env: forwardedEnv,
       systemPrompt: [identityPrompt, request.systemPrompt, skillNudge].filter(Boolean).join('\n\n'),
     }),

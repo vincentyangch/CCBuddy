@@ -281,15 +281,20 @@ async function main(): Promise<void> {
     });
 
     if (args.sessionKey) {
+      const isCodex = args.backend.startsWith('codex');
+      const modelDesc = isCodex
+        ? 'Model alias (gpt-5.4, o3, o4-mini) or full OpenAI model ID'
+        : 'Model alias (sonnet, opus, haiku, opus[1m], sonnet[1m], opusplan) or full model ID (e.g., claude-opus-4-6)';
+      const available = getModelOptionsForBackend(args.backend);
       tools.push({
         name: 'switch_model',
-        description: 'Switch the AI model for subsequent messages in this session. Use when the current task needs more capability (e.g., opus[1m] for complex work) or to switch back to the default for simpler tasks.',
+        description: `Switch the AI model for subsequent messages in this session. Available models: ${available.join(', ')}`,
         inputSchema: {
           type: 'object',
           properties: {
             model: {
               type: 'string',
-              description: 'Model alias (sonnet, opus, haiku, opus[1m], sonnet[1m], opusplan) or full model ID (e.g., claude-opus-4-6)',
+              description: modelDesc,
             },
           },
           required: ['model'],

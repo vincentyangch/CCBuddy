@@ -1,5 +1,5 @@
-import { writeFileSync, unlinkSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { writeFileSync, unlinkSync, mkdirSync, rmSync } from 'node:fs';
+import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import type { AgentBackend, AgentRequest, AgentEvent, AgentEventBase, PermissionGateRule } from '@ccbuddy/core';
@@ -36,6 +36,12 @@ export class CodexSdkBackend implements AgentBackend {
     }
   }
 
+  destroy(): void {
+    if (this.rulesFilePath) {
+      try { rmSync(dirname(this.rulesFilePath), { recursive: true, force: true }); } catch { /* ignore */ }
+    }
+  }
+
   async *execute(request: AgentRequest): AsyncGenerator<AgentEvent> {
     const base: AgentEventBase = {
       sessionId: request.sessionId,
@@ -62,6 +68,11 @@ export class CodexSdkBackend implements AgentBackend {
           codexConfig[`mcp_servers.${s.name}.args`] = s.args;
           if (s.env) codexConfig[`mcp_servers.${s.name}.env`] = s.env;
         }
+      }
+
+      // Wire in deny rules file if generated
+      if (this.rulesFilePath) {
+        codexConfig['exec_policy.rules_file'] = this.rulesFilePath;
       }
 
       const codex = new Codex({
@@ -91,6 +102,7 @@ export class CodexSdkBackend implements AgentBackend {
           threadOpts.sandboxMode = this.options.defaultSandbox ?? 'workspace-write';
           break;
         case 'chat':
+          threadOpts.approvalPolicy = 'never';
           threadOpts.sandboxMode = 'read-only';
           break;
       }

@@ -147,6 +147,13 @@ export class SessionStore {
     this.persistence?.updateStatus(sessionKey, 'archived');
   }
 
+  /** Archive all active sessions (e.g. on backend switch). */
+  archiveAll(): number {
+    const keys = Array.from(this.entries.keys());
+    for (const key of keys) this.archive(key);
+    return keys.length;
+  }
+
   pause(sessionKey: string): void {
     const entry = this.entries.get(sessionKey);
     if (entry) {

@@ -398,9 +398,32 @@ export class DashboardServer {
 
     // PUT /api/config/models — update model lists at runtime
     this.app.put('/api/config/models', async (request, reply) => {
-      const body = request.body as { claude_models?: string[]; codex_models?: string[] } | null;
+      const body = request.body as { claude_models?: unknown; codex_models?: unknown } | null;
       if (!body || (!body.claude_models && !body.codex_models)) {
         return reply.status(400).send({ error: 'Provide claude_models and/or codex_models arrays' });
+      }
+
+      // Validate: must be arrays of non-empty strings
+      const validateModelList = (val: unknown, name: string): string[] | null => {
+        if (val === undefined) return null;
+        if (!Array.isArray(val)) {
+          throw new Error(`${name} must be an array`);
+        }
+        for (const item of val) {
+          if (typeof item !== 'string' || item.trim() === '') {
+            throw new Error(`${name} must contain only non-empty strings`);
+          }
+        }
+        return val as string[];
+      };
+
+      let claudeModels: string[] | null;
+      let codexModels: string[] | null;
+      try {
+        claudeModels = validateModelList(body.claude_models, 'claude_models');
+        codexModels = validateModelList(body.codex_models, 'codex_models');
+      } catch (err) {
+        return reply.status(400).send({ error: (err as Error).message });
       }
 
       const runtimePath = join(this.deps.config.data_dir, 'runtime-config.json');
@@ -409,13 +432,13 @@ export class DashboardServer {
         runtimeConfig = JSON.parse(readFileSync(runtimePath, 'utf8'));
       } catch { /* no existing file */ }
 
-      if (body.claude_models) {
-        runtimeConfig.claude_models = body.claude_models;
-        this.deps.config.agent.claude_models = body.claude_models;
+      if (claudeModels) {
+        runtimeConfig.claude_models = claudeModels;
+        this.deps.config.agent.claude_models = claudeModels;
       }
-      if (body.codex_models) {
-        runtimeConfig.codex_models = body.codex_models;
-        this.deps.config.agent.codex_models = body.codex_models;
+      if (codexModels) {
+        runtimeConfig.codex_models = codexModels;
+        this.deps.config.agent.codex_models = codexModels;
       }
 
       mkdirSync(dirname(runtimePath), { recursive: true });

@@ -58,6 +58,8 @@ export type AgentEvent =
 export interface AgentBackend {
   execute(request: AgentRequest): AsyncGenerator<AgentEvent>;
   abort(sessionId: string): Promise<void>;
+  /** Clean up resources when backend is being replaced. */
+  destroy?(): void;
 }
 
 export interface ToolDescription {

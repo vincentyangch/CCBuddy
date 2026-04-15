@@ -87,7 +87,7 @@ export class CodexCliBackend implements AgentBackend {
 
     try {
       const result = await this.runCodex(args, attachmentNote + fullPrompt, request.sessionId, request.env);
-      yield { ...base, type: 'complete', response: result };
+      yield { ...base, type: 'complete', response: result.text, sdkSessionId: result.threadId ?? request.sdkSessionId };
     } catch (err) {
       yield { ...base, type: 'error', error: (err as Error).message };
     } finally {
@@ -109,12 +109,13 @@ export class CodexCliBackend implements AgentBackend {
   }
 
   private writeTempMcpConfig(mcpServers: AgentRequest['mcpServers']): string {
+    const escapeToml = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
     let toml = '';
     for (const s of mcpServers ?? []) {
       toml += `[mcp_servers.${s.name}]\n`;
       toml += `type = "stdio"\n`;
-      toml += `command = "${s.command}"\n`;
-      toml += `args = [${s.args.map(a => `"${a}"`).join(', ')}]\n\n`;
+      toml += `command = "${escapeToml(s.command)}"\n`;
+      toml += `args = [${s.args.map(a => `"${escapeToml(a)}"`).join(', ')}]\n\n`;
     }
     const configPath = join(tmpdir(), `ccbuddy-codex-mcp-${randomUUID()}.toml`);
     writeFileSync(configPath, toml);
@@ -126,7 +127,7 @@ export class CodexCliBackend implements AgentBackend {
     prompt: string,
     sessionId: string,
     extraEnv?: Record<string, string>,
-  ): Promise<string> {
+  ): Promise<{ text: string; threadId?: string }> {
     return new Promise((resolve, reject) => {
       const env = { ...process.env, ...extraEnv } as Record<string, string>;
       const proc = spawn('codex', args, {
@@ -152,13 +153,16 @@ export class CodexCliBackend implements AgentBackend {
           return;
         }
         try {
-          // Parse NDJSON — extract final response
+          // Parse NDJSON — extract final response and thread ID
           const lines = stdout.trim().split('\n').filter(Boolean);
           let responseText = '';
+          let threadId: string | undefined;
           for (const line of lines) {
             try {
               const obj = JSON.parse(line);
-              if (obj.type === 'item.completed' && obj.item?.type === 'agent_message') {
+              if (obj.type === 'thread.started' && obj.thread_id) {
+                threadId = obj.thread_id;
+              } else if (obj.type === 'item.completed' && obj.item?.type === 'agent_message') {
                 responseText = obj.item.text ?? '';
               } else if (obj.type === 'turn.failed') {
                 reject(new Error(obj.error?.message ?? 'Codex turn failed'));
@@ -166,9 +170,9 @@ export class CodexCliBackend implements AgentBackend {
               }
             } catch { /* skip unparseable lines */ }
           }
-          resolve(responseText || stdout);
+          resolve({ text: responseText || stdout, threadId });
         } catch {
-          resolve(stdout);
+          resolve({ text: stdout });
         }
       });
     });

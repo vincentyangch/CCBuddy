@@ -70,6 +70,7 @@ export class AgentService {
   }
 
   setBackend(backend: AgentBackend): void {
+    this.backend.destroy?.();
     this.backend = backend;
   }
 
