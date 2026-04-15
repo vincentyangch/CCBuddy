@@ -21,13 +21,15 @@ This file is the top-level operator runbook. For architecture and implementation
 
 - Node.js `>=22 <23`
 - npm `10.x`
-- `claude` CLI available in `PATH`
+- `claude` CLI available in `PATH` (for Claude backends)
 - macOS `launchd` for the managed production run path
 
 Optional, depending on enabled features:
 
 - `OPENAI_API_KEY`
-  Required when `media.voice_enabled: true`
+  Required when `media.voice_enabled: true` or when using a Codex backend (`agent.backend: "codex-sdk"` or `"codex-cli"`)
+- `codex` CLI available in `PATH`
+  Required when using a Codex backend
 - `CCBUDDY_DASHBOARD_TOKEN`
   Required when `dashboard.enabled: true`
 - `DISCORD_BOT_TOKEN`
@@ -302,6 +304,18 @@ claude --version
 ```
 
 If that fails under launchd but works in your shell, fix the LaunchAgent `PATH`.
+
+### Codex backend not working
+
+If `agent.backend` is set to `codex-sdk` or `codex-cli`:
+
+1. Confirm the `codex` CLI is installed and in PATH:
+   ```bash
+   codex --version
+   ```
+2. Confirm `OPENAI_API_KEY` is set in the running environment.
+3. Note that Codex sessions do **not** support interactive permission gates (Discord approval buttons) or mid-task clarifying questions (`AskUserQuestion`). Safety relies on Codex sandbox modes and auto-generated deny rules.
+4. Model selection must use OpenAI models (`gpt-5`, `o3`, `o4-mini`, etc.) — Claude model names will be rejected.
 
 ## References
 

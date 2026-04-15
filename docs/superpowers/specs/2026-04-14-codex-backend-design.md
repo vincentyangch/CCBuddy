@@ -1,7 +1,7 @@
 # Codex Backend Integration Design
 
 **Date:** 2026-04-14
-**Status:** Proposal
+**Status:** Implemented (Phase 1-4 complete)
 **Author:** CCBuddy development
 
 ## 1. Overview
@@ -328,13 +328,11 @@ Codex cannot ask clarifying questions mid-task and receive answers through a cal
 
 **User impact:** Codex sessions are fire-and-forget per turn. If the task is ambiguous, the model will make its best guess rather than asking for clarification.
 
-### 5.3 Thinking/Reasoning Trace Streaming
+### 5.3 ~~Thinking/Reasoning Trace Streaming~~ (RESOLVED)
 
-**Status:** Not exposed by Codex SDK.
+**Status:** Supported — initial analysis was incorrect.
 
-Claude streams `thinking` blocks that CCBuddy renders as a separate Discord message (💭). Codex does not expose reasoning traces through its event stream, even when using reasoning models (o-series).
-
-**User impact:** The thinking message feature (separate 💭 message in Discord) will be empty or absent for Codex sessions. Only the final response and tool use indicators will appear.
+The Codex SDK exposes `ReasoningItem` (`type: "reasoning"`, `text: string`) through `item.updated` events. `CodexSdkBackend` maps these to CCBuddy `thinking` events, enabling the 💭 Discord message feature for Codex sessions when using reasoning models (o-series).
 
 ### 5.4 Granular `allowedTools` List
 

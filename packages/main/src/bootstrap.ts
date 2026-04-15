@@ -443,6 +443,9 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
       codexPath: config.agent.codex.codex_path,
       networkAccess: config.agent.codex.network_access,
       defaultSandbox: config.agent.codex.default_sandbox,
+      permissionGateRules: config.agent.permission_gates.enabled
+        ? config.agent.permission_gates.rules
+        : undefined,
     }));
     resolveAgentBackendReady?.();
   } else if (config.agent.backend === 'codex-cli') {

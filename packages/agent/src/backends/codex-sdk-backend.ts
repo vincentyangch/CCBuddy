@@ -1,23 +1,39 @@
-import { writeFileSync, unlinkSync } from 'node:fs';
+import { writeFileSync, unlinkSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import type { AgentBackend, AgentRequest, AgentEvent, AgentEventBase } from '@ccbuddy/core';
+import type { AgentBackend, AgentRequest, AgentEvent, AgentEventBase, PermissionGateRule } from '@ccbuddy/core';
 import { Codex, type ThreadOptions, type ThreadEvent, type Input, type UserInput } from '@openai/codex-sdk';
+import { generateCodexRules } from './codex-rules.js';
 
 export interface CodexSdkBackendOptions {
   codexPath?: string;
   apiKey?: string;
   networkAccess?: boolean;
   defaultSandbox?: 'read-only' | 'workspace-write' | 'danger-full-access';
+  /** Permission gate rules to convert to static Codex deny rules */
+  permissionGateRules?: PermissionGateRule[];
 }
 
 export class CodexSdkBackend implements AgentBackend {
   private readonly options: CodexSdkBackendOptions;
   private readonly abortControllers = new Map<string, AbortController>();
+  private readonly rulesFilePath: string | null;
 
   constructor(options: CodexSdkBackendOptions = {}) {
     this.options = options;
+
+    // Generate static deny rules from permission gate config
+    if (options.permissionGateRules && options.permissionGateRules.length > 0) {
+      const rulesDir = join(tmpdir(), `ccbuddy-codex-rules-${randomUUID()}`);
+      mkdirSync(rulesDir, { recursive: true });
+      this.rulesFilePath = join(rulesDir, 'ccbuddy.rules');
+      const content = generateCodexRules(options.permissionGateRules);
+      writeFileSync(this.rulesFilePath, content, 'utf8');
+      console.info(`[CodexSdkBackend] Generated Codex deny rules at ${this.rulesFilePath}`);
+    } else {
+      this.rulesFilePath = null;
+    }
   }
 
   async *execute(request: AgentRequest): AsyncGenerator<AgentEvent> {

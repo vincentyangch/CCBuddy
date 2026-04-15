@@ -9,7 +9,7 @@ Monorepo (`npm workspaces` + `turbo`). All modules communicate via an in-process
 ```
 packages/
   core/        — shared types, config loader, UserManager, event bus, media utils
-  agent/       — AgentService + backends (SdkBackend, CliBackend)
+  agent/       — AgentService + backends (SdkBackend, CliBackend, CodexSdkBackend, CodexCliBackend)
   gateway/     — message routing, activation logic, chunker
   memory/      — SQLite-backed message/summary/profile stores, context assembler, consolidation
   scheduler/   — cron-based jobs (briefings, consolidation, backups, heartbeat)
@@ -64,6 +64,7 @@ Config loads in order: DEFAULT_CONFIG → `config/default.yaml` → `config/loca
 - **Notification preferences:** `NotificationService` sends proactive alerts (health, memory, errors, new sessions) via Discord DM or configured channel. Per-user preferences (config defaults + ProfileStore overrides). Quiet hours with queuing. MCP tools: `notification_get`, `notification_set`, `notification_mute`.
 - **Multi-directory workspaces:** Per-channel working directory via `set_workspace` MCP tool. Stored in `workspaces` SQLite table. Gateway resolves workspace before building AgentRequest, falls back to `default_working_directory`.
 - **Context compaction:** Proactive compaction at configurable turn threshold (default 50). Summarizes conversation, archives old SDK session, starts fresh with summary as context. Reactive fallback catches SDK context overflow errors. User sees "*(conversation compacted — continuing)*".
+- **Codex backend:** Alternative agent backend using OpenAI Codex (`@openai/codex-sdk`). Configure via `agent.backend: "codex-sdk"` or `"codex-cli"`. Supports streaming, session resumption (threads), MCP, reasoning traces, image attachments, and sandbox-based permissions. Does NOT support interactive permission gates (`canUseTool`), AskUserQuestion, or granular `allowedTools`. Codex config under `agent.codex` in config. Model selector auto-filters to backend-appropriate models. See design doc `2026-04-14-codex-backend-design.md`.
 
 ## Commands
 
@@ -114,3 +115,4 @@ Full specifications live in `docs/superpowers/specs/`:
 - `2026-04-09-pid-lock-safety-design.md` — PID lock safety improvements
 - `2026-04-09-request-scoped-outbound-media-design.md` — request-scoped outbound media
 - `2026-04-10-dashboard-phase4-signal-deck-design.md` — signal deck phase 4 dashboard redesign
+- `2026-04-14-codex-backend-design.md` — Codex backend integration (feature matrix, gaps, implementation)
