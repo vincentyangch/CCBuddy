@@ -11,6 +11,7 @@ export class SessionDatabase implements SessionPersistence {
     updateLastActivity: Database.Statement;
     updateModel: Database.Statement;
     updateTurns: Database.Statement;
+    updateSdkSessionId: Database.Statement;
     delete: Database.Statement;
   };
 
@@ -37,6 +38,7 @@ export class SessionDatabase implements SessionPersistence {
       updateLastActivity: this.db.prepare('UPDATE sessions SET last_activity = ? WHERE session_key = ?'),
       updateModel: this.db.prepare('UPDATE sessions SET model = ? WHERE session_key = ?'),
       updateTurns: this.db.prepare('UPDATE sessions SET turns = ? WHERE session_key = ?'),
+      updateSdkSessionId: this.db.prepare('UPDATE sessions SET sdk_session_id = ? WHERE session_key = ?'),
       delete: this.db.prepare('DELETE FROM sessions WHERE session_key = ?'),
     };
   }
@@ -95,6 +97,10 @@ export class SessionDatabase implements SessionPersistence {
 
   updateTurns(sessionKey: string, turns: number): void {
     this.stmts.updateTurns.run(turns, sessionKey);
+  }
+
+  updateSdkSessionId(sessionKey: string, sdkSessionId: string): void {
+    this.stmts.updateSdkSessionId.run(sdkSessionId, sessionKey);
   }
 
   delete(sessionKey: string): void {

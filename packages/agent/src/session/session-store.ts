@@ -239,6 +239,14 @@ export class SessionStore {
     return this.entries.get(sessionKey)?.turns ?? 0;
   }
 
+  updateSdkSessionId(sessionKey: string, newSdkSessionId: string): void {
+    const entry = this.entries.get(sessionKey);
+    if (entry) {
+      entry.sdkSessionId = newSdkSessionId;
+      this.persistence?.updateSdkSessionId?.(sessionKey, newSdkSessionId);
+    }
+  }
+
   deleteSession(sessionKey: string): void {
     this.entries.delete(sessionKey);
     this.persistence?.delete(sessionKey);

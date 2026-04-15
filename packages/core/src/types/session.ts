@@ -27,5 +27,6 @@ export interface SessionPersistence {
   updateLastActivity(sessionKey: string, timestamp: number): void;
   updateModel(sessionKey: string, model: string | null): void;
   updateTurns(sessionKey: string, turns: number): void;
+  updateSdkSessionId?(sessionKey: string, sdkSessionId: string): void;
   delete(sessionKey: string): void;
 }
