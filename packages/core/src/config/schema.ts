@@ -13,8 +13,15 @@ export interface PermissionGateConfig {
   rules: PermissionGateRule[];
 }
 
+export interface CodexConfig {
+  api_key_env: string;
+  codex_path?: string;
+  network_access: boolean;
+  default_sandbox: 'read-only' | 'workspace-write' | 'danger-full-access';
+}
+
 export interface AgentConfig {
-  backend: 'sdk' | 'cli';
+  backend: 'sdk' | 'cli' | 'codex-sdk' | 'codex-cli';
   model: string;
   max_concurrent_sessions: number;
   session_timeout_minutes: number;
@@ -39,6 +46,7 @@ export interface AgentConfig {
   compaction_threshold: number;
   compaction_summary_tokens: number;
   permission_gates: PermissionGateConfig;
+  codex: CodexConfig;
 }
 
 export interface MemoryConfig {
@@ -252,6 +260,11 @@ export const DEFAULT_CONFIG: CCBuddyConfig = {
         { name: 'launchctl', pattern: 'launchctl', tool: 'Bash', description: 'LaunchAgent operations' },
         { name: 'npm-publish', pattern: 'npm\\s+publish', tool: 'Bash', description: 'Package publishing' },
       ],
+    },
+    codex: {
+      api_key_env: 'OPENAI_API_KEY',
+      network_access: true,
+      default_sandbox: 'workspace-write',
     },
   },
   memory: {

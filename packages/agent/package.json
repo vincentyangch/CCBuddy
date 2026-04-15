@@ -13,7 +13,8 @@
   },
   "dependencies": {
     "@ccbuddy/core": "*",
-    "@anthropic-ai/claude-agent-sdk": "^0.2"
+    "@anthropic-ai/claude-agent-sdk": "^0.2",
+    "@openai/codex-sdk": "^0.120.0"
   },
   "devDependencies": {
     "@types/node": "^22",

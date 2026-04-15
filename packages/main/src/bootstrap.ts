@@ -104,7 +104,7 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
 
   // SDK mode starts adapters before importing the SDK; gateway work must wait
   // until the final backend is installed instead of using the transitional CLI.
-  if (config.agent.backend === 'sdk') {
+  if (config.agent.backend === 'sdk' || config.agent.backend === 'codex-sdk' || config.agent.backend === 'codex-cli') {
     agentBackendReady = new Promise<void>((resolve) => {
       resolveAgentBackendReady = resolve;
     });
@@ -431,6 +431,22 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
       trustedAllowedTools: config.agent.trusted_allowed_tools,
       maxTurns: config.agent.max_turns,
     }));
+    resolveAgentBackendReady?.();
+  } else if (config.agent.backend === 'codex-sdk') {
+    const { CodexSdkBackend } = await import('@ccbuddy/agent');
+    const codexApiKey = config.agent.codex.api_key_env
+      ? process.env[config.agent.codex.api_key_env]
+      : undefined;
+    agentService.setBackend(new CodexSdkBackend({
+      apiKey: codexApiKey,
+      codexPath: config.agent.codex.codex_path,
+      networkAccess: config.agent.codex.network_access,
+      defaultSandbox: config.agent.codex.default_sandbox,
+    }));
+    resolveAgentBackendReady?.();
+  } else if (config.agent.backend === 'codex-cli') {
+    const { CodexCliBackend } = await import('@ccbuddy/agent');
+    agentService.setBackend(new CodexCliBackend());
     resolveAgentBackendReady?.();
   }
 

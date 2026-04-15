@@ -53,6 +53,11 @@ function createMinimalConfig(overrides: Partial<CCBuddyConfig> = {}): CCBuddyCon
       max_turns: 30,
       compaction_threshold: 50,
       compaction_summary_tokens: 4000,
+      codex: {
+        api_key_env: 'OPENAI_API_KEY',
+        network_access: true,
+        default_sandbox: 'workspace-write',
+      },
     },
     memory: {
       db_path: './data/memory.sqlite',
