@@ -575,9 +575,11 @@ export class Gateway {
           }
           case 'error':
             // Session-not-found during resume — retry as a new session
+            const isSessionNotFound = event.error.includes('No conversation found')
+              || event.error.includes('no rollout found for thread id');
             if (
               request.resumeSessionId &&
-              event.error.includes('No conversation found') &&
+              isSessionNotFound &&
               sessionKey &&
               this.deps.sessionStore
             ) {
