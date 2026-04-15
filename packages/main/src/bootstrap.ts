@@ -1,6 +1,6 @@
 import { join, dirname } from 'node:path';
 import { writeFileSync, renameSync, readFileSync } from 'node:fs';
-import { loadConfig, createEventBus, UserManager, TranscriptionService, SpeechService, isValidModel } from '@ccbuddy/core';
+import { loadConfig, createEventBus, UserManager, TranscriptionService, SpeechService, isValidModel, isValidModelForBackend, getModelOptionsForBackend, type BackendType } from '@ccbuddy/core';
 import { AgentService, CliBackend, SessionStore } from '@ccbuddy/agent';
 import {
   MemoryDatabase,
@@ -42,13 +42,31 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
     const resolvedConfigDir = configDir ?? join(process.cwd(), 'config');
     const config = loadConfig(resolvedConfigDir);
 
-  // 1a. Apply runtime model override (from dashboard)
+  // 1a. Apply runtime overrides (from dashboard)
   const runtimeConfigPath = join(config.data_dir, 'runtime-config.json');
   try {
     const runtimeConfig = JSON.parse(readFileSync(runtimeConfigPath, 'utf8'));
+
+    // Restore backend first — model validation depends on it
+    const validBackends: BackendType[] = ['sdk', 'cli', 'codex-sdk', 'codex-cli'];
+    if (runtimeConfig.backend && validBackends.includes(runtimeConfig.backend)) {
+      config.agent.backend = runtimeConfig.backend;
+      console.log(`[Bootstrap] Runtime backend override applied: ${runtimeConfig.backend}`);
+    }
+
+    // Restore model, validating against the (possibly overridden) backend
     if (runtimeConfig.model && isValidModel(runtimeConfig.model)) {
-      config.agent.model = runtimeConfig.model;
-      console.log(`[Bootstrap] Runtime model override applied: ${runtimeConfig.model}`);
+      if (isValidModelForBackend(runtimeConfig.model, config.agent.backend as BackendType)) {
+        config.agent.model = runtimeConfig.model;
+        console.log(`[Bootstrap] Runtime model override applied: ${runtimeConfig.model}`);
+      } else {
+        // Model incompatible with backend — reset to first valid model
+        const validModels = getModelOptionsForBackend(config.agent.backend as BackendType);
+        if (validModels.length > 0) {
+          config.agent.model = validModels[0];
+          console.log(`[Bootstrap] Model '${runtimeConfig.model}' incompatible with backend '${config.agent.backend}', reset to '${validModels[0]}'`);
+        }
+      }
     }
   } catch { /* no runtime config */ }
 

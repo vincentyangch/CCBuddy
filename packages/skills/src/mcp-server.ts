@@ -305,6 +305,11 @@ async function main(): Promise<void> {
         description: 'Pause the current session so it can be resumed later, even after hours or days. Use when the user says they are stepping away and want to continue later.',
         inputSchema: { type: 'object', properties: {} },
       });
+      tools.push({
+        name: 'restart_gateway',
+        description: 'Restart the CCBuddy gateway process. Use when the user asks to restart, reboot, or reload the gateway. The process will shut down gracefully and launchd will restart it automatically.',
+        inputSchema: { type: 'object', properties: {} },
+      });
     }
 
     // Dynamic tools — one per enabled registered skill
@@ -1037,6 +1042,22 @@ async function main(): Promise<void> {
           return { content: [{ type: 'text', text: 'Session paused. It will be resumed when you send your next message, even after hours or days.' }] };
         }
         return { content: [{ type: 'text', text: 'Session pausing is not available (no session key).' }] };
+      }
+      case 'restart_gateway': {
+        // Read PID from lockfile and send SIGUSR1 for graceful restart
+        try {
+          const pidFile = pathJoin(args.dataDir, 'ccbuddy.pid');
+          const pidContent = readFileSync(pidFile, 'utf8').trim();
+          const pid = parseInt(pidContent, 10);
+          if (isNaN(pid)) {
+            return { content: [{ type: 'text', text: 'Failed to restart: invalid PID in lockfile.' }] };
+          }
+          process.kill(pid, 'SIGUSR1');
+          return { content: [{ type: 'text', text: `Restart signal sent (PID ${pid}). The gateway will shut down gracefully and launchd will restart it.` }] };
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return { content: [{ type: 'text', text: `Failed to restart: ${msg}` }] };
+        }
       }
     }
 

@@ -49,3 +49,5 @@ log('CCBuddy running');
 
 process.on('SIGTERM', async () => { log('SIGTERM received'); await result.stop(); process.exit(0); });
 process.on('SIGINT', async () => { log('SIGINT received'); await result.stop(); process.exit(0); });
+// SIGUSR1 = restart request: graceful stop then non-zero exit so launchd restarts us
+process.on('SIGUSR1', async () => { log('SIGUSR1 received — restart requested'); await result.stop(); process.exit(2); });
