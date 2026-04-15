@@ -523,7 +523,7 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
   const schedulerService = new SchedulerService({
     config,
     eventBus,
-    defaultModel: config.agent.model,
+    get defaultModel() { return config.agent.model; },
     executeAgentRequest: (request) => agentService.handleRequest({
       ...request,
       workingDirectory: request.workingDirectory,
