@@ -24,6 +24,8 @@ export interface DashboardDeps {
     getSessionInfo(): SessionInfo[];
     readonly queueSize: number;
   };
+  /** Callback to switch the active agent backend at runtime. Returns the new backend name on success. */
+  switchBackend?: (backend: string) => Promise<string>;
   messageStore: {
     query(params: MessageQueryParams): MessageQueryResult;
     deleteBySessionId(sessionId: string): number;
@@ -341,6 +343,57 @@ export class DashboardServer {
         claude_models: this.deps.config.agent.claude_models,
         codex_models: this.deps.config.agent.codex_models,
       };
+    });
+
+    // PUT /api/config/backend — switch agent backend at runtime
+    const VALID_BACKENDS = ['sdk', 'cli', 'codex-sdk', 'codex-cli'];
+    this.app.put('/api/config/backend', async (request, reply) => {
+      const body = request.body as { backend: string } | null;
+      if (!body?.backend) {
+        return reply.status(400).send({ error: 'Missing backend in request body' });
+      }
+      if (!VALID_BACKENDS.includes(body.backend)) {
+        return reply.status(400).send({ error: `Invalid backend: "${body.backend}". Valid: ${VALID_BACKENDS.join(', ')}` });
+      }
+      if (!this.deps.switchBackend) {
+        return reply.status(501).send({ error: 'Runtime backend switching not available' });
+      }
+
+      try {
+        const newBackend = await this.deps.switchBackend(body.backend);
+
+        // Persist to runtime-config.json
+        const runtimePath = join(this.deps.config.data_dir, 'runtime-config.json');
+        let runtimeConfig: Record<string, unknown> = {};
+        try {
+          runtimeConfig = JSON.parse(readFileSync(runtimePath, 'utf8'));
+        } catch { /* no existing file */ }
+        runtimeConfig.backend = body.backend;
+
+        // Auto-reset model to first valid option for the new backend
+        const configLists = {
+          claude_models: this.deps.config.agent.claude_models,
+          codex_models: this.deps.config.agent.codex_models,
+        };
+        const newModels = getModelOptionsForBackend(body.backend as BackendType, configLists);
+        if (newModels.length > 0) {
+          runtimeConfig.model = newModels[0];
+          this.deps.config.agent.model = newModels[0];
+        }
+
+        this.deps.config.agent.backend = body.backend as BackendType;
+        mkdirSync(dirname(runtimePath), { recursive: true });
+        writeFileSync(runtimePath, JSON.stringify(runtimeConfig, null, 2), 'utf8');
+
+        return {
+          ok: true,
+          backend: newBackend,
+          model: this.deps.config.agent.model,
+          models: newModels,
+        };
+      } catch (err) {
+        return reply.status(500).send({ error: `Backend switch failed: ${(err as Error).message}` });
+      }
     });
 
     // PUT /api/config/models — update model lists at runtime

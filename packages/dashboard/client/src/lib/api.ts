@@ -67,6 +67,11 @@ export const api = {
       body: JSON.stringify({ model }),
     }),
   getBackend: () => request<{ backend: string; models: string[]; claude_models: string[]; codex_models: string[] }>('/api/config/backend'),
+  setBackend: (backend: string) =>
+    request<{ ok: boolean; backend: string; model: string; models: string[] }>('/api/config/backend', {
+      method: 'PUT',
+      body: JSON.stringify({ backend }),
+    }),
   setModels: (lists: { claude_models?: string[]; codex_models?: string[] }) =>
     request<{ ok: boolean; claude_models: string[]; codex_models: string[] }>('/api/config/models', {
       method: 'PUT',

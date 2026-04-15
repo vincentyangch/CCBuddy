@@ -402,6 +402,41 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
         app: join(config.data_dir, 'ccbuddy.log'),
       },
       sessionStore,
+      switchBackend: async (backendName: string) => {
+        if (backendName === 'sdk') {
+          const { SdkBackend } = await import('@ccbuddy/agent');
+          agentService.setBackend(new SdkBackend({
+            skipPermissions: config.agent.admin_skip_permissions,
+            permissionGates: config.agent.permission_gates,
+            trustedAllowedTools: config.agent.trusted_allowed_tools,
+            maxTurns: config.agent.max_turns,
+          }));
+        } else if (backendName === 'cli') {
+          const { CliBackend } = await import('@ccbuddy/agent');
+          agentService.setBackend(new CliBackend());
+        } else if (backendName === 'codex-sdk') {
+          const { CodexSdkBackend } = await import('@ccbuddy/agent');
+          const codexApiKey = config.agent.codex.api_key_env
+            ? process.env[config.agent.codex.api_key_env]
+            : undefined;
+          agentService.setBackend(new CodexSdkBackend({
+            apiKey: codexApiKey,
+            codexPath: config.agent.codex.codex_path,
+            networkAccess: config.agent.codex.network_access,
+            defaultSandbox: config.agent.codex.default_sandbox,
+            permissionGateRules: config.agent.permission_gates.enabled
+              ? config.agent.permission_gates.rules
+              : undefined,
+          }));
+        } else if (backendName === 'codex-cli') {
+          const { CodexCliBackend } = await import('@ccbuddy/agent');
+          agentService.setBackend(new CodexCliBackend());
+        } else {
+          throw new Error(`Unknown backend: ${backendName}`);
+        }
+        console.log(`[Dashboard] Backend switched to ${backendName}`);
+        return backendName;
+      },
     });
     if (webchatAdapter) {
       dashboardServer.setWebChatAdapter(webchatAdapter);
