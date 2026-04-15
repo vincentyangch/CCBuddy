@@ -32,6 +32,8 @@ Optional, depending on enabled features:
   Required when `dashboard.enabled: true`
 - `DISCORD_BOT_TOKEN`
   Required when Discord is enabled
+- `TELEGRAM_BOT_TOKEN`
+  Required when Telegram is enabled
 - `HOMEASSISTANT_URL` and `HOMEASSISTANT_TOKEN`
   Required when the Home Assistant MCP integration is in use
 

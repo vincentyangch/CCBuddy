@@ -15,7 +15,7 @@ packages/
   scheduler/   — cron-based jobs (briefings, consolidation, backups, heartbeat)
   orchestrator/— ShutdownHandler
   skills/      — SkillRegistry, MCP server for dynamic skills
-  apple/       — Apple Calendar integration via swift-helper
+  apple/       — Apple integrations (Calendar, Reminders, Notes, Shortcuts) via swift-bridge + jxa-bridge
   platforms/
     discord/   — Discord.js adapter
     telegram/  — Telegram adapter
@@ -94,10 +94,23 @@ Full specifications live in `docs/superpowers/specs/`:
 - `2026-03-19-memory-consolidation-backup-design.md` — memory lifecycle
 - `2026-03-19-evening-briefing-design.md` — evening briefing format
 - `2026-03-19-apple-calendar-design.md` — Apple Calendar integration
+- `2026-03-20-conversation-continuity-design.md` — session resumption and continuity
+- `2026-03-20-gui-dashboard-design.md` — GUI dashboard architecture
+- `2026-03-20-interactive-followups-design.md` — mid-task clarifying questions
 - `2026-03-20-session-conflict-detection-design.md` — directory locking
+- `2026-03-20-streaming-responses-design.md` — streaming thinking/response messages
 - `2026-03-20-voice-messages-design.md` — voice transcription and TTS
-- `2026-03-21-session-history-persistence-design.md` — session persistence and pause/resume
-- `2026-03-21-notification-preferences-design.md` — proactive notifications with preferences
-- `2026-03-21-multi-directory-workspaces-design.md` — per-channel working directories
-- `2026-03-21-granular-permissions-design.md` — trusted role with tool allowlist
 - `2026-03-21-context-compaction-design.md` — automatic context compaction
+- `2026-03-21-dashboard-webchat-design.md` — browser-based web chat
+- `2026-03-21-granular-permissions-design.md` — trusted role with tool allowlist
+- `2026-03-21-model-selection-design.md` — runtime model switching
+- `2026-03-21-multi-directory-workspaces-design.md` — per-channel working directories
+- `2026-03-21-notification-preferences-design.md` — proactive notifications with preferences
+- `2026-03-21-permission-gates-design.md` — dangerous tool call gating
+- `2026-03-21-session-history-persistence-design.md` — session persistence and pause/resume
+- `2026-03-26-scheduler-memory-persistence-design.md` — scheduler state persistence
+- `2026-04-08-local-skills-state-design.md` — local skill state management
+- `2026-04-09-dashboard-review-improvement-design.md` — dashboard review improvements
+- `2026-04-09-pid-lock-safety-design.md` — PID lock safety improvements
+- `2026-04-09-request-scoped-outbound-media-design.md` — request-scoped outbound media
+- `2026-04-10-dashboard-phase4-signal-deck-design.md` — signal deck phase 4 dashboard redesign
