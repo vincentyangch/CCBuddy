@@ -66,12 +66,12 @@ describe('getModelOptionsForBackend', () => {
     const options = getModelOptionsForBackend('sdk');
     expect(options).toContain('sonnet');
     expect(options).toContain('opus');
-    expect(options).not.toContain('gpt-5');
+    expect(options).not.toContain('gpt-5.4');
   });
 
   it('returns Codex models for Codex backends', () => {
     const options = getModelOptionsForBackend('codex-sdk');
-    expect(options).toContain('gpt-5');
+    expect(options).toContain('gpt-5.4');
     expect(options).toContain('o3');
     expect(options).not.toContain('sonnet');
   });

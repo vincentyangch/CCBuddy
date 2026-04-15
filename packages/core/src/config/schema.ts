@@ -269,7 +269,7 @@ export const DEFAULT_CONFIG: CCBuddyConfig = {
       default_sandbox: 'workspace-write',
     },
     claude_models: ['sonnet', 'opus', 'haiku', 'opus[1m]', 'sonnet[1m]', 'opusplan'],
-    codex_models: ['gpt-5', 'gpt-5.4', 'o3', 'o4-mini', 'o3-pro'],
+    codex_models: ['gpt-5.4', 'o3', 'o4-mini', 'o3-pro'],
   },
   memory: {
     db_path: './data/memory.sqlite',

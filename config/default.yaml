@@ -57,7 +57,6 @@ ccbuddy:
       - "sonnet[1m]"
       - "opusplan"
     codex_models:
-      - "gpt-5"
       - "gpt-5.4"
       - "o3"
       - "o4-mini"
