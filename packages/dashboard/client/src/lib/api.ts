@@ -66,5 +66,10 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ model }),
     }),
-  getBackend: () => request<{ backend: string; models: string[] }>('/api/config/backend'),
+  getBackend: () => request<{ backend: string; models: string[]; claude_models: string[]; codex_models: string[] }>('/api/config/backend'),
+  setModels: (lists: { claude_models?: string[]; codex_models?: string[] }) =>
+    request<{ ok: boolean; claude_models: string[]; codex_models: string[] }>('/api/config/models', {
+      method: 'PUT',
+      body: JSON.stringify(lists),
+    }),
 };

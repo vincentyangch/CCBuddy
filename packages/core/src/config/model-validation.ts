@@ -5,7 +5,7 @@ export const CLAUDE_MODEL_ALIASES = [
 ] as const;
 
 export const CODEX_MODEL_ALIASES = [
-  'gpt-5', 'o3', 'o4-mini',
+  'gpt-5', 'gpt-5.4', 'o3', 'o4-mini',
   'o3-pro',
 ] as const;
 
@@ -25,28 +25,41 @@ export function isValidModel(value: string): boolean {
   return CLAUDE_MODEL_ID_PATTERN.test(value) || OPENAI_MODEL_ID_PATTERN.test(value);
 }
 
-export function isValidModelForBackend(value: string, backend: BackendType): boolean {
+export function isValidModelForBackend(
+  value: string,
+  backend: BackendType,
+  configLists?: { claude_models?: string[]; codex_models?: string[] },
+): boolean {
   if (value === 'default') return true;
 
+  const claudeList = configLists?.claude_models ?? [...CLAUDE_MODEL_ALIASES];
+  const codexList = configLists?.codex_models ?? [...CODEX_MODEL_ALIASES];
+
   if (backend === 'sdk' || backend === 'cli') {
-    if ((CLAUDE_MODEL_ALIASES as readonly string[]).includes(value)) return true;
+    if (claudeList.includes(value)) return true;
     return CLAUDE_MODEL_ID_PATTERN.test(value);
   }
 
   if (backend === 'codex-sdk' || backend === 'codex-cli') {
-    if ((CODEX_MODEL_ALIASES as readonly string[]).includes(value)) return true;
+    if (codexList.includes(value)) return true;
     return OPENAI_MODEL_ID_PATTERN.test(value);
   }
 
   return isValidModel(value);
 }
 
-export function getModelOptionsForBackend(backend: BackendType): string[] {
+export function getModelOptionsForBackend(
+  backend: BackendType,
+  configLists?: { claude_models?: string[]; codex_models?: string[] },
+): string[] {
+  const claudeList = configLists?.claude_models ?? [...CLAUDE_MODEL_ALIASES];
+  const codexList = configLists?.codex_models ?? [...CODEX_MODEL_ALIASES];
+
   if (backend === 'sdk' || backend === 'cli') {
-    return [...CLAUDE_MODEL_ALIASES];
+    return claudeList;
   }
   if (backend === 'codex-sdk' || backend === 'codex-cli') {
-    return [...CODEX_MODEL_ALIASES];
+    return codexList;
   }
-  return [...CLAUDE_MODEL_ALIASES, ...CODEX_MODEL_ALIASES];
+  return [...claudeList, ...codexList];
 }

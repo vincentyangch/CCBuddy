@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { api } from '../lib/api';
 import { ModelSelector } from '../components/ModelSelector';
+import { ModelListEditor } from '../components/ModelListEditor';
 import { Button, PageHeader, Panel, StatusPill } from '../components/ui';
 
 const SETTINGS_GROUPS = [
@@ -391,6 +392,7 @@ export function ConfigPage() {
       {tabKey === 'agent' && (
         <div className="mb-6 grid gap-4 lg:grid-cols-2">
           <ModelSelector />
+          <ModelListEditor />
           <PermissionGatesControl
             localConfig={localConfig}
             effectiveConfig={effectiveConfig}

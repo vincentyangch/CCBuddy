@@ -47,6 +47,8 @@ export interface AgentConfig {
   compaction_summary_tokens: number;
   permission_gates: PermissionGateConfig;
   codex: CodexConfig;
+  claude_models: string[];
+  codex_models: string[];
 }
 
 export interface MemoryConfig {
@@ -266,6 +268,8 @@ export const DEFAULT_CONFIG: CCBuddyConfig = {
       network_access: true,
       default_sandbox: 'workspace-write',
     },
+    claude_models: ['sonnet', 'opus', 'haiku', 'opus[1m]', 'sonnet[1m]', 'opusplan'],
+    codex_models: ['gpt-5', 'gpt-5.4', 'o3', 'o4-mini', 'o3-pro'],
   },
   memory: {
     db_path: './data/memory.sqlite',

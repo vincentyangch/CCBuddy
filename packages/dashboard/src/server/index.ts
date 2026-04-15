@@ -331,10 +331,44 @@ export class DashboardServer {
     // GET /api/config/backend — current backend type and available models
     this.app.get('/api/config/backend', async () => {
       const backend = this.deps.config.agent.backend as BackendType;
+      const configLists = {
+        claude_models: this.deps.config.agent.claude_models,
+        codex_models: this.deps.config.agent.codex_models,
+      };
       return {
         backend,
-        models: getModelOptionsForBackend(backend),
+        models: getModelOptionsForBackend(backend, configLists),
+        claude_models: this.deps.config.agent.claude_models,
+        codex_models: this.deps.config.agent.codex_models,
       };
+    });
+
+    // PUT /api/config/models — update model lists at runtime
+    this.app.put('/api/config/models', async (request, reply) => {
+      const body = request.body as { claude_models?: string[]; codex_models?: string[] } | null;
+      if (!body || (!body.claude_models && !body.codex_models)) {
+        return reply.status(400).send({ error: 'Provide claude_models and/or codex_models arrays' });
+      }
+
+      const runtimePath = join(this.deps.config.data_dir, 'runtime-config.json');
+      let runtimeConfig: Record<string, unknown> = {};
+      try {
+        runtimeConfig = JSON.parse(readFileSync(runtimePath, 'utf8'));
+      } catch { /* no existing file */ }
+
+      if (body.claude_models) {
+        runtimeConfig.claude_models = body.claude_models;
+        this.deps.config.agent.claude_models = body.claude_models;
+      }
+      if (body.codex_models) {
+        runtimeConfig.codex_models = body.codex_models;
+        this.deps.config.agent.codex_models = body.codex_models;
+      }
+
+      mkdirSync(dirname(runtimePath), { recursive: true });
+      writeFileSync(runtimePath, JSON.stringify(runtimeConfig, null, 2), 'utf8');
+
+      return { ok: true, claude_models: this.deps.config.agent.claude_models, codex_models: this.deps.config.agent.codex_models };
     });
 
     // GET /api/config/model — current default model
@@ -361,8 +395,12 @@ export class DashboardServer {
       }
 
       const backend = this.deps.config.agent.backend as BackendType;
-      if (!isValidModelForBackend(body.model, backend)) {
-        const available = getModelOptionsForBackend(backend).join(', ');
+      const configLists = {
+        claude_models: this.deps.config.agent.claude_models,
+        codex_models: this.deps.config.agent.codex_models,
+      };
+      if (!isValidModelForBackend(body.model, backend, configLists)) {
+        const available = getModelOptionsForBackend(backend, configLists).join(', ');
         return reply.status(400).send({ error: `Invalid model "${body.model}" for ${backend} backend. Available: ${available}` });
       }
 

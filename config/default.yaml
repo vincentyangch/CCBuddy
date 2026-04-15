@@ -49,6 +49,19 @@ ccbuddy:
       api_key_env: "OPENAI_API_KEY"
       network_access: true
       default_sandbox: "workspace-write"
+    claude_models:
+      - "sonnet"
+      - "opus"
+      - "haiku"
+      - "opus[1m]"
+      - "sonnet[1m]"
+      - "opusplan"
+    codex_models:
+      - "gpt-5"
+      - "gpt-5.4"
+      - "o3"
+      - "o4-mini"
+      - "o3-pro"
   permission_gates:
     enabled: true
     timeout_ms: 300000
