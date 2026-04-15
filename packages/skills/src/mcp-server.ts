@@ -29,7 +29,8 @@ import { SkillRunner } from './runner.js';
 import type { SkillPermission } from './types.js';
 import { MemoryDatabase, MessageStore, SummaryStore, RetrievalTools, ProfileStore, SessionDatabase, WorkspaceStore } from '@ccbuddy/memory';
 import { SwiftBridge, AppleCalendarService, AppleRemindersService, AppleShortcutsService, JxaBridge, AppleNotesService } from '@ccbuddy/apple';
-import { isValidModel } from '@ccbuddy/core';
+import { isValidModel, isValidModelForBackend, getModelOptionsForBackend } from '@ccbuddy/core';
+import type { BackendType } from '@ccbuddy/core';
 
 // ── CLI argument parsing ────────────────────────────────────────────────────
 
@@ -45,6 +46,7 @@ function parseArgs(argv: string[]): {
   dataDir: string;
   channelKey: string;
   ownerUserId: string;
+  backend: BackendType;
 } {
   let registryPath = '';
   let skillsDir = '';
@@ -57,6 +59,7 @@ function parseArgs(argv: string[]): {
   let dataDir = '';
   let channelKey = '';
   let ownerUserId = '';
+  let backend: BackendType = 'sdk';
 
   for (let i = 0; i < argv.length; i++) {
     switch (argv[i]) {
@@ -93,6 +96,9 @@ function parseArgs(argv: string[]): {
       case '--owner-user-id':
         ownerUserId = argv[++i] ?? '';
         break;
+      case '--backend':
+        backend = (argv[++i] ?? 'sdk') as BackendType;
+        break;
     }
   }
 
@@ -105,7 +111,7 @@ function parseArgs(argv: string[]): {
     process.exit(1);
   }
 
-  return { registryPath, skillsDir, requireApproval, autoGitCommit, memoryDbPath, heartbeatStatusFile, appleHelperPath, sessionKey, dataDir, channelKey, ownerUserId };
+  return { registryPath, skillsDir, requireApproval, autoGitCommit, memoryDbPath, heartbeatStatusFile, appleHelperPath, sessionKey, dataDir, channelKey, ownerUserId, backend };
 }
 
 // ── Elevated permission check ───────────────────────────────────────────────
@@ -1008,8 +1014,9 @@ async function main(): Promise<void> {
     switch (name) {
       case 'switch_model': {
         const { model } = toolArgs as { model: string };
-        if (!isValidModel(model)) {
-          return { content: [{ type: 'text', text: `Invalid model: "${model}". Use an alias (sonnet, opus, haiku, opus[1m], sonnet[1m], opusplan) or a full model ID (e.g., claude-opus-4-6).` }] };
+        if (!isValidModelForBackend(model, args.backend)) {
+          const available = getModelOptionsForBackend(args.backend).join(', ');
+          return { content: [{ type: 'text', text: `Invalid model "${model}" for ${args.backend} backend. Available: ${available}` }] };
         }
         if (sessionDb && args.sessionKey) {
           sessionDb.updateModel(args.sessionKey, model);

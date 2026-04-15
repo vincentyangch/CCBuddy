@@ -13,7 +13,8 @@ import { loadLocalSettingsConfig, saveLocalSettingsConfig } from './settings-sto
 import { buildSettingsSourceMap, validateLocalSettingsConfig } from './settings-meta.js';
 import { loadConfig } from '@ccbuddy/core';
 import type { EventBus, CCBuddyConfig } from '@ccbuddy/core';
-import { isValidModel } from '@ccbuddy/core';
+import { isValidModel, isValidModelForBackend, getModelOptionsForBackend } from '@ccbuddy/core';
+import type { BackendType } from '@ccbuddy/core';
 import type { SessionInfo } from '@ccbuddy/agent';
 import type { MessageQueryParams, MessageQueryResult, StoredAgentEvent } from '@ccbuddy/memory';
 
@@ -327,6 +328,15 @@ export class DashboardServer {
       );
     });
 
+    // GET /api/config/backend — current backend type and available models
+    this.app.get('/api/config/backend', async () => {
+      const backend = this.deps.config.agent.backend as BackendType;
+      return {
+        backend,
+        models: getModelOptionsForBackend(backend),
+      };
+    });
+
     // GET /api/config/model — current default model
     this.app.get('/api/config/model', async () => {
       const runtimePath = join(this.deps.config.data_dir, 'runtime-config.json');
@@ -339,6 +349,7 @@ export class DashboardServer {
       return {
         model: runtimeModel ?? this.deps.config.agent.model,
         source: runtimeModel ? 'runtime_override' : 'config',
+        backend: this.deps.config.agent.backend,
       };
     });
 
@@ -349,8 +360,10 @@ export class DashboardServer {
         return reply.status(400).send({ error: 'Missing model in request body' });
       }
 
-      if (!isValidModel(body.model)) {
-        return reply.status(400).send({ error: `Invalid model: "${body.model}"` });
+      const backend = this.deps.config.agent.backend as BackendType;
+      if (!isValidModelForBackend(body.model, backend)) {
+        const available = getModelOptionsForBackend(backend).join(', ');
+        return reply.status(400).send({ error: `Invalid model "${body.model}" for ${backend} backend. Available: ${available}` });
       }
 
       const runtimePath = join(this.deps.config.data_dir, 'runtime-config.json');

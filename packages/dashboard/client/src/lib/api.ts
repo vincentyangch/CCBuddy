@@ -60,10 +60,11 @@ export const api = {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${getToken()}` },
     }).then(r => r.json()),
-  getModel: () => request<{ model: string; source: string }>('/api/config/model'),
+  getModel: () => request<{ model: string; source: string; backend: string }>('/api/config/model'),
   setModel: (model: string) =>
     request<{ ok: boolean; model: string }>('/api/config/model', {
       method: 'PUT',
       body: JSON.stringify({ model }),
     }),
+  getBackend: () => request<{ backend: string; models: string[] }>('/api/config/backend'),
 };

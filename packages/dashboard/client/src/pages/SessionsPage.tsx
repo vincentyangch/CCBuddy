@@ -34,6 +34,7 @@ export function SessionsPage() {
   const [sessions, setSessions] = useState<any[]>([]);
   const [filter, setFilter] = useState<string>('all');
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [backend, setBackend] = useState<string>('');
 
   const load = () => {
     const status = filter === 'all' ? undefined : filter;
@@ -41,6 +42,7 @@ export function SessionsPage() {
   };
 
   useEffect(() => { load(); }, [filter]);
+  useEffect(() => { api.getBackend().then(d => setBackend(d.backend)); }, []);
 
   const handleDelete = async (key: string) => {
     if (!confirm(`Delete runtime session "${key}"? This cannot be undone.`)) return;
@@ -55,7 +57,7 @@ export function SessionsPage() {
       <PageHeader
         domain="Operations"
         title="Runtime Sessions"
-        description="Agent runtime records for status, model use, cleanup, and event replay."
+        description={`Agent runtime records for status, model use, cleanup, and event replay.${backend ? ` Backend: ${backend}` : ''}`}
       />
 
       <Panel className="overflow-hidden">

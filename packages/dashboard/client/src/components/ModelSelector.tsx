@@ -2,18 +2,20 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { Panel, StatusPill } from './ui';
 
-const MODEL_OPTIONS = ['sonnet', 'opus', 'haiku', 'opus[1m]', 'sonnet[1m]', 'opusplan'];
-
 export function ModelSelector() {
   const [model, setModel] = useState<string>('');
   const [source, setSource] = useState<string>('');
+  const [backend, setBackend] = useState<string>('');
+  const [modelOptions, setModelOptions] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<string>('');
 
   useEffect(() => {
-    api.getModel().then(d => {
-      setModel(d.model);
-      setSource(d.source);
+    Promise.all([api.getModel(), api.getBackend()]).then(([modelData, backendData]) => {
+      setModel(modelData.model);
+      setSource(modelData.source);
+      setBackend(backendData.backend);
+      setModelOptions(backendData.models);
     });
   }, []);
 
@@ -43,13 +45,18 @@ export function ModelSelector() {
           id="runtime-model-select"
           value={model}
           onChange={e => handleChange(e.target.value)}
-          disabled={saving}
+          disabled={saving || modelOptions.length === 0}
           className="sd-input min-w-48 flex-1 text-sm"
         >
-          {MODEL_OPTIONS.map(m => (
+          {modelOptions.map(m => (
             <option key={m} value={m}>{m}</option>
           ))}
         </select>
+        {backend && (
+          <StatusPill tone={backend.startsWith('codex') ? 'info' : 'neutral'}>
+            {backend}
+          </StatusPill>
+        )}
         <StatusPill tone={source === 'runtime_override' ? 'warning' : 'neutral'}>
           {source === 'runtime_override' ? 'runtime override' : 'config default'}
         </StatusPill>

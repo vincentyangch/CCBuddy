@@ -211,6 +211,7 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
       '--heartbeat-status-file', resolve(join(config.data_dir, 'heartbeat-status.json')),
       '--data-dir', resolve(config.data_dir),
       ...(ownerUserId ? ['--owner-user-id', ownerUserId] : []),
+      '--backend', config.agent.backend,
     ],
     env: forwardedEnv,
   };
