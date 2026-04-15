@@ -138,6 +138,46 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
     });
   }
 
+  // Helper: create a backend instance by name (used at startup and for runtime switching)
+  async function createBackend(name: string): Promise<import('@ccbuddy/core').AgentBackend> {
+    switch (name) {
+      case 'sdk': {
+        const { SdkBackend } = await import('@ccbuddy/agent');
+        return new SdkBackend({
+          skipPermissions: config.agent.admin_skip_permissions,
+          permissionGates: config.agent.permission_gates,
+          trustedAllowedTools: config.agent.trusted_allowed_tools,
+          maxTurns: config.agent.max_turns,
+        });
+      }
+      case 'cli': {
+        const { CliBackend } = await import('@ccbuddy/agent');
+        return new CliBackend();
+      }
+      case 'codex-sdk': {
+        const { CodexSdkBackend } = await import('@ccbuddy/agent');
+        const codexApiKey = config.agent.codex.api_key_env
+          ? process.env[config.agent.codex.api_key_env]
+          : undefined;
+        return new CodexSdkBackend({
+          apiKey: codexApiKey,
+          codexPath: config.agent.codex.codex_path,
+          networkAccess: config.agent.codex.network_access,
+          defaultSandbox: config.agent.codex.default_sandbox,
+          permissionGateRules: config.agent.permission_gates.enabled
+            ? config.agent.permission_gates.rules
+            : undefined,
+        });
+      }
+      case 'codex-cli': {
+        const { CodexCliBackend } = await import('@ccbuddy/agent');
+        return new CodexCliBackend();
+      }
+      default:
+        throw new Error(`Unknown backend: ${name}`);
+    }
+  }
+
   // 6. Create memory stores
 
   const messageStore = new MessageStore(database);
@@ -438,37 +478,7 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
           console.log(`[Dashboard] Archived ${archived} session(s) for backend switch`);
         }
 
-        if (backendName === 'sdk') {
-          const { SdkBackend } = await import('@ccbuddy/agent');
-          agentService.setBackend(new SdkBackend({
-            skipPermissions: config.agent.admin_skip_permissions,
-            permissionGates: config.agent.permission_gates,
-            trustedAllowedTools: config.agent.trusted_allowed_tools,
-            maxTurns: config.agent.max_turns,
-          }));
-        } else if (backendName === 'cli') {
-          const { CliBackend } = await import('@ccbuddy/agent');
-          agentService.setBackend(new CliBackend());
-        } else if (backendName === 'codex-sdk') {
-          const { CodexSdkBackend } = await import('@ccbuddy/agent');
-          const codexApiKey = config.agent.codex.api_key_env
-            ? process.env[config.agent.codex.api_key_env]
-            : undefined;
-          agentService.setBackend(new CodexSdkBackend({
-            apiKey: codexApiKey,
-            codexPath: config.agent.codex.codex_path,
-            networkAccess: config.agent.codex.network_access,
-            defaultSandbox: config.agent.codex.default_sandbox,
-            permissionGateRules: config.agent.permission_gates.enabled
-              ? config.agent.permission_gates.rules
-              : undefined,
-          }));
-        } else if (backendName === 'codex-cli') {
-          const { CodexCliBackend } = await import('@ccbuddy/agent');
-          agentService.setBackend(new CodexCliBackend());
-        } else {
-          throw new Error(`Unknown backend: ${backendName}`);
-        }
+        agentService.setBackend(await createBackend(backendName));
         console.log(`[Dashboard] Backend switched to ${backendName}`);
         return backendName;
       },
@@ -491,36 +501,11 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
     });
   }
 
-  // 13. Swap in SDK backend if configured (must happen AFTER discord.js connects —
+  // 13. Swap in final backend if configured (must happen AFTER discord.js connects —
   //     the SDK module has side effects that suppress discord.js WebSocket events
   //     if imported before the connection is established)
-  if (config.agent.backend === 'sdk') {
-    const { SdkBackend } = await import('@ccbuddy/agent');
-    agentService.setBackend(new SdkBackend({
-      skipPermissions: config.agent.admin_skip_permissions,
-      permissionGates: config.agent.permission_gates,
-      trustedAllowedTools: config.agent.trusted_allowed_tools,
-      maxTurns: config.agent.max_turns,
-    }));
-    resolveAgentBackendReady?.();
-  } else if (config.agent.backend === 'codex-sdk') {
-    const { CodexSdkBackend } = await import('@ccbuddy/agent');
-    const codexApiKey = config.agent.codex.api_key_env
-      ? process.env[config.agent.codex.api_key_env]
-      : undefined;
-    agentService.setBackend(new CodexSdkBackend({
-      apiKey: codexApiKey,
-      codexPath: config.agent.codex.codex_path,
-      networkAccess: config.agent.codex.network_access,
-      defaultSandbox: config.agent.codex.default_sandbox,
-      permissionGateRules: config.agent.permission_gates.enabled
-        ? config.agent.permission_gates.rules
-        : undefined,
-    }));
-    resolveAgentBackendReady?.();
-  } else if (config.agent.backend === 'codex-cli') {
-    const { CodexCliBackend } = await import('@ccbuddy/agent');
-    agentService.setBackend(new CodexCliBackend());
+  if (config.agent.backend !== 'cli') {
+    agentService.setBackend(await createBackend(config.agent.backend));
     resolveAgentBackendReady?.();
   }
 
