@@ -88,4 +88,29 @@ ccbuddy:
     const config = loadConfig(emptyDir);
     expect(config.gateway.unknown_user_reply).toBe(true);
   });
+
+  it('maps legacy top-level permission_gates into agent.permission_gates', () => {
+    writeFileSync(join(tmpDir, 'default.yaml'), `ccbuddy:
+  permission_gates:
+    enabled: false
+    timeout_ms: 1234
+    rules:
+      - name: "legacy-rule"
+        pattern: "launchctl"
+        tool: "Bash"
+        description: "Legacy launchctl rule"
+`);
+
+    const config = loadConfig(tmpDir);
+    expect(config.agent.permission_gates.enabled).toBe(false);
+    expect(config.agent.permission_gates.timeout_ms).toBe(1234);
+    expect(config.agent.permission_gates.rules).toEqual([
+      {
+        name: 'legacy-rule',
+        pattern: 'launchctl',
+        tool: 'Bash',
+        description: 'Legacy launchctl rule',
+      },
+    ]);
+  });
 });

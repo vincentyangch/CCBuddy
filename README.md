@@ -315,7 +315,7 @@ If `agent.backend` is set to `codex-sdk` or `codex-cli`:
    ```
 2. Confirm `OPENAI_API_KEY` is set in the running environment.
 3. Note that Codex sessions do **not** support interactive permission gates (Discord approval buttons) or mid-task clarifying questions (`AskUserQuestion`). Safety relies on Codex sandbox modes and auto-generated deny rules.
-4. Model selection must use OpenAI models (`gpt-5`, `o3`, `o4-mini`, etc.) — Claude model names will be rejected.
+4. Model selection must use OpenAI models (`gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-pro`, full OpenAI model IDs, etc.) — Claude model names will be rejected.
 
 ## References
 

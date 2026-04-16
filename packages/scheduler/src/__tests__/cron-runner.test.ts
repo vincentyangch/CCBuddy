@@ -264,6 +264,36 @@ describe('CronRunner', () => {
       const request: AgentRequest = (deps.executeAgentRequest as ReturnType<typeof vi.fn>).mock.calls[0][0];
       expect(request.model).toBeUndefined();
     });
+
+    it('passes job reasoning effort and verbosity to AgentRequest when set', async () => {
+      const deps = createMockDeps();
+      const runner = new CronRunner(deps);
+      const job = createMockJob({
+        reasoningEffort: 'high',
+        verbosity: 'low',
+      } as Partial<PromptJob>);
+
+      await runner.executeJob(job);
+
+      const request: AgentRequest = (deps.executeAgentRequest as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(request.reasoningEffort).toBe('high');
+      expect(request.verbosity).toBe('low');
+    });
+
+    it('falls back to scheduler defaults for reasoning effort and verbosity', async () => {
+      const deps = createMockDeps({
+        defaultReasoningEffort: 'minimal',
+        defaultVerbosity: 'high',
+      } as Partial<CronRunnerOptions>);
+      const runner = new CronRunner(deps);
+      const job = createMockJob();
+
+      await runner.executeJob(job);
+
+      const request: AgentRequest = (deps.executeAgentRequest as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(request.reasoningEffort).toBe('minimal');
+      expect(request.verbosity).toBe('high');
+    });
   });
 
   describe('executeJob — memory context', () => {

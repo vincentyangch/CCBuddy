@@ -45,13 +45,21 @@ export interface DashboardDeps {
       channel_id: string;
       is_group_channel: boolean;
       model: string | null;
+      reasoning_effort: string | null;
+      verbosity: string | null;
       status: string;
       created_at: number;
       last_activity: number;
     }>;
+    setModel?(sessionKey: string, model: string | null): void;
+    setReasoningEffort?(sessionKey: string, reasoningEffort: string | null): void;
+    setVerbosity?(sessionKey: string, verbosity: string | null): void;
     deleteSession(sessionKey: string): void;
   };
 }
+
+const CODEx_REASONING_EFFORT_OPTIONS = ['minimal', 'low', 'medium', 'high', 'xhigh'] as const;
+const CODEx_VERBOSITY_OPTIONS = ['low', 'medium', 'high'] as const;
 
 /** Constant-time string comparison to prevent timing attacks on token checks. */
 function safeTokenEqual(a: string, b: string): boolean {
@@ -197,6 +205,72 @@ export class DashboardServer {
         this.deps.sessionStore.deleteSession(key);
       }
       return { success: true };
+    });
+
+    // PUT /api/sessions/:key/settings — update per-session runtime overrides
+    this.app.put<{ Params: { key: string } }>('/api/sessions/:key/settings', async (request, reply) => {
+      const { key } = request.params;
+      const body = request.body as {
+        model?: string | null;
+        reasoning_effort?: string | null;
+        verbosity?: string | null;
+      } | null;
+
+      if (!this.deps.sessionStore) {
+        return reply.status(501).send({ error: 'Session runtime editing not available' });
+      }
+      if (!body || (body.model === undefined && body.reasoning_effort === undefined && body.verbosity === undefined)) {
+        return reply.status(400).send({ error: 'Provide model, reasoning_effort, and/or verbosity in request body' });
+      }
+
+      const session = this.deps.sessionStore.getHistory().find((row) => row.session_key === key);
+      if (!session) {
+        return reply.status(404).send({ error: `Session not found: ${key}` });
+      }
+
+      const backend = this.deps.config.agent.backend as BackendType;
+      const configLists = {
+        claude_models: this.deps.config.agent.claude_models,
+        codex_models: this.deps.config.agent.codex_models,
+      };
+
+      if (body.model !== undefined && body.model !== null && !isValidModelForBackend(body.model, backend, configLists)) {
+        const available = getModelOptionsForBackend(backend, configLists).join(', ');
+        return reply.status(400).send({ error: `Invalid model "${body.model}" for ${backend} backend. Available: ${available}` });
+      }
+      if ((body.reasoning_effort !== undefined || body.verbosity !== undefined) && !backend.startsWith('codex')) {
+        return reply.status(400).send({ error: `reasoning_effort and verbosity are only supported for Codex backends. Current backend: ${backend}` });
+      }
+      if (
+        body.reasoning_effort !== undefined &&
+        body.reasoning_effort !== null &&
+        !(CODEx_REASONING_EFFORT_OPTIONS as readonly string[]).includes(body.reasoning_effort)
+      ) {
+        return reply.status(400).send({ error: `Invalid reasoning_effort "${body.reasoning_effort}". Valid: ${CODEx_REASONING_EFFORT_OPTIONS.join(', ')}` });
+      }
+      if (
+        body.verbosity !== undefined &&
+        body.verbosity !== null &&
+        !(CODEx_VERBOSITY_OPTIONS as readonly string[]).includes(body.verbosity)
+      ) {
+        return reply.status(400).send({ error: `Invalid verbosity "${body.verbosity}". Valid: ${CODEx_VERBOSITY_OPTIONS.join(', ')}` });
+      }
+
+      this.deps.sessionStore.setModel?.(key, body.model ?? null);
+      if (body.reasoning_effort !== undefined) {
+        this.deps.sessionStore.setReasoningEffort?.(key, body.reasoning_effort);
+      }
+      if (body.verbosity !== undefined) {
+        this.deps.sessionStore.setVerbosity?.(key, body.verbosity);
+      }
+
+      return {
+        ok: true,
+        session_key: key,
+        model: body.model ?? null,
+        reasoning_effort: body.reasoning_effort ?? null,
+        verbosity: body.verbosity ?? null,
+      };
     });
 
     // GET /api/sessions/:key/events — agent events for session replay
@@ -409,12 +483,15 @@ export class DashboardServer {
         if (!Array.isArray(val)) {
           throw new Error(`${name} must be an array`);
         }
+        const normalized: string[] = [];
         for (const item of val) {
           if (typeof item !== 'string' || item.trim() === '') {
             throw new Error(`${name} must contain only non-empty strings`);
           }
+          const trimmed = item.trim();
+          if (!normalized.includes(trimmed)) normalized.push(trimmed);
         }
-        return val as string[];
+        return normalized;
       };
 
       let claudeModels: string[] | null;
@@ -441,6 +518,19 @@ export class DashboardServer {
         this.deps.config.agent.codex_models = codexModels;
       }
 
+      const backend = this.deps.config.agent.backend as BackendType;
+      const configLists = {
+        claude_models: this.deps.config.agent.claude_models,
+        codex_models: this.deps.config.agent.codex_models,
+      };
+      if (!isValidModelForBackend(this.deps.config.agent.model, backend, configLists)) {
+        const fallbackModels = getModelOptionsForBackend(backend, configLists);
+        if (fallbackModels.length > 0) {
+          runtimeConfig.model = fallbackModels[0];
+          this.deps.config.agent.model = fallbackModels[0];
+        }
+      }
+
       mkdirSync(dirname(runtimePath), { recursive: true });
       writeFileSync(runtimePath, JSON.stringify(runtimeConfig, null, 2), 'utf8');
 
@@ -451,23 +541,39 @@ export class DashboardServer {
     this.app.get('/api/config/model', async () => {
       const runtimePath = join(this.deps.config.data_dir, 'runtime-config.json');
       let runtimeModel: string | null = null;
+      let runtimeReasoningEffort: string | null = null;
+      let runtimeVerbosity: string | null = null;
       try {
         const data = JSON.parse(readFileSync(runtimePath, 'utf8'));
         runtimeModel = data.model ?? null;
+        runtimeReasoningEffort = data.reasoning_effort ?? null;
+        runtimeVerbosity = data.verbosity ?? null;
       } catch { /* no runtime override */ }
 
+      const configReasoningEffort = this.deps.config.agent.codex.default_reasoning_effort ?? null;
+      const configVerbosity = this.deps.config.agent.codex.default_verbosity ?? null;
       return {
         model: runtimeModel ?? this.deps.config.agent.model,
         source: runtimeModel ? 'runtime_override' : 'config',
         backend: this.deps.config.agent.backend,
+        reasoning_effort: runtimeReasoningEffort ?? configReasoningEffort,
+        reasoning_effort_source: runtimeReasoningEffort ? 'runtime_override' : configReasoningEffort ? 'config' : 'effective_only',
+        verbosity: runtimeVerbosity ?? configVerbosity,
+        verbosity_source: runtimeVerbosity ? 'runtime_override' : configVerbosity ? 'config' : 'effective_only',
+        reasoning_effort_options: [...CODEx_REASONING_EFFORT_OPTIONS],
+        verbosity_options: [...CODEx_VERBOSITY_OPTIONS],
       };
     });
 
     // PUT /api/config/model — set runtime model override
     this.app.put('/api/config/model', async (request, reply) => {
-      const body = request.body as { model: string } | null;
-      if (!body?.model) {
-        return reply.status(400).send({ error: 'Missing model in request body' });
+      const body = request.body as {
+        model?: string | null;
+        reasoning_effort?: string | null;
+        verbosity?: string | null;
+      } | null;
+      if (!body || (body.model === undefined && body.reasoning_effort === undefined && body.verbosity === undefined)) {
+        return reply.status(400).send({ error: 'Provide model, reasoning_effort, and/or verbosity in request body' });
       }
 
       const backend = this.deps.config.agent.backend as BackendType;
@@ -475,9 +581,26 @@ export class DashboardServer {
         claude_models: this.deps.config.agent.claude_models,
         codex_models: this.deps.config.agent.codex_models,
       };
-      if (!isValidModelForBackend(body.model, backend, configLists)) {
+      if (body.model !== undefined && body.model !== null && !isValidModelForBackend(body.model, backend, configLists)) {
         const available = getModelOptionsForBackend(backend, configLists).join(', ');
         return reply.status(400).send({ error: `Invalid model "${body.model}" for ${backend} backend. Available: ${available}` });
+      }
+      if ((body.reasoning_effort !== undefined || body.verbosity !== undefined) && !backend.startsWith('codex')) {
+        return reply.status(400).send({ error: `reasoning_effort and verbosity are only supported for Codex backends. Current backend: ${backend}` });
+      }
+      if (
+        body.reasoning_effort !== undefined &&
+        body.reasoning_effort !== null &&
+        !(CODEx_REASONING_EFFORT_OPTIONS as readonly string[]).includes(body.reasoning_effort)
+      ) {
+        return reply.status(400).send({ error: `Invalid reasoning_effort "${body.reasoning_effort}". Valid: ${CODEx_REASONING_EFFORT_OPTIONS.join(', ')}` });
+      }
+      if (
+        body.verbosity !== undefined &&
+        body.verbosity !== null &&
+        !(CODEx_VERBOSITY_OPTIONS as readonly string[]).includes(body.verbosity)
+      ) {
+        return reply.status(400).send({ error: `Invalid verbosity "${body.verbosity}". Valid: ${CODEx_VERBOSITY_OPTIONS.join(', ')}` });
       }
 
       const runtimePath = join(this.deps.config.data_dir, 'runtime-config.json');
@@ -486,14 +609,37 @@ export class DashboardServer {
         runtimeConfig = JSON.parse(readFileSync(runtimePath, 'utf8'));
       } catch { /* no existing file */ }
 
-      runtimeConfig.model = body.model;
+      if (body.model !== undefined && body.model !== null) {
+        runtimeConfig.model = body.model;
+        this.deps.config.agent.model = body.model;
+      }
+      if (body.reasoning_effort !== undefined) {
+        if (body.reasoning_effort === null) {
+          delete runtimeConfig.reasoning_effort;
+          delete this.deps.config.agent.codex.default_reasoning_effort;
+        } else {
+          runtimeConfig.reasoning_effort = body.reasoning_effort;
+          this.deps.config.agent.codex.default_reasoning_effort = body.reasoning_effort as typeof this.deps.config.agent.codex.default_reasoning_effort;
+        }
+      }
+      if (body.verbosity !== undefined) {
+        if (body.verbosity === null) {
+          delete runtimeConfig.verbosity;
+          delete this.deps.config.agent.codex.default_verbosity;
+        } else {
+          runtimeConfig.verbosity = body.verbosity;
+          this.deps.config.agent.codex.default_verbosity = body.verbosity as typeof this.deps.config.agent.codex.default_verbosity;
+        }
+      }
       mkdirSync(dirname(runtimePath), { recursive: true });
       writeFileSync(runtimePath, JSON.stringify(runtimeConfig, null, 2), 'utf8');
 
-      // Live-update config so gateway picks up the change immediately
-      this.deps.config.agent.model = body.model;
-
-      return { ok: true, model: body.model };
+      return {
+        ok: true,
+        model: this.deps.config.agent.model,
+        reasoning_effort: this.deps.config.agent.codex.default_reasoning_effort ?? null,
+        verbosity: this.deps.config.agent.codex.default_verbosity ?? null,
+      };
     });
   }
 }

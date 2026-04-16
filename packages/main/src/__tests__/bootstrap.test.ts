@@ -8,6 +8,13 @@ const mockAcquirePidLock = vi.fn();
 const mockLoadConfig = vi.fn();
 const mockCreateEventBus = vi.fn();
 const mockUserManager = vi.fn();
+const mockIsValidModel = vi.fn((value: string) => typeof value === 'string' && value.length > 0);
+const mockIsValidModelForBackend = vi.fn((value: string) => typeof value === 'string' && value.length > 0);
+const mockGetModelOptionsForBackend = vi.fn((backend: string, configLists?: { claude_models?: string[]; codex_models?: string[] }) =>
+  backend.startsWith('codex')
+    ? (configLists?.codex_models ?? ['gpt-5.4'])
+    : (configLists?.claude_models ?? ['sonnet'])
+);
 
 vi.mock('../pid-lock.js', () => ({
   acquirePidLock: (...args: unknown[]) => mockAcquirePidLock(...args),
@@ -16,6 +23,9 @@ vi.mock('../pid-lock.js', () => ({
 vi.mock('@ccbuddy/core', () => ({
   loadConfig: (...args: unknown[]) => mockLoadConfig(...args),
   createEventBus: (...args: unknown[]) => mockCreateEventBus(...args),
+  isValidModel: (...args: unknown[]) => mockIsValidModel(...args as [string]),
+  isValidModelForBackend: (...args: unknown[]) => mockIsValidModelForBackend(...args as [string]),
+  getModelOptionsForBackend: (...args: unknown[]) => mockGetModelOptionsForBackend(...args as [string, { claude_models?: string[]; codex_models?: string[] } | undefined]),
   UserManager: function (this: unknown, ...args: unknown[]) {
     return mockUserManager(...args);
   },
@@ -23,8 +33,10 @@ vi.mock('@ccbuddy/core', () => ({
 
 const mockSdkBackend = vi.fn();
 const mockCliBackend = vi.fn();
+const mockCodexSdkBackend = vi.fn();
+const mockCodexCliBackend = vi.fn();
 const mockAgentService = vi.fn();
-const mockSessionStore = vi.fn().mockReturnValue({ tick: vi.fn(), hydrate: vi.fn() });
+const mockSessionStore = vi.fn();
 
 vi.mock('@ccbuddy/agent', () => ({
   SdkBackend: function (this: unknown, ...args: unknown[]) {
@@ -32,6 +44,12 @@ vi.mock('@ccbuddy/agent', () => ({
   },
   CliBackend: function (this: unknown, ...args: unknown[]) {
     return mockCliBackend(...args);
+  },
+  CodexSdkBackend: function (this: unknown, ...args: unknown[]) {
+    return mockCodexSdkBackend(...args);
+  },
+  CodexCliBackend: function (this: unknown, ...args: unknown[]) {
+    return mockCodexCliBackend(...args);
   },
   AgentService: function (this: unknown, ...args: unknown[]) {
     return mockAgentService(...args);
@@ -129,6 +147,9 @@ const mockNotificationService = vi.fn().mockReturnValue({ start: vi.fn(), stop: 
 const mockResolvePreferences = vi.fn().mockReturnValue({
   enabled: true, types: {}, target: { platform: 'discord', channel: 'DM' }, quietHours: null, muteUntil: null,
 });
+const mockDashboardServer = vi.fn();
+const mockWebChatAdapter = vi.fn();
+const mockExecFile = vi.fn();
 
 vi.mock('@ccbuddy/scheduler', () => ({
   SchedulerService: function (this: unknown, ...args: unknown[]) {
@@ -141,10 +162,21 @@ vi.mock('@ccbuddy/scheduler', () => ({
 }));
 
 vi.mock('@ccbuddy/dashboard', () => ({
-  DashboardServer: vi.fn().mockImplementation(() => ({
+  DashboardServer: function (this: unknown, ...args: unknown[]) {
+    return mockDashboardServer(...args);
+  },
+  WebChatAdapter: function (this: unknown, ...args: unknown[]) {
+    return mockWebChatAdapter(...args);
+  },
+}));
+
+vi.mock('node:child_process', () => ({
+  execFile: (...args: unknown[]) => mockExecFile(...args),
+}));
+
+mockDashboardServer.mockImplementation(() => ({
     start: vi.fn().mockResolvedValue('http://127.0.0.1:18801'),
     stop: vi.fn().mockResolvedValue(undefined),
-  })),
 }));
 
 vi.mock('@ccbuddy/gateway', async (importOriginal) => {
@@ -162,6 +194,7 @@ function makeConfig(overrides: Record<string, unknown> = {}) {
   return {
     agent: {
       backend: 'sdk',
+      model: 'sonnet',
       max_concurrent_sessions: 3,
       session_timeout_minutes: 30,
       queue_max_depth: 10,
@@ -174,6 +207,24 @@ function makeConfig(overrides: Record<string, unknown> = {}) {
       graceful_shutdown_timeout_seconds: 30,
       session_timeout_ms: 3_600_000,
       user_input_timeout_ms: 300_000,
+      max_pause_ms: 604_800_000,
+      trusted_allowed_tools: ['Read', 'Glob', 'Grep'],
+      max_turns: 80,
+      compaction_threshold: 50,
+      compaction_summary_tokens: 4000,
+      permission_gates: {
+        enabled: true,
+        rules: [
+          { name: 'destructive-rm', pattern: 'rm\\s+-rf', tool: 'Bash', description: 'Block rm -rf' },
+        ],
+      },
+      codex: {
+        api_key_env: 'OPENAI_API_KEY',
+        network_access: true,
+        default_sandbox: 'workspace-write',
+      },
+      claude_models: ['sonnet', 'opus'],
+      codex_models: ['gpt-5.4', 'gpt-5.4-mini'],
     },
     memory: {
       db_path: './data/memory.sqlite',
@@ -240,8 +291,12 @@ describe('bootstrap', () => {
   let fakeUserManagerInstance: {
     findByPlatformId: ReturnType<typeof vi.fn>;
     buildSessionId: ReturnType<typeof vi.fn>;
+    registerPlatformId: ReturnType<typeof vi.fn>;
+    getAllUsers: ReturnType<typeof vi.fn>;
   };
   let fakeSdkBackendInstance: object;
+  let fakeCodexSdkBackendInstance: object;
+  let fakeCodexCliBackendInstance: object;
   let fakeAgentServiceInstance: {
     handleRequest: ReturnType<typeof vi.fn>;
     tick: ReturnType<typeof vi.fn>;
@@ -251,6 +306,11 @@ describe('bootstrap', () => {
     init: ReturnType<typeof vi.fn>;
     close: ReturnType<typeof vi.fn>;
     raw: ReturnType<typeof vi.fn>;
+  };
+  let fakeSessionStoreInstance: {
+    tick: ReturnType<typeof vi.fn>;
+    hydrate: ReturnType<typeof vi.fn>;
+    archiveAll: ReturnType<typeof vi.fn>;
   };
   let fakeMessageStoreInstance: { add: ReturnType<typeof vi.fn>; getById: ReturnType<typeof vi.fn> };
   let fakeSummaryStoreInstance: object;
@@ -285,8 +345,12 @@ describe('bootstrap', () => {
     fakeUserManagerInstance = {
       findByPlatformId: vi.fn(),
       buildSessionId: vi.fn().mockReturnValue('alice-discord-ch1'),
+      registerPlatformId: vi.fn(),
+      getAllUsers: vi.fn().mockReturnValue([]),
     };
     fakeSdkBackendInstance = {};
+    fakeCodexSdkBackendInstance = {};
+    fakeCodexCliBackendInstance = {};
     fakeAgentServiceInstance = {
       handleRequest: vi.fn().mockReturnValue((async function* () {})()),
       tick: vi.fn(),
@@ -296,6 +360,11 @@ describe('bootstrap', () => {
       init: vi.fn(),
       close: vi.fn(),
       raw: vi.fn().mockReturnValue({}),
+    };
+    fakeSessionStoreInstance = {
+      tick: vi.fn(),
+      hydrate: vi.fn(),
+      archiveAll: vi.fn().mockReturnValue(0),
     };
     fakeMessageStoreInstance = { add: vi.fn(), getById: vi.fn() };
     fakeSummaryStoreInstance = {};
@@ -334,7 +403,10 @@ describe('bootstrap', () => {
     mockUserManager.mockReturnValue(fakeUserManagerInstance);
     mockSdkBackend.mockReturnValue(fakeSdkBackendInstance);
     mockCliBackend.mockReturnValue({});
+    mockCodexSdkBackend.mockReturnValue(fakeCodexSdkBackendInstance);
+    mockCodexCliBackend.mockReturnValue(fakeCodexCliBackendInstance);
     mockAgentService.mockReturnValue(fakeAgentServiceInstance);
+    mockSessionStore.mockReturnValue(fakeSessionStoreInstance);
     mockMemoryDatabase.mockReturnValue(fakeDatabaseInstance);
     mockMessageStore.mockReturnValue(fakeMessageStoreInstance);
     mockAgentEventStore.mockReturnValue({ add: vi.fn() });
@@ -359,11 +431,22 @@ describe('bootstrap', () => {
       start: vi.fn().mockResolvedValue(undefined),
       stop: vi.fn().mockResolvedValue(undefined),
     });
+    mockDashboardServer.mockReturnValue({
+      start: vi.fn().mockResolvedValue('http://127.0.0.1:18801'),
+      stop: vi.fn().mockResolvedValue(undefined),
+      setWebChatAdapter: vi.fn(),
+    });
+    mockWebChatAdapter.mockReturnValue({});
+    mockExecFile.mockImplementation((_command: string, _args: string[], _opts: { timeout: number }, callback: (err: Error | null) => void) => {
+      callback(null);
+      return {} as any;
+    });
   });
 
   afterEach(() => {
     vi.useRealTimers();
     vi.clearAllMocks();
+    delete process.env.CUSTOM_OPENAI_API_KEY;
   });
 
   it('calls loadConfig with the provided configDir', async () => {
@@ -373,7 +456,7 @@ describe('bootstrap', () => {
 
   it('creates SdkBackend with skipPermissions from config', async () => {
     await bootstrap('/config');
-    expect(mockSdkBackend).toHaveBeenCalledWith({ skipPermissions: true });
+    expect(mockSdkBackend).toHaveBeenCalledWith(expect.objectContaining({ skipPermissions: true }));
   });
 
   it('creates CliBackend when backend is cli', async () => {
@@ -382,6 +465,58 @@ describe('bootstrap', () => {
     await bootstrap('/config');
     expect(mockCliBackend).toHaveBeenCalled();
     expect(mockSdkBackend).not.toHaveBeenCalled();
+  });
+
+  it('creates CodexSdkBackend with configured auth and sandbox options', async () => {
+    process.env.CUSTOM_OPENAI_API_KEY = 'sk-codex-sdk';
+    const codexConfig = makeConfig({
+      agent: {
+        ...makeConfig().agent,
+        backend: 'codex-sdk',
+        codex: {
+          api_key_env: 'CUSTOM_OPENAI_API_KEY',
+          network_access: false,
+          default_sandbox: 'read-only',
+        },
+      },
+    });
+    mockLoadConfig.mockReturnValue(codexConfig);
+
+    await bootstrap('/config');
+
+    expect(mockCodexSdkBackend).toHaveBeenCalledWith(expect.objectContaining({
+      apiKey: 'sk-codex-sdk',
+      networkAccess: false,
+      defaultSandbox: 'read-only',
+      permissionGateRules: codexConfig.agent.permission_gates.rules,
+    }));
+  });
+
+  it('creates CodexCliBackend with the same configured auth and sandbox options', async () => {
+    process.env.CUSTOM_OPENAI_API_KEY = 'sk-codex-cli';
+    const codexConfig = makeConfig({
+      agent: {
+        ...makeConfig().agent,
+        backend: 'codex-cli',
+        codex: {
+          api_key_env: 'CUSTOM_OPENAI_API_KEY',
+          codex_path: '/custom/codex',
+          network_access: false,
+          default_sandbox: 'danger-full-access',
+        },
+      },
+    });
+    mockLoadConfig.mockReturnValue(codexConfig);
+
+    await bootstrap('/config');
+
+    expect(mockCodexCliBackend).toHaveBeenCalledWith(expect.objectContaining({
+      apiKey: 'sk-codex-cli',
+      codexPath: '/custom/codex',
+      networkAccess: false,
+      defaultSandbox: 'danger-full-access',
+      permissionGateRules: codexConfig.agent.permission_gates.rules,
+    }));
   });
 
   it('calls MemoryDatabase.init()', async () => {
@@ -472,6 +607,44 @@ describe('bootstrap', () => {
     expect(fakeGatewayInstance.start).toHaveBeenCalled();
   });
 
+  it('runtime backend switching does not archive sessions if the new backend fails to initialize', async () => {
+    const cfg = makeConfig({
+      dashboard: { enabled: true, port: 18801 },
+    });
+    mockLoadConfig.mockReturnValue(cfg);
+    mockCodexCliBackend.mockImplementation(() => {
+      throw new Error('codex init failed');
+    });
+
+    await bootstrap('/config');
+
+    const dashboardDeps = mockDashboardServer.mock.calls[0][0] as {
+      switchBackend: (backend: string) => Promise<string>;
+    };
+
+    await expect(dashboardDeps.switchBackend('codex-cli')).rejects.toThrow('codex init failed');
+    expect(fakeSessionStoreInstance.archiveAll).not.toHaveBeenCalled();
+  });
+
+  it('runtime backend switching archives sessions only after the new backend is created', async () => {
+    const cfg = makeConfig({
+      dashboard: { enabled: true, port: 18801 },
+    });
+    mockLoadConfig.mockReturnValue(cfg);
+    fakeSessionStoreInstance.archiveAll.mockReturnValue(2);
+
+    await bootstrap('/config');
+
+    const dashboardDeps = mockDashboardServer.mock.calls[0][0] as {
+      switchBackend: (backend: string) => Promise<string>;
+    };
+
+    await expect(dashboardDeps.switchBackend('codex-cli')).resolves.toBe('codex-cli');
+    expect(mockCodexCliBackend).toHaveBeenCalled();
+    expect(fakeAgentServiceInstance.setBackend).toHaveBeenCalledWith(fakeCodexCliBackendInstance);
+    expect(fakeSessionStoreInstance.archiveAll).toHaveBeenCalledTimes(1);
+  });
+
   it('waits for SDK backend readiness before dispatching gateway requests', async () => {
     let requestFinished: Promise<void> | undefined;
 
@@ -512,6 +685,31 @@ describe('bootstrap', () => {
         sessionId: 'alice-discord-ch1',
       }),
     );
+  });
+
+  it('uses the active backend command for scheduler health checks', async () => {
+    const cfg = makeConfig({
+      agent: {
+        ...makeConfig().agent,
+        backend: 'codex-cli',
+        codex: {
+          api_key_env: 'OPENAI_API_KEY',
+          codex_path: '/custom/codex',
+          network_access: true,
+          default_sandbox: 'workspace-write',
+        },
+      },
+    });
+    mockLoadConfig.mockReturnValue(cfg);
+
+    await bootstrap('/config');
+
+    const schedulerArgs = mockSchedulerService.mock.calls[0][0] as {
+      checkAgent: () => Promise<{ reachable: boolean; durationMs: number }>;
+    };
+
+    await schedulerArgs.checkAgent();
+    expect(mockExecFile).toHaveBeenCalledWith('/custom/codex', ['--version'], { timeout: 10_000 }, expect.any(Function));
   });
 
   it('does not create Discord adapter when disabled', async () => {

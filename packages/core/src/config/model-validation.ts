@@ -5,8 +5,10 @@ export const CLAUDE_MODEL_ALIASES = [
 ] as const;
 
 export const CODEX_MODEL_ALIASES = [
-  'gpt-5.4', 'o3', 'o4-mini',
-  'o3-pro',
+  'gpt-5.4',
+  'gpt-5.4-mini',
+  'gpt-5.4-pro',
+  'gpt-5.4-nano',
 ] as const;
 
 export const KNOWN_MODEL_ALIASES = [

@@ -120,6 +120,108 @@ describe('DashboardServer', () => {
     expect(data.sessions[0].sessionKey).toBe('dad-discord-ch1');
   });
 
+  it('PUT /api/sessions/:key/settings updates direct session overrides', async () => {
+    const deps = createMockDeps();
+    const setModel = vi.fn();
+    const setReasoningEffort = vi.fn();
+    const setVerbosity = vi.fn();
+    (deps.config as any).agent = {
+      backend: 'codex-sdk',
+      claude_models: ['sonnet'],
+      codex_models: ['gpt-5.4', 'gpt-5.4-mini'],
+    };
+    (deps as any).sessionStore = {
+      getHistory: vi.fn().mockReturnValue([{
+        session_key: 'dad-discord-ch1',
+        sdk_session_id: 'uuid-1',
+        user_id: 'dad',
+        platform: 'discord',
+        channel_id: 'ch1',
+        is_group_channel: false,
+        model: 'gpt-5.4',
+        reasoning_effort: null,
+        verbosity: null,
+        status: 'active',
+        created_at: 1000,
+        last_activity: 2000,
+      }]),
+      setModel,
+      setReasoningEffort,
+      setVerbosity,
+      deleteSession: vi.fn(),
+    };
+
+    server = new DashboardServer(deps as any);
+    const address = await server.start();
+
+    const res = await fetch(`${address}/api/sessions/dad-discord-ch1/settings`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-5.4-mini',
+        reasoning_effort: 'high',
+        verbosity: 'low',
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.model).toBe('gpt-5.4-mini');
+    expect(data.reasoning_effort).toBe('high');
+    expect(data.verbosity).toBe('low');
+    expect(setModel).toHaveBeenCalledWith('dad-discord-ch1', 'gpt-5.4-mini');
+    expect(setReasoningEffort).toHaveBeenCalledWith('dad-discord-ch1', 'high');
+    expect(setVerbosity).toHaveBeenCalledWith('dad-discord-ch1', 'low');
+  });
+
+  it('PUT /api/sessions/:key/settings rejects invalid backend-incompatible models', async () => {
+    const deps = createMockDeps();
+    (deps.config as any).agent = {
+      backend: 'codex-sdk',
+      claude_models: ['sonnet'],
+      codex_models: ['gpt-5.4'],
+    };
+    (deps as any).sessionStore = {
+      getHistory: vi.fn().mockReturnValue([{
+        session_key: 'dad-discord-ch1',
+        sdk_session_id: 'uuid-1',
+        user_id: 'dad',
+        platform: 'discord',
+        channel_id: 'ch1',
+        is_group_channel: false,
+        model: null,
+        reasoning_effort: null,
+        verbosity: null,
+        status: 'active',
+        created_at: 1000,
+        last_activity: 2000,
+      }]),
+      setModel: vi.fn(),
+      setReasoningEffort: vi.fn(),
+      setVerbosity: vi.fn(),
+      deleteSession: vi.fn(),
+    };
+
+    server = new DashboardServer(deps as any);
+    const address = await server.start();
+
+    const res = await fetch(`${address}/api/sessions/dad-discord-ch1/settings`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'sonnet',
+      }),
+    });
+
+    expect(res.status).toBe(400);
+  });
+
   it('GET /api/conversations passes query params to messageStore', async () => {
     const deps = createMockDeps();
     server = new DashboardServer(deps as any);
@@ -558,5 +660,125 @@ describe('DashboardServer', () => {
     expect(data.sources['agent.model']).toBe('runtime_override');
     expect(data.sources['gateway.unknown_user_reply']).toBe('default');
     expect(data.sources['platforms.discord.token']).toBe('effective_only');
+  });
+
+  it('PUT /api/config/models trims, dedupes, and resets an invalid active model', async () => {
+    const deps = createMockDeps();
+    const dir = mkdtempSync(join(tmpdir(), 'dashboard-model-lists-'));
+    tempDirs.push(dir);
+    deps.configDir = dir;
+    (deps.config as any).data_dir = dir;
+    (deps.config as any).agent = {
+      backend: 'codex-sdk',
+      model: 'legacy-codex',
+      claude_models: ['sonnet'],
+      codex_models: ['gpt-5.4-pro'],
+    };
+
+    server = new DashboardServer(deps as any);
+    const address = await server.start();
+
+    const res = await fetch(`${address}/api/config/models`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        codex_models: [' gpt-5.4 ', 'gpt-5.4', 'gpt-5.4-mini'],
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.codex_models).toEqual(['gpt-5.4', 'gpt-5.4-mini']);
+    expect((deps.config as any).agent.model).toBe('gpt-5.4');
+
+    const runtimeConfig = JSON.parse(readFileSync(join(dir, 'runtime-config.json'), 'utf8'));
+    expect(runtimeConfig.codex_models).toEqual(['gpt-5.4', 'gpt-5.4-mini']);
+    expect(runtimeConfig.model).toBe('gpt-5.4');
+  });
+
+  it('GET /api/config/model includes codex reasoning effort and verbosity state', async () => {
+    const deps = createMockDeps();
+    const dir = mkdtempSync(join(tmpdir(), 'dashboard-config-model-'));
+    tempDirs.push(dir);
+    (deps.config as any).data_dir = dir;
+    (deps.config as any).agent = {
+      backend: 'codex-sdk',
+      model: 'gpt-5.4',
+      claude_models: ['sonnet'],
+      codex_models: ['gpt-5.4', 'gpt-5.4-mini'],
+      codex: {
+        default_reasoning_effort: 'minimal',
+        default_verbosity: 'high',
+      },
+    };
+    writeFileSync(join(dir, 'runtime-config.json'), JSON.stringify({
+      model: 'gpt-5.4-mini',
+      reasoning_effort: 'high',
+      verbosity: 'low',
+    }), 'utf8');
+
+    server = new DashboardServer(deps as any);
+    const address = await server.start();
+
+    const res = await fetch(`${address}/api/config/model`, {
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.model).toBe('gpt-5.4-mini');
+    expect(data.reasoning_effort).toBe('high');
+    expect(data.verbosity).toBe('low');
+    expect(data.reasoning_effort_source).toBe('runtime_override');
+    expect(data.verbosity_source).toBe('runtime_override');
+    expect(data.reasoning_effort_options).toEqual(['minimal', 'low', 'medium', 'high', 'xhigh']);
+    expect(data.verbosity_options).toEqual(['low', 'medium', 'high']);
+  });
+
+  it('PUT /api/config/model updates codex reasoning effort and verbosity runtime overrides', async () => {
+    const deps = createMockDeps();
+    const dir = mkdtempSync(join(tmpdir(), 'dashboard-config-model-'));
+    tempDirs.push(dir);
+    (deps.config as any).data_dir = dir;
+    (deps.config as any).agent = {
+      backend: 'codex-sdk',
+      model: 'gpt-5.4',
+      claude_models: ['sonnet'],
+      codex_models: ['gpt-5.4', 'gpt-5.4-mini'],
+      codex: {},
+    };
+
+    server = new DashboardServer(deps as any);
+    const address = await server.start();
+
+    const res = await fetch(`${address}/api/config/model`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-5.4-mini',
+        reasoning_effort: 'high',
+        verbosity: 'low',
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.model).toBe('gpt-5.4-mini');
+    expect(data.reasoning_effort).toBe('high');
+    expect(data.verbosity).toBe('low');
+    expect((deps.config as any).agent.model).toBe('gpt-5.4-mini');
+    expect((deps.config as any).agent.codex.default_reasoning_effort).toBe('high');
+    expect((deps.config as any).agent.codex.default_verbosity).toBe('low');
+
+    const runtimeConfig = JSON.parse(readFileSync(join(dir, 'runtime-config.json'), 'utf8'));
+    expect(runtimeConfig.model).toBe('gpt-5.4-mini');
+    expect(runtimeConfig.reasoning_effort).toBe('high');
+    expect(runtimeConfig.verbosity).toBe('low');
   });
 });

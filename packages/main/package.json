@@ -9,6 +9,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "vitest run",
+    "test:smoke:codex-sdk": "vitest run --config vitest.smoke.config.ts smoke/codex-sdk.smoke.test.ts",
     "test:watch": "vitest",
     "clean": "rm -rf dist"
   },

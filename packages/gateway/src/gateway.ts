@@ -58,6 +58,9 @@ export interface GatewayDeps {
   voiceConfig?: { enabled: boolean; ttsMaxChars: number };
   sessionStore?: SessionStore;
   defaultModel?: string;
+  defaultReasoningEffort?: AgentRequest['reasoningEffort'];
+  defaultVerbosity?: AgentRequest['verbosity'];
+  backend?: string;
   userInputTimeoutMs?: number;
   getWorkspace?: (channelKey: string) => string | null;
   defaultWorkingDirectory?: string;
@@ -209,13 +212,25 @@ export class Gateway {
 
     // 3d. Resolve model for this session
     let sessionModel: string | undefined;
+    let sessionReasoningEffort: AgentRequest['reasoningEffort'] | undefined;
+    let sessionVerbosity: AgentRequest['verbosity'] | undefined;
     if (this.deps.sessionStore) {
       const storeModel = this.deps.sessionStore.getModel(sessionKey);
       if (storeModel) {
         sessionModel = storeModel;
       }
+      const storeReasoningEffort = this.deps.sessionStore.getReasoningEffort?.(sessionKey);
+      if (storeReasoningEffort) {
+        sessionReasoningEffort = storeReasoningEffort;
+      }
+      const storeVerbosity = this.deps.sessionStore.getVerbosity?.(sessionKey);
+      if (storeVerbosity) {
+        sessionVerbosity = storeVerbosity;
+      }
     }
     const effectiveModel = sessionModel ?? this.deps.defaultModel;
+    const effectiveReasoningEffort = sessionReasoningEffort ?? this.deps.defaultReasoningEffort;
+    const effectiveVerbosity = sessionVerbosity ?? this.deps.defaultVerbosity;
 
     // 4. Publish incoming event
     await this.deps.eventBus.publish('message.incoming', {
@@ -264,6 +279,8 @@ export class Gateway {
       channelId: msg.channelId,
       platform: msg.platform,
       model: effectiveModel,
+      reasoningEffort: effectiveReasoningEffort,
+      verbosity: effectiveVerbosity,
       memoryContext,
       attachments: msg.attachments.length > 0 ? msg.attachments : undefined,
       // UserConfig only allows 'admin' | 'trusted' | 'chat' roles; 'system' is internal-only
@@ -278,7 +295,13 @@ export class Gateway {
 
     // 7b. Build model awareness system prompt
     if (effectiveModel) {
-      const modelPrompt = `You are currently running on model: ${effectiveModel}.\n\nYou have access to \`switch_model\` and \`get_current_model\` tools.\n\nWhen to switch to a more powerful model (e.g., opus[1m]):\n- Multi-file refactors or architectural changes\n- Complex debugging requiring deep reasoning\n- Tasks involving unfamiliar or intricate code patterns\n- When you feel uncertain about your approach\n\nWhen to switch back to the default model (e.g., sonnet):\n- After completing the complex portion of work\n- For simple questions, status checks, casual conversation\n\nYou may also be asked by the user to switch models — just call switch_model.`;
+      const isCodexBackend = this.deps.backend?.startsWith('codex') ?? false;
+      const strongerModel = isCodexBackend ? 'gpt-5.4-pro' : 'opus[1m]';
+      const lighterModel = isCodexBackend ? 'gpt-5.4-mini' : 'sonnet';
+      const backendNote = isCodexBackend
+        ? 'For Codex backends, prefer the GPT-5.4 family unless the user explicitly asks for another OpenAI model.'
+        : '';
+      const modelPrompt = `You are currently running on model: ${effectiveModel}.\n\nYou have access to \`switch_model\`, \`switch_reasoning_effort\`, \`switch_verbosity\`, and \`get_current_model\` tools.\n\nWhen to switch to a more powerful model (e.g., ${strongerModel}):\n- Multi-file refactors or architectural changes\n- Complex debugging requiring deep reasoning\n- Tasks involving unfamiliar or intricate code patterns\n- When you feel uncertain about your approach\n\nWhen to switch back to a lighter/default model (e.g., ${lighterModel}):\n- After completing the complex portion of work\n- For simple questions, status checks, casual conversation\n\n${backendNote}\n\nUse backend-appropriate model names only. You may also be asked by the user to switch models or adjust reasoning/verbosity — just call the appropriate tool.`;
       request.systemPrompt = modelPrompt;
     }
 

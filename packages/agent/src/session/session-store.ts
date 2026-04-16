@@ -1,11 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import type { SessionPersistence, SessionRow, SessionQueryFilters } from '@ccbuddy/core';
+import type { ReasoningEffort, SessionPersistence, SessionRow, SessionQueryFilters, Verbosity } from '@ccbuddy/core';
 
 interface SessionEntry {
   sdkSessionId: string;
   lastActivity: number;
   isGroupChannel: boolean;
   model: string | null;
+  reasoningEffort: ReasoningEffort | null;
+  verbosity: Verbosity | null;
   turns: number;
   status: 'active' | 'paused';
 }
@@ -16,6 +18,8 @@ export interface SessionInfo {
   lastActivity: number;
   isGroupChannel: boolean;
   model: string | null;
+  reasoningEffort: ReasoningEffort | null;
+  verbosity: Verbosity | null;
   turns: number;
   status: 'active' | 'paused';
 }
@@ -82,6 +86,8 @@ export class SessionStore {
             lastActivity: now,
             isGroupChannel: row.is_group_channel,
             model: row.model,
+            reasoningEffort: row.reasoning_effort,
+            verbosity: row.verbosity,
             turns: row.turns ?? 0,
             status: 'active',
           };
@@ -101,6 +107,8 @@ export class SessionStore {
         lastActivity: now,
         isGroupChannel,
         model: null,
+        reasoningEffort: null,
+        verbosity: null,
         turns: 0,
         status: 'active',
       };
@@ -115,6 +123,8 @@ export class SessionStore {
           channel_id: channelId,
           is_group_channel: isGroupChannel,
           model: null,
+          reasoning_effort: null,
+          verbosity: null,
           turns: 0,
           status: 'active',
           created_at: now,
@@ -183,6 +193,12 @@ export class SessionStore {
           if (dbRow.model !== entry.model) {
             entry.model = dbRow.model;
           }
+          if (dbRow.reasoning_effort !== entry.reasoningEffort) {
+            entry.reasoningEffort = dbRow.reasoning_effort;
+          }
+          if (dbRow.verbosity !== entry.verbosity) {
+            entry.verbosity = dbRow.verbosity;
+          }
         }
       }
 
@@ -209,12 +225,14 @@ export class SessionStore {
       lastActivity: entry.lastActivity,
       isGroupChannel: entry.isGroupChannel,
       model: entry.model,
+      reasoningEffort: entry.reasoningEffort,
+      verbosity: entry.verbosity,
       turns: entry.turns,
       status: entry.status,
     }));
   }
 
-  setModel(sessionKey: string, model: string): void {
+  setModel(sessionKey: string, model: string | null): void {
     const entry = this.entries.get(sessionKey);
     if (entry) {
       entry.model = model;
@@ -232,6 +250,46 @@ export class SessionStore {
       }
     }
     return entry.model;
+  }
+
+  setReasoningEffort(sessionKey: string, reasoningEffort: ReasoningEffort | null): void {
+    const entry = this.entries.get(sessionKey);
+    if (entry) {
+      entry.reasoningEffort = reasoningEffort;
+      this.persistence?.updateReasoningEffort(sessionKey, reasoningEffort);
+    }
+  }
+
+  getReasoningEffort(sessionKey: string): ReasoningEffort | null {
+    const entry = this.entries.get(sessionKey);
+    if (!entry) return null;
+    if (this.persistence) {
+      const dbRow = this.persistence.getByKey(sessionKey);
+      if (dbRow && dbRow.reasoning_effort !== entry.reasoningEffort) {
+        entry.reasoningEffort = dbRow.reasoning_effort;
+      }
+    }
+    return entry.reasoningEffort;
+  }
+
+  setVerbosity(sessionKey: string, verbosity: Verbosity | null): void {
+    const entry = this.entries.get(sessionKey);
+    if (entry) {
+      entry.verbosity = verbosity;
+      this.persistence?.updateVerbosity(sessionKey, verbosity);
+    }
+  }
+
+  getVerbosity(sessionKey: string): Verbosity | null {
+    const entry = this.entries.get(sessionKey);
+    if (!entry) return null;
+    if (this.persistence) {
+      const dbRow = this.persistence.getByKey(sessionKey);
+      if (dbRow && dbRow.verbosity !== entry.verbosity) {
+        entry.verbosity = dbRow.verbosity;
+      }
+    }
+    return entry.verbosity;
   }
 
   incrementTurns(sessionKey: string): number {
@@ -269,6 +327,8 @@ export class SessionStore {
         lastActivity: row.last_activity,
         isGroupChannel: row.is_group_channel,
         model: row.model,
+        reasoningEffort: row.reasoning_effort,
+        verbosity: row.verbosity,
         turns: row.turns ?? 0,
         status: row.status as 'active' | 'paused',
       });

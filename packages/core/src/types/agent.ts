@@ -6,6 +6,9 @@ export interface Attachment {
   transcript?: string;
 }
 
+export type ReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+export type Verbosity = 'low' | 'medium' | 'high';
+
 export interface AgentRequest {
   prompt: string;
   userId: string;
@@ -13,6 +16,8 @@ export interface AgentRequest {
   channelId: string;
   platform: string;
   model?: string;
+  reasoningEffort?: ReasoningEffort;
+  verbosity?: Verbosity;
   workingDirectory?: string;
   outboundMediaDir?: string;
   allowedTools?: string[];

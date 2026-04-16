@@ -114,11 +114,23 @@ export function SessionsPage() {
                         {s.is_group_channel ?? s.isGroupChannel ? 'Group' : 'DM'}
                       </td>
                       <td className="px-4 py-3">
-                        {s.model ? (
-                          <span className="rounded-[var(--sd-radius)] border border-[color:var(--sd-border)] bg-[color:var(--sd-panel-raised)] px-2 py-0.5 text-xs text-[color:var(--sd-info)]">{s.model}</span>
-                        ) : (
-                          <span className="text-[color:var(--sd-subtle)]">-</span>
-                        )}
+                        <div className="flex flex-wrap gap-1">
+                          {s.model ? (
+                            <span className="rounded-[var(--sd-radius)] border border-[color:var(--sd-border)] bg-[color:var(--sd-panel-raised)] px-2 py-0.5 text-xs text-[color:var(--sd-info)]">{s.model}</span>
+                          ) : (
+                            <span className="text-[color:var(--sd-subtle)]">-</span>
+                          )}
+                          {(s.reasoning_effort ?? s.reasoningEffort) && (
+                            <span className="rounded-[var(--sd-radius)] border border-[color:var(--sd-border)] bg-[color:var(--sd-panel-raised)] px-2 py-0.5 text-xs text-[color:var(--sd-warning)]">
+                              reasoning: {s.reasoning_effort ?? s.reasoningEffort}
+                            </span>
+                          )}
+                          {s.verbosity && (
+                            <span className="rounded-[var(--sd-radius)] border border-[color:var(--sd-border)] bg-[color:var(--sd-panel-raised)] px-2 py-0.5 text-xs text-[color:var(--sd-success)]">
+                              verbosity: {s.verbosity}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-[color:var(--sd-muted)]">
                         {new Date(s.last_activity ?? s.lastActivity).toLocaleString()}

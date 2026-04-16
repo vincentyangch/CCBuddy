@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { AgentRequest } from '@ccbuddy/core';
 import { EventEmitter } from 'events';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 // Mock child_process.spawn before importing the module under test
 vi.mock('child_process', () => ({
@@ -66,6 +69,26 @@ describe('CodexCliBackend', () => {
     expect(args).toContain('--experimental-json');
     expect(args).toContain('--sandbox');
     expect(args).toContain('danger-full-access');
+  });
+
+  it('uses configured codex path and CODEX_API_KEY', async () => {
+    const proc = makeMockProcess();
+    mockSpawn.mockReturnValue(proc as any);
+
+    const backend = new CodexCliBackend({ codexPath: '/custom/codex', apiKey: 'sk-test-123' });
+    const gen = backend.execute(makeRequest());
+    const nextPromise = gen.next();
+
+    process.nextTick(() => {
+      proc.stdout.emit('data', Buffer.from('{"type":"item.completed","item":{"id":"msg1","type":"agent_message","text":"ok"}}\n'));
+      proc.emit('close', 0);
+    });
+
+    await nextPromise;
+
+    const [cmd, , options] = mockSpawn.mock.calls[0] as [string, string[], { env: Record<string, string> }];
+    expect(cmd).toBe('/custom/codex');
+    expect(options.env.CODEX_API_KEY).toBe('sk-test-123');
   });
 
   it('emits complete event with response from NDJSON', async () => {
@@ -273,16 +296,22 @@ describe('CodexCliBackend', () => {
     expect(complete.sdkSessionId).toBe('existing-id');
   });
 
-  it('escapes TOML special characters in MCP config', async () => {
+  it('passes config overrides for approval policy, MCP env, network access, and rules file', async () => {
     const proc = makeMockProcess();
     mockSpawn.mockReturnValue(proc as any);
 
-    const backend = new CodexCliBackend();
+    const backend = new CodexCliBackend({
+      networkAccess: false,
+      permissionGateRules: [
+        { name: 'destructive-rm', pattern: 'rm\\s+-rf', tool: 'Bash', description: 'Block rm -rf' },
+      ],
+    });
     const request = makeRequest({
       mcpServers: [{
         name: 'test',
         command: '/path/with "quotes"',
         args: ['--flag', 'val\\ue'],
+        env: { TOKEN: 'abc123' },
       }],
     });
 
@@ -297,10 +326,112 @@ describe('CodexCliBackend', () => {
     await nextPromise;
 
     const [, args] = mockSpawn.mock.calls[0];
-    expect(args).toContain('--config');
-    // Verify the config arg has a path (the file exists temporarily)
-    const configIdx = (args as string[]).indexOf('--config');
-    expect((args as string[])[configIdx + 1]).toContain('config_file=');
+    expect(args).toContain('approval_policy="never"');
+    expect(args).toContain('sandbox_workspace_write.network_access=false');
+    expect(args).toContain('mcp_servers.test.command="/path/with \\"quotes\\""');
+    expect(args).toContain('mcp_servers.test.args=["--flag", "val\\\\ue"]');
+    expect(args).toContain('mcp_servers.test.env.TOKEN="abc123"');
+    const rulesOverride = (args as string[]).find((arg) => arg.startsWith('exec_policy.rules_file='));
+    expect(rulesOverride).toContain('ccbuddy.rules');
+  });
+
+  it('passes reasoning effort and verbosity config overrides', async () => {
+    const proc = makeMockProcess();
+    mockSpawn.mockReturnValue(proc as any);
+
+    const backend = new CodexCliBackend();
+    const gen = backend.execute(makeRequest({ reasoningEffort: 'medium', verbosity: 'high' }));
+    const nextPromise = gen.next();
+
+    process.nextTick(() => {
+      proc.stdout.emit('data', Buffer.from('{"type":"item.completed","item":{"id":"msg1","type":"agent_message","text":"ok"}}\n'));
+      proc.emit('close', 0);
+    });
+
+    await nextPromise;
+
+    const [, args] = mockSpawn.mock.calls[0];
+    expect(args).toContain('model_reasoning_effort="medium"');
+    expect(args).toContain('model_verbosity="high"');
+  });
+
+  it('restores protected files modified by Codex and returns an error event', async () => {
+    const proc = makeMockProcess();
+    mockSpawn.mockReturnValue(proc as any);
+
+    const workingDirectory = mkdtempSync(join(tmpdir(), 'codex-cli-backend-'));
+    mkdirSync(join(workingDirectory, 'config'), { recursive: true });
+    writeFileSync(join(workingDirectory, 'config', 'local.yaml'), 'secret: original\n', 'utf8');
+
+    const backend = new CodexCliBackend({
+      permissionGateRules: [
+        { name: 'local-config', pattern: 'config/local\\.yaml', tool: '*', description: 'Modify local config (contains secrets)' },
+      ],
+    });
+
+    try {
+      const events: any[] = [];
+      const gen = backend.execute(makeRequest({ workingDirectory }));
+      const nextPromise = gen.next();
+
+      process.nextTick(() => {
+        writeFileSync(join(workingDirectory, 'config', 'local.yaml'), 'secret: changed\n', 'utf8');
+        proc.stdout.emit('data', Buffer.from(
+          '{"type":"item.completed","item":{"id":"fc1","type":"file_change","changes":[{"kind":"update","path":"config/local.yaml"}],"status":"completed"}}\n' +
+          '{"type":"item.completed","item":{"id":"msg1","type":"agent_message","text":"done"}}\n' +
+          '{"type":"turn.completed","usage":{"input_tokens":1,"cached_input_tokens":0,"output_tokens":1}}\n'
+        ));
+        proc.emit('close', 0);
+      });
+
+      const result = await nextPromise;
+      if (!result.done) events.push(result.value);
+
+      expect(events[0].type).toBe('error');
+      expect(events[0].error).toContain('config/local.yaml');
+      expect(readFileSync(join(workingDirectory, 'config', 'local.yaml'), 'utf8')).toBe('secret: original\n');
+    } finally {
+      backend.destroy();
+      rmSync(workingDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it('restores protected files even when Codex exits non-zero after modifying them', async () => {
+    const proc = makeMockProcess();
+    mockSpawn.mockReturnValue(proc as any);
+
+    const workingDirectory = mkdtempSync(join(tmpdir(), 'codex-cli-backend-fail-'));
+    mkdirSync(join(workingDirectory, 'config'), { recursive: true });
+    writeFileSync(join(workingDirectory, 'config', 'local.yaml'), 'secret: original\n', 'utf8');
+
+    const backend = new CodexCliBackend({
+      permissionGateRules: [
+        { name: 'local-config', pattern: 'config/local\\.yaml', tool: '*', description: 'Modify local config (contains secrets)' },
+      ],
+    });
+
+    try {
+      const events: any[] = [];
+      const gen = backend.execute(makeRequest({ workingDirectory }));
+      const nextPromise = gen.next();
+
+      process.nextTick(() => {
+        writeFileSync(join(workingDirectory, 'config', 'local.yaml'), 'secret: changed\n', 'utf8');
+        proc.stdout.emit('data', Buffer.from('{"type":"turn.failed","error":{"message":"turn failed"}}\n'));
+        proc.stderr.emit('data', Buffer.from('process failed'));
+        proc.emit('close', 1);
+      });
+
+      const result = await nextPromise;
+      if (!result.done) events.push(result.value);
+
+      expect(events[0].type).toBe('error');
+      expect(events[0].error).toContain('config/local.yaml');
+      expect(readFileSync(join(workingDirectory, 'config', 'local.yaml'), 'utf8')).toBe('secret: original\n');
+    } finally {
+      backend.destroy();
+      rmSync(workingDirectory, { recursive: true, force: true });
+    }
   });
 
   it('aborts the running process on abort()', async () => {

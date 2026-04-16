@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { AgentRequest, PermissionGateRule } from '@ccbuddy/core';
 
 // Mock the Codex SDK
@@ -219,6 +221,25 @@ describe('CodexSdkBackend', () => {
     );
   });
 
+  it('passes reasoning effort and verbosity to Codex', async () => {
+    mockRunStreamed.mockResolvedValue({
+      events: makeEventStream(
+        { type: 'thread.started', thread_id: 'thread-1' },
+        { type: 'item.completed', item: { id: 'msg1', type: 'agent_message', text: 'ok' } },
+        { type: 'turn.completed', usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } },
+      ),
+    });
+
+    const backend = new CodexSdkBackend();
+    for await (const _ of backend.execute(makeRequest({ reasoningEffort: 'high', verbosity: 'low' }))) { /* consume */ }
+
+    expect(mockStartThread).toHaveBeenCalledWith(
+      expect.objectContaining({ modelReasoningEffort: 'high' }),
+    );
+    const codexOpts = MockCodex.mock.calls[0][0] as any;
+    expect(codexOpts.config.model_verbosity).toBe('low');
+  });
+
   it('prepends memory context and system prompt to prompt', async () => {
     let capturedInput: any;
     mockRunStreamed.mockImplementation((input: any) => {
@@ -342,6 +363,22 @@ describe('CodexSdkBackend', () => {
     expect(codexOpts.config['exec_policy.rules_file']).toBeUndefined();
   });
 
+  it('passes apiKey through the Codex constructor', async () => {
+    mockRunStreamed.mockResolvedValue({
+      events: makeEventStream(
+        { type: 'thread.started', thread_id: 'thread-1' },
+        { type: 'item.completed', item: { id: 'msg1', type: 'agent_message', text: 'ok' } },
+        { type: 'turn.completed', usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } },
+      ),
+    });
+
+    const backend = new CodexSdkBackend({ apiKey: 'sk-sdk-test' });
+    for await (const _ of backend.execute(makeRequest())) { /* consume */ }
+
+    const codexOpts = MockCodex.mock.calls[0][0] as any;
+    expect(codexOpts.apiKey).toBe('sk-sdk-test');
+  });
+
   it('maps file_change items to tool_use and tool_result events', async () => {
     mockRunStreamed.mockResolvedValue({
       events: makeEventStream(
@@ -364,6 +401,83 @@ describe('CodexSdkBackend', () => {
     expect(toolResult).toBeDefined();
     expect(toolResult.toolOutput).toContain('edit: src/index.ts');
     expect(toolResult.toolOutput).toContain('create: src/new.ts');
+  });
+
+  it('restores protected files modified by Codex and emits an error instead of complete', async () => {
+    const workingDirectory = mkdtempSync(join(tmpdir(), 'codex-sdk-backend-'));
+    mkdirSync(join(workingDirectory, 'config'), { recursive: true });
+    writeFileSync(join(workingDirectory, 'config', 'local.yaml'), 'secret: original\n', 'utf8');
+
+    mockRunStreamed.mockImplementation(() => {
+      writeFileSync(join(workingDirectory, 'config', 'local.yaml'), 'secret: changed\n', 'utf8');
+      return Promise.resolve({
+        events: makeEventStream(
+          { type: 'thread.started', thread_id: 'thread-1' },
+          { type: 'item.completed', item: { id: 'fc1', type: 'file_change', changes: [{ kind: 'update', path: 'config/local.yaml' }], status: 'completed' } },
+          { type: 'item.completed', item: { id: 'msg1', type: 'agent_message', text: 'Done' } },
+          { type: 'turn.completed', usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } },
+        ),
+      });
+    });
+
+    const backend = new CodexSdkBackend({
+      permissionGateRules: [
+        { name: 'local-config', pattern: 'config/local\\.yaml', tool: '*', description: 'Modify local config (contains secrets)' },
+      ],
+    });
+
+    try {
+      const events: any[] = [];
+      for await (const event of backend.execute(makeRequest({ workingDirectory }))) { events.push(event); }
+
+      const error = events.find((event) => event.type === 'error');
+      const complete = events.find((event) => event.type === 'complete');
+      expect(error).toBeDefined();
+      expect(error.error).toContain('config/local.yaml');
+      expect(complete).toBeUndefined();
+      expect(readFileSync(join(workingDirectory, 'config', 'local.yaml'), 'utf8')).toBe('secret: original\n');
+    } finally {
+      backend.destroy();
+      rmSync(workingDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it('restores protected files changed outside file_change events before completing', async () => {
+    const workingDirectory = mkdtempSync(join(tmpdir(), 'codex-sdk-backend-shell-'));
+    mkdirSync(join(workingDirectory, 'config'), { recursive: true });
+    writeFileSync(join(workingDirectory, 'config', 'local.yaml'), 'secret: original\n', 'utf8');
+
+    mockRunStreamed.mockImplementation(() => {
+      writeFileSync(join(workingDirectory, 'config', 'local.yaml'), 'secret: shell-write\n', 'utf8');
+      return Promise.resolve({
+        events: makeEventStream(
+          { type: 'thread.started', thread_id: 'thread-1' },
+          { type: 'item.completed', item: { id: 'msg1', type: 'agent_message', text: 'Done' } },
+          { type: 'turn.completed', usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } },
+        ),
+      });
+    });
+
+    const backend = new CodexSdkBackend({
+      permissionGateRules: [
+        { name: 'local-config', pattern: 'config/local\\.yaml', tool: '*', description: 'Modify local config (contains secrets)' },
+      ],
+    });
+
+    try {
+      const events: any[] = [];
+      for await (const event of backend.execute(makeRequest({ workingDirectory }))) { events.push(event); }
+
+      const error = events.find((event) => event.type === 'error');
+      const complete = events.find((event) => event.type === 'complete');
+      expect(error).toBeDefined();
+      expect(error.error).toContain('config/local.yaml');
+      expect(complete).toBeUndefined();
+      expect(readFileSync(join(workingDirectory, 'config', 'local.yaml'), 'utf8')).toBe('secret: original\n');
+    } finally {
+      backend.destroy();
+      rmSync(workingDirectory, { recursive: true, force: true });
+    }
   });
 
   it('abort cancels active stream via AbortController signal', async () => {

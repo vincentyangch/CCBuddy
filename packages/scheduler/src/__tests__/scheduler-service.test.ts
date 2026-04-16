@@ -59,7 +59,7 @@ function createMinimalConfig(overrides: Partial<CCBuddyConfig> = {}): CCBuddyCon
         default_sandbox: 'workspace-write',
       },
       claude_models: ['sonnet', 'opus', 'haiku'],
-      codex_models: ['gpt-5.4', 'o3'],
+      codex_models: ['gpt-5.4', 'gpt-5.4-mini'],
     },
     memory: {
       db_path: './data/memory.sqlite',

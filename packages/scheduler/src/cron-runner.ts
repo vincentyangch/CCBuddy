@@ -20,6 +20,8 @@ export interface CronRunnerOptions {
   assembleContext: (userId: string, sessionId: string) => string;
   timezone: string;
   defaultModel?: string;
+  defaultReasoningEffort?: AgentRequest['reasoningEffort'];
+  defaultVerbosity?: AgentRequest['verbosity'];
   internalJobs?: Map<string, () => Promise<void>>;
   storeMessage?: (params: {
     userId: string;
@@ -162,6 +164,8 @@ export class CronRunner {
       permissionLevel: job.permissionLevel,
       memoryContext,
       model: job.model ?? this.opts.defaultModel,
+      reasoningEffort: job.reasoningEffort ?? this.opts.defaultReasoningEffort,
+      verbosity: job.verbosity ?? this.opts.defaultVerbosity,
       // System jobs use a unique temp dir per invocation to avoid directory lock
       // conflicts with interactive sessions (which may also use HOME)
       workingDirectory: job.permissionLevel === 'system'

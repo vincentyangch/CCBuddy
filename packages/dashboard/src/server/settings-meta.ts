@@ -55,6 +55,14 @@ const SETTINGS_SHAPE: ShapeNode = {
         },
       },
     },
+    codex: {
+      api_key_env: 'string',
+      codex_path: 'string',
+      network_access: 'boolean',
+      default_sandbox: 'string',
+      default_reasoning_effort: 'string',
+      default_verbosity: 'string',
+    },
   },
   memory: {
     db_path: 'string',

@@ -29,7 +29,7 @@ import { SkillRunner } from './runner.js';
 import type { SkillPermission } from './types.js';
 import { MemoryDatabase, MessageStore, SummaryStore, RetrievalTools, ProfileStore, SessionDatabase, WorkspaceStore } from '@ccbuddy/memory';
 import { SwiftBridge, AppleCalendarService, AppleRemindersService, AppleShortcutsService, JxaBridge, AppleNotesService } from '@ccbuddy/apple';
-import { isValidModel, isValidModelForBackend, getModelOptionsForBackend } from '@ccbuddy/core';
+import { isValidModelForBackend, getModelOptionsForBackend } from '@ccbuddy/core';
 import type { BackendType } from '@ccbuddy/core';
 
 // ── CLI argument parsing ────────────────────────────────────────────────────
@@ -112,6 +112,28 @@ function parseArgs(argv: string[]): {
   }
 
   return { registryPath, skillsDir, requireApproval, autoGitCommit, memoryDbPath, heartbeatStatusFile, appleHelperPath, sessionKey, dataDir, channelKey, ownerUserId, backend };
+}
+
+function loadRuntimeModelLists(dataDir: string): { claude_models?: string[]; codex_models?: string[] } {
+  if (!dataDir) return {};
+
+  try {
+    const runtimeConfig = JSON.parse(readFileSync(pathJoin(dataDir, 'runtime-config.json'), 'utf8')) as {
+      claude_models?: unknown;
+      codex_models?: unknown;
+    };
+
+    const lists: { claude_models?: string[]; codex_models?: string[] } = {};
+    if (Array.isArray(runtimeConfig.claude_models) && runtimeConfig.claude_models.every((model) => typeof model === 'string')) {
+      lists.claude_models = runtimeConfig.claude_models;
+    }
+    if (Array.isArray(runtimeConfig.codex_models) && runtimeConfig.codex_models.every((model) => typeof model === 'string')) {
+      lists.codex_models = runtimeConfig.codex_models;
+    }
+    return lists;
+  } catch {
+    return {};
+  }
 }
 
 // ── Elevated permission check ───────────────────────────────────────────────
@@ -283,9 +305,10 @@ async function main(): Promise<void> {
     if (args.sessionKey) {
       const isCodex = args.backend.startsWith('codex');
       const modelDesc = isCodex
-        ? 'Model alias (gpt-5.4, o3, o4-mini) or full OpenAI model ID'
+        ? 'Model alias (gpt-5.4, gpt-5.4-mini, gpt-5.4-pro, gpt-5.4-nano) or full OpenAI model ID'
         : 'Model alias (sonnet, opus, haiku, opus[1m], sonnet[1m], opusplan) or full model ID (e.g., claude-opus-4-6)';
-      const available = getModelOptionsForBackend(args.backend);
+      const runtimeModelLists = loadRuntimeModelLists(args.dataDir);
+      const available = getModelOptionsForBackend(args.backend, runtimeModelLists);
       tools.push({
         name: 'switch_model',
         description: `Switch the AI model for subsequent messages in this session. Available models: ${available.join(', ')}`,
@@ -302,8 +325,38 @@ async function main(): Promise<void> {
       });
       tools.push({
         name: 'get_current_model',
-        description: 'Get the model currently configured for this session.',
+        description: 'Get the model, reasoning effort, and verbosity currently configured for this session.',
         inputSchema: { type: 'object', properties: {} },
+      });
+      tools.push({
+        name: 'switch_reasoning_effort',
+        description: 'Switch the reasoning effort for subsequent messages in this session.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            reasoning_effort: {
+              type: 'string',
+              enum: ['minimal', 'low', 'medium', 'high', 'xhigh'],
+              description: 'Reasoning effort for supported models',
+            },
+          },
+          required: ['reasoning_effort'],
+        },
+      });
+      tools.push({
+        name: 'switch_verbosity',
+        description: 'Switch the response verbosity for subsequent messages in this session.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            verbosity: {
+              type: 'string',
+              enum: ['low', 'medium', 'high'],
+              description: 'Response verbosity for supported models',
+            },
+          },
+          required: ['verbosity'],
+        },
       });
       tools.push({
         name: 'pause_session',
@@ -426,7 +479,7 @@ async function main(): Promise<void> {
     if (workspaceStore && args.channelKey) {
       tools.push({
         name: 'set_workspace',
-        description: 'Map the current channel to a working directory. Future messages in this channel will use that directory for Claude Code. The directory must exist.',
+        description: 'Map the current channel to a working directory. Future messages in this channel will use that directory for CCBuddy agent work. The directory must exist.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -1024,8 +1077,9 @@ async function main(): Promise<void> {
     switch (name) {
       case 'switch_model': {
         const { model } = toolArgs as { model: string };
-        if (!isValidModelForBackend(model, args.backend)) {
-          const available = getModelOptionsForBackend(args.backend).join(', ');
+        const runtimeModelLists = loadRuntimeModelLists(args.dataDir);
+        if (!isValidModelForBackend(model, args.backend, runtimeModelLists)) {
+          const available = getModelOptionsForBackend(args.backend, runtimeModelLists).join(', ');
           return { content: [{ type: 'text', text: `Invalid model "${model}" for ${args.backend} backend. Available: ${available}` }] };
         }
         if (sessionDb && args.sessionKey) {
@@ -1037,9 +1091,30 @@ async function main(): Promise<void> {
         if (sessionDb && args.sessionKey) {
           const row = sessionDb.getByKey(args.sessionKey);
           const model = row?.model ?? null;
-          return { content: [{ type: 'text', text: model ? `Current model override: ${model}` : 'No model override — using config default.' }] };
+          const reasoningEffort = row?.reasoning_effort ?? null;
+          const verbosity = row?.verbosity ?? null;
+          const lines = [
+            model ? `Current model override: ${model}` : 'No model override — using config default.',
+            reasoningEffort ? `Reasoning effort override: ${reasoningEffort}` : 'No reasoning effort override — using backend default.',
+            verbosity ? `Verbosity override: ${verbosity}` : 'No verbosity override — using backend default.',
+          ];
+          return { content: [{ type: 'text', text: lines.join('\n') }] };
         }
         return { content: [{ type: 'text', text: 'No model override — using config default.' }] };
+      }
+      case 'switch_reasoning_effort': {
+        const { reasoning_effort } = toolArgs as { reasoning_effort: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' };
+        if (sessionDb && args.sessionKey) {
+          sessionDb.updateReasoningEffort(args.sessionKey, reasoning_effort);
+        }
+        return { content: [{ type: 'text', text: `Reasoning effort switched to ${reasoning_effort}. This takes effect on the next message.` }] };
+      }
+      case 'switch_verbosity': {
+        const { verbosity } = toolArgs as { verbosity: 'low' | 'medium' | 'high' };
+        if (sessionDb && args.sessionKey) {
+          sessionDb.updateVerbosity(args.sessionKey, verbosity);
+        }
+        return { content: [{ type: 'text', text: `Verbosity switched to ${verbosity}. This takes effect on the next message.` }] };
       }
       case 'pause_session': {
         if (sessionDb && args.sessionKey) {

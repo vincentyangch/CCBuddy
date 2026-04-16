@@ -1,4 +1,5 @@
 import type { MessageTarget } from '../types/events.js';
+import type { ReasoningEffort, Verbosity } from '../types/agent.js';
 
 export interface PermissionGateRule {
   name: string;
@@ -18,6 +19,8 @@ export interface CodexConfig {
   codex_path?: string;
   network_access: boolean;
   default_sandbox: 'read-only' | 'workspace-write' | 'danger-full-access';
+  default_reasoning_effort?: ReasoningEffort;
+  default_verbosity?: Verbosity;
 }
 
 export interface AgentConfig {
@@ -151,6 +154,8 @@ export interface ScheduledJobConfig {
   permission_level?: 'admin' | 'system';
   timezone?: string;
   model?: string;
+  reasoning_effort?: ReasoningEffort;
+  verbosity?: Verbosity;
   silent?: boolean;
   /** If set, fire the job at startup if it was missed within this many minutes (e.g. 120 = 2 hours) */
   catchup_window_minutes?: number;
@@ -159,6 +164,9 @@ export interface ScheduledJobConfig {
 export interface SchedulerConfig {
   timezone: string;
   default_target?: MessageTarget;
+  default_model?: string;
+  default_reasoning_effort?: ReasoningEffort;
+  default_verbosity?: Verbosity;
   jobs?: Record<string, ScheduledJobConfig>;
 }
 
@@ -269,7 +277,7 @@ export const DEFAULT_CONFIG: CCBuddyConfig = {
       default_sandbox: 'workspace-write',
     },
     claude_models: ['sonnet', 'opus', 'haiku', 'opus[1m]', 'sonnet[1m]', 'opusplan'],
-    codex_models: ['gpt-5.4', 'o3', 'o4-mini', 'o3-pro'],
+    codex_models: ['gpt-5.4', 'gpt-5.4-mini', 'gpt-5.4-pro', 'gpt-5.4-nano'],
   },
   memory: {
     db_path: './data/memory.sqlite',

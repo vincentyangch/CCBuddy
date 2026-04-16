@@ -45,6 +45,30 @@ ccbuddy:
     max_turns: 80
     compaction_threshold: 50
     compaction_summary_tokens: 4000
+    permission_gates:
+      enabled: true
+      timeout_ms: 300000
+      rules:
+        - name: "destructive-rm"
+          pattern: "rm\\s+-(r|rf|fr)\\s+(?!/tmp)"
+          tool: "Bash"
+          description: "Recursive delete on non-temp paths"
+        - name: "destructive-git"
+          pattern: "git\\s+(reset\\s+--hard|checkout\\s+\\.|clean\\s+-f)"
+          tool: "Bash"
+          description: "Destructive git operations"
+        - name: "local-config"
+          pattern: "config/local\\.yaml"
+          tool: "*"
+          description: "Modify local config (contains secrets)"
+        - name: "launchctl"
+          pattern: "launchctl"
+          tool: "Bash"
+          description: "LaunchAgent operations"
+        - name: "npm-publish"
+          pattern: "npm\\s+publish"
+          tool: "Bash"
+          description: "Package publishing"
     codex:
       api_key_env: "OPENAI_API_KEY"
       network_access: true
@@ -58,33 +82,9 @@ ccbuddy:
       - "opusplan"
     codex_models:
       - "gpt-5.4"
-      - "o3"
-      - "o4-mini"
-      - "o3-pro"
-  permission_gates:
-    enabled: true
-    timeout_ms: 300000
-    rules:
-      - name: "destructive-rm"
-        pattern: "rm\\s+-(r|rf|fr)\\s+(?!/tmp)"
-        tool: "Bash"
-        description: "Recursive delete on non-temp paths"
-      - name: "destructive-git"
-        pattern: "git\\s+(reset\\s+--hard|checkout\\s+\\.|clean\\s+-f)"
-        tool: "Bash"
-        description: "Destructive git operations"
-      - name: "local-config"
-        pattern: "config/local\\.yaml"
-        tool: "*"
-        description: "Modify local config (contains secrets)"
-      - name: "launchctl"
-        pattern: "launchctl"
-        tool: "Bash"
-        description: "LaunchAgent operations"
-      - name: "npm-publish"
-        pattern: "npm\\s+publish"
-        tool: "Bash"
-        description: "Package publishing"
+      - "gpt-5.4-mini"
+      - "gpt-5.4-pro"
+      - "gpt-5.4-nano"
 
   # --- Memory ---
   memory:

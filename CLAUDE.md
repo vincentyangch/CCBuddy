@@ -1,6 +1,6 @@
 # CCBuddy
 
-CCBuddy is a personal AI assistant running on a Mac Mini, accessible via Discord (and future platforms). It uses Claude Code (unmodified) as its brain — every task routes through CC's SDK.
+CCBuddy is a personal AI assistant running on a Mac Mini, accessible via Discord and the dashboard. It supports both Claude and Codex backends, with the Codex migration now in progress.
 
 ## Architecture
 
@@ -50,7 +50,7 @@ Config loads in order: DEFAULT_CONFIG → `config/default.yaml` → `config/loca
 
 - **Activation modes:** Channels can be `mode: "all"` (respond to everything) or `mode: "mention"` (require @mention). Unconfigured channels default to mention-only. DMs always respond.
 - **User identity:** Users mapped via `*_id` fields in config (e.g., `discord_id`). UserManager builds O(1) lookup index.
-- **Skills:** Dynamic MCP tools. Generated skills live in `skills/generated/`. The skill MCP server runs as a subprocess of each Claude agent session.
+- **Skills:** Dynamic MCP tools. Generated skills live in `skills/generated/`. The skill MCP server runs as a subprocess of each agent session.
 - **Memory:** LCM-inspired DAG summarization. Messages stored in SQLite, condensed nightly. Context assembled per-user per-session.
 - **Conversation continuity:** SDK sessions are resumed via `query({ resume: uuid })`. SessionStore maps session keys to SDK UUIDs with configurable idle timeout (default 1 hour). DMs use per-user keys; group channels share one key.
 - **Dashboard:** Fastify server (port 18801) + React SPA. Token auth via `CCBUDDY_DASHBOARD_TOKEN` env var. REST API + WebSocket for real-time events. Enable with `dashboard.enabled: true` in config.

@@ -1,17 +1,13 @@
 import Database from 'better-sqlite3';
-
 export class MemoryDatabase {
-  private db: Database.Database;
-
-  constructor(dbPath: string, opts?: { readonly?: boolean }) {
-    this.db = new Database(dbPath, opts?.readonly ? { readonly: true } : undefined);
-  }
-
-  init(): void {
-    // Enable WAL mode for better concurrent read performance
-    this.db.pragma('journal_mode = WAL');
-
-    this.db.exec(`
+    db;
+    constructor(dbPath, opts) {
+        this.db = new Database(dbPath, opts?.readonly ? { readonly: true } : undefined);
+    }
+    init() {
+        // Enable WAL mode for better concurrent read performance
+        this.db.pragma('journal_mode = WAL');
+        this.db.exec(`
       CREATE TABLE IF NOT EXISTS messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id TEXT NOT NULL,
@@ -84,43 +80,37 @@ export class MemoryDatabase {
         created_at INTEGER NOT NULL
       );
     `);
-
-    // Migrations — add consolidation columns if missing
-    const messagesCols = this.db.pragma('table_info(messages)') as Array<{ name: string }>;
-    if (!messagesCols.some(c => c.name === 'summarized_at')) {
-      this.db.exec('ALTER TABLE messages ADD COLUMN summarized_at INTEGER');
+        // Migrations — add consolidation columns if missing
+        const messagesCols = this.db.pragma('table_info(messages)');
+        if (!messagesCols.some(c => c.name === 'summarized_at')) {
+            this.db.exec('ALTER TABLE messages ADD COLUMN summarized_at INTEGER');
+        }
+        const summaryCols = this.db.pragma('table_info(summary_nodes)');
+        if (!summaryCols.some(c => c.name === 'condensed_at')) {
+            this.db.exec('ALTER TABLE summary_nodes ADD COLUMN condensed_at INTEGER');
+        }
+        const sessionCols = this.db.pragma('table_info(sessions)');
+        if (sessionCols.length > 0 && !sessionCols.some(c => c.name === 'turns')) {
+            this.db.exec('ALTER TABLE sessions ADD COLUMN turns INTEGER NOT NULL DEFAULT 0');
+        }
+        if (sessionCols.length > 0 && !sessionCols.some(c => c.name === 'reasoning_effort')) {
+            this.db.exec('ALTER TABLE sessions ADD COLUMN reasoning_effort TEXT');
+        }
+        if (sessionCols.length > 0 && !sessionCols.some(c => c.name === 'verbosity')) {
+            this.db.exec('ALTER TABLE sessions ADD COLUMN verbosity TEXT');
+        }
     }
-
-    const summaryCols = this.db.pragma('table_info(summary_nodes)') as Array<{ name: string }>;
-    if (!summaryCols.some(c => c.name === 'condensed_at')) {
-      this.db.exec('ALTER TABLE summary_nodes ADD COLUMN condensed_at INTEGER');
+    raw() {
+        return this.db;
     }
-
-    const sessionCols = this.db.pragma('table_info(sessions)') as Array<{ name: string }>;
-    if (sessionCols.length > 0 && !sessionCols.some(c => c.name === 'turns')) {
-      this.db.exec('ALTER TABLE sessions ADD COLUMN turns INTEGER NOT NULL DEFAULT 0');
+    async backup(destPath) {
+        await this.db.backup(destPath);
     }
-    if (sessionCols.length > 0 && !sessionCols.some(c => c.name === 'reasoning_effort')) {
-      this.db.exec('ALTER TABLE sessions ADD COLUMN reasoning_effort TEXT');
+    close() {
+        this.db.close();
     }
-    if (sessionCols.length > 0 && !sessionCols.some(c => c.name === 'verbosity')) {
-      this.db.exec('ALTER TABLE sessions ADD COLUMN verbosity TEXT');
+    transaction(fn) {
+        return this.db.transaction(fn)();
     }
-  }
-
-  raw(): Database.Database {
-    return this.db;
-  }
-
-  async backup(destPath: string): Promise<void> {
-    await this.db.backup(destPath);
-  }
-
-  close(): void {
-    this.db.close();
-  }
-
-  transaction<T>(fn: () => T): T {
-    return this.db.transaction(fn)();
-  }
 }
+//# sourceMappingURL=database.js.map

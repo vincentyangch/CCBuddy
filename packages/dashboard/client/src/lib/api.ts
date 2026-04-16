@@ -19,6 +19,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 type SettingsResponse = { config: any };
+type ReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+type Verbosity = 'low' | 'medium' | 'high';
 
 export const api = {
   auth: (token: string) =>
@@ -38,6 +40,17 @@ export const api = {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${getToken()}` },
     }).then(r => r.json()),
+  setSessionSettings: (
+    key: string,
+    payload: { model?: string | null; reasoning_effort?: ReasoningEffort | null; verbosity?: Verbosity | null },
+  ) =>
+    request<{ ok: boolean; session_key: string; model: string | null; reasoning_effort: ReasoningEffort | null; verbosity: Verbosity | null }>(
+      `/api/sessions/${encodeURIComponent(key)}/settings`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      },
+    ),
   sessionEvents: (key: string) => request<{ events: any[] }>(`/api/sessions/${encodeURIComponent(key)}/events`),
   conversations: (params: Record<string, string>) => {
     const qs = new URLSearchParams(params).toString();
@@ -60,11 +73,21 @@ export const api = {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${getToken()}` },
     }).then(r => r.json()),
-  getModel: () => request<{ model: string; source: string; backend: string }>('/api/config/model'),
-  setModel: (model: string) =>
-    request<{ ok: boolean; model: string }>('/api/config/model', {
+  getModel: () => request<{
+    model: string;
+    source: string;
+    backend: string;
+    reasoning_effort: ReasoningEffort | null;
+    reasoning_effort_source: string;
+    verbosity: Verbosity | null;
+    verbosity_source: string;
+    reasoning_effort_options: ReasoningEffort[];
+    verbosity_options: Verbosity[];
+  }>('/api/config/model'),
+  setModel: (payload: { model?: string | null; reasoning_effort?: ReasoningEffort | null; verbosity?: Verbosity | null }) =>
+    request<{ ok: boolean; model: string; reasoning_effort: ReasoningEffort | null; verbosity: Verbosity | null }>('/api/config/model', {
       method: 'PUT',
-      body: JSON.stringify({ model }),
+      body: JSON.stringify(payload),
     }),
   getBackend: () => request<{ backend: string; models: string[]; claude_models: string[]; codex_models: string[] }>('/api/config/backend'),
   setBackend: (backend: string) =>

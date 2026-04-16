@@ -16,6 +16,8 @@ describe('isValidModel', () => {
 
   it('accepts OpenAI model IDs', () => {
     expect(isValidModel('gpt-5')).toBe(true);
+    expect(isValidModel('gpt-5.4-mini')).toBe(true);
+    expect(isValidModel('gpt-5.4-pro')).toBe(true);
     expect(isValidModel('o3')).toBe(true);
     expect(isValidModel('o4-mini')).toBe(true);
   });
@@ -40,6 +42,8 @@ describe('isValidModelForBackend', () => {
 
   it('accepts Codex aliases for Codex backends', () => {
     expect(isValidModelForBackend('gpt-5', 'codex-sdk')).toBe(true);
+    expect(isValidModelForBackend('gpt-5.4-mini', 'codex-cli')).toBe(true);
+    expect(isValidModelForBackend('gpt-5.4-pro', 'codex-sdk')).toBe(true);
     expect(isValidModelForBackend('o3', 'codex-cli')).toBe(true);
     expect(isValidModelForBackend('o4-mini', 'codex-sdk')).toBe(true);
   });
@@ -72,7 +76,8 @@ describe('getModelOptionsForBackend', () => {
   it('returns Codex models for Codex backends', () => {
     const options = getModelOptionsForBackend('codex-sdk');
     expect(options).toContain('gpt-5.4');
-    expect(options).toContain('o3');
+    expect(options).toContain('gpt-5.4-mini');
+    expect(options).toContain('gpt-5.4-pro');
     expect(options).not.toContain('sonnet');
   });
 });

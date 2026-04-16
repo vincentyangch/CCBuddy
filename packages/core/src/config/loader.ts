@@ -32,6 +32,38 @@ function deepMerge(target: Record<string, any>, source: Record<string, any>): Re
   return result;
 }
 
+function normalizeLegacyConfigShape(rawConfig: Record<string, unknown>): Record<string, unknown> {
+  const normalized = structuredClone(rawConfig);
+  const topLevelPermissionGates = normalized.permission_gates;
+
+  if (topLevelPermissionGates !== undefined && topLevelPermissionGates !== null) {
+    const agent = (
+      normalized.agent &&
+      typeof normalized.agent === 'object' &&
+      !Array.isArray(normalized.agent)
+    )
+      ? structuredClone(normalized.agent as Record<string, unknown>)
+      : {};
+
+    const nestedPermissionGates = (
+      agent.permission_gates &&
+      typeof agent.permission_gates === 'object' &&
+      !Array.isArray(agent.permission_gates)
+    )
+      ? agent.permission_gates as Record<string, unknown>
+      : {};
+
+    agent.permission_gates = deepMerge(
+      topLevelPermissionGates as Record<string, unknown>,
+      nestedPermissionGates,
+    );
+    normalized.agent = agent;
+    delete (normalized as { permission_gates?: unknown }).permission_gates;
+  }
+
+  return normalized;
+}
+
 /**
  * Recursively resolve ${ENV_VAR} placeholders in string values of an object.
  */
@@ -118,9 +150,12 @@ export function loadConfig(configDir: string): CCBuddyConfig {
     const raw = readFileSync(filePath, 'utf-8');
     const parsed = yaml.load(raw) as { ccbuddy?: Partial<CCBuddyConfig> } | null;
     if (parsed?.ccbuddy) {
+      const normalized = normalizeLegacyConfigShape(
+        parsed.ccbuddy as Record<string, unknown>,
+      );
       config = deepMerge(
         config as unknown as Record<string, unknown>,
-        parsed.ccbuddy as Record<string, unknown>,
+        normalized,
       ) as unknown as CCBuddyConfig;
     }
   }

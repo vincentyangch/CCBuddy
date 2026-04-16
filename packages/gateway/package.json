@@ -12,7 +12,8 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@ccbuddy/core": "*"
+    "@ccbuddy/core": "*",
+    "@ccbuddy/agent": "*"
   },
   "devDependencies": {
     "@types/node": "^22",

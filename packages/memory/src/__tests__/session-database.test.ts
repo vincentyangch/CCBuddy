@@ -12,6 +12,8 @@ function makeRow(overrides?: Partial<SessionRow>): SessionRow {
     channel_id: 'ch1',
     is_group_channel: false,
     model: null,
+    reasoning_effort: null,
+    verbosity: null,
     turns: 0,
     status: 'active',
     created_at: 1000,
@@ -95,6 +97,18 @@ describe('SessionDatabase', () => {
     sessionDb.upsert(makeRow({ model: 'opus' }));
     sessionDb.updateModel('dad-discord-ch1', null);
     expect(sessionDb.getByKey('dad-discord-ch1')!.model).toBeNull();
+  });
+
+  it('updateReasoningEffort changes reasoning effort', () => {
+    sessionDb.upsert(makeRow());
+    sessionDb.updateReasoningEffort('dad-discord-ch1', 'high');
+    expect(sessionDb.getByKey('dad-discord-ch1')!.reasoning_effort).toBe('high');
+  });
+
+  it('updateVerbosity changes verbosity', () => {
+    sessionDb.upsert(makeRow());
+    sessionDb.updateVerbosity('dad-discord-ch1', 'low');
+    expect(sessionDb.getByKey('dad-discord-ch1')!.verbosity).toBe('low');
   });
 
   it('delete removes the row', () => {

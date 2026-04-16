@@ -63,15 +63,33 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
       config.agent.codex_models = runtimeConfig.codex_models;
       console.log(`[Bootstrap] Runtime codex_models override applied (${runtimeConfig.codex_models.length} models)`);
     }
+    if (
+      typeof runtimeConfig.reasoning_effort === 'string' &&
+      ['minimal', 'low', 'medium', 'high', 'xhigh'].includes(runtimeConfig.reasoning_effort)
+    ) {
+      config.agent.codex.default_reasoning_effort = runtimeConfig.reasoning_effort as typeof config.agent.codex.default_reasoning_effort;
+      console.log(`[Bootstrap] Runtime codex reasoning_effort override applied: ${runtimeConfig.reasoning_effort}`);
+    }
+    if (
+      typeof runtimeConfig.verbosity === 'string' &&
+      ['low', 'medium', 'high'].includes(runtimeConfig.verbosity)
+    ) {
+      config.agent.codex.default_verbosity = runtimeConfig.verbosity as typeof config.agent.codex.default_verbosity;
+      console.log(`[Bootstrap] Runtime codex verbosity override applied: ${runtimeConfig.verbosity}`);
+    }
 
     // Restore model, validating against the (possibly overridden) backend
     if (runtimeConfig.model && isValidModel(runtimeConfig.model)) {
-      if (isValidModelForBackend(runtimeConfig.model, config.agent.backend as BackendType)) {
+      const configLists = {
+        claude_models: config.agent.claude_models,
+        codex_models: config.agent.codex_models,
+      };
+      if (isValidModelForBackend(runtimeConfig.model, config.agent.backend as BackendType, configLists)) {
         config.agent.model = runtimeConfig.model;
         console.log(`[Bootstrap] Runtime model override applied: ${runtimeConfig.model}`);
       } else {
         // Model incompatible with backend — reset to first valid model
-        const validModels = getModelOptionsForBackend(config.agent.backend as BackendType);
+        const validModels = getModelOptionsForBackend(config.agent.backend as BackendType, configLists);
         if (validModels.length > 0) {
           config.agent.model = validModels[0];
           console.log(`[Bootstrap] Model '${runtimeConfig.model}' incompatible with backend '${config.agent.backend}', reset to '${validModels[0]}'`);
@@ -171,7 +189,18 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
       }
       case 'codex-cli': {
         const { CodexCliBackend } = await import('@ccbuddy/agent');
-        return new CodexCliBackend();
+        const codexApiKey = config.agent.codex.api_key_env
+          ? process.env[config.agent.codex.api_key_env]
+          : undefined;
+        return new CodexCliBackend({
+          apiKey: codexApiKey,
+          codexPath: config.agent.codex.codex_path,
+          networkAccess: config.agent.codex.network_access,
+          defaultSandbox: config.agent.codex.default_sandbox,
+          permissionGateRules: config.agent.permission_gates.enabled
+            ? config.agent.permission_gates.rules
+            : undefined,
+        });
       }
       default:
         throw new Error(`Unknown backend: ${name}`);
@@ -249,8 +278,8 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
   const skillMcpServerPath = config.skills.mcp_server_path ?? MCP_SERVER_PATH;
   const registryDir = dirname(config.skills.generated_dir); // parent dir (e.g., './skills')
   // Forward env vars from this process to the MCP server subprocess.
-  // The Claude Code SDK session does not inherit the LaunchAgent environment,
-  // so env vars (e.g. third-party service keys) must be passed explicitly.
+  // Agent backend subprocesses do not reliably inherit the LaunchAgent
+  // environment, so env vars (e.g. third-party service keys) must be passed explicitly.
   const forwardedEnvKeys = Object.keys(process.env).filter(k =>
     k.startsWith('HOMEASSISTANT_') ||
     k.startsWith('CCBUDDY_') ||
@@ -304,9 +333,9 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
     skillMcpServer.args.push('--apple-helper', helperPath);
   }
 
-  const identityPrompt = `You are CCBuddy — a personal AI assistant belonging to flyingchickens. You run 24/7 on a Mac Mini and are reachable via Discord. Your name is CCBuddy (or just "Buddy"). When asked who you are, introduce yourself as CCBuddy. You are powered by Claude under the hood, but your identity, personality, and purpose are CCBuddy's. You are helpful, concise, and proactive. You know your own codebase (this project) and can improve yourself when asked.
+  const identityPrompt = `You are CCBuddy — a personal AI assistant belonging to flyingchickens. You run 24/7 on a Mac Mini and are reachable through chat platforms and the dashboard. Your name is CCBuddy (or just "Buddy"). When asked who you are, introduce yourself as CCBuddy. You are powered by the currently configured backend model under the hood, but your identity, personality, and purpose are CCBuddy's. You are helpful, concise, and proactive. You know your own codebase (this project) and can improve yourself when asked.
 
-**IMPORTANT — Identity clarification:** You are NOT a Claude Code CLI session. You ARE CCBuddy, a persistent agent running via macOS launchd (com.ccbuddy.agent.plist). The CLAUDE.md file in this project describes YOUR own codebase in third person — it is documentation about you, not instructions for a separate developer. This project IS you. When you see references to "CCBuddy" in project files, that is you.
+**IMPORTANT — Identity clarification:** You are NOT a raw Claude Code or Codex CLI/SDK session. You ARE CCBuddy, a persistent agent running via macOS launchd (com.ccbuddy.agent.plist). The CLAUDE.md file in this project describes YOUR own codebase in third person — it is documentation about you, not instructions for a separate developer. This project IS you. When you see references to "CCBuddy" in project files, that is you.
 
 You have profile tools (profile_get, profile_set, profile_delete) to remember things about users across conversations. When you learn something about a user — their preferences, interests, timezone, communication style, or anything worth remembering — save it with profile_set. This data automatically appears in your context for every future conversation. Proactively use these tools; don't wait to be asked.
 
@@ -382,6 +411,17 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
     voiceConfig: { enabled: config.media.voice_enabled, ttsMaxChars: config.media.tts_max_chars },
     sessionStore,
     get defaultModel() { return config.agent.model; },
+    get defaultReasoningEffort() {
+      return config.agent.backend.startsWith('codex')
+        ? config.agent.codex.default_reasoning_effort
+        : undefined;
+    },
+    get defaultVerbosity() {
+      return config.agent.backend.startsWith('codex')
+        ? config.agent.codex.default_verbosity
+        : undefined;
+    },
+    get backend() { return config.agent.backend; },
     userInputTimeoutMs: config.agent.user_input_timeout_ms,
     storeAgentEvent: (params) => {
       agentEventStore.add({ ...params, timestamp: Date.now() });
@@ -472,13 +512,12 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
       },
       sessionStore,
       switchBackend: async (backendName: string) => {
-        // Archive all active sessions — their IDs are invalid for the new backend
+        const nextBackend = await createBackend(backendName);
+        agentService.setBackend(nextBackend);
         const archived = sessionStore.archiveAll();
         if (archived > 0) {
           console.log(`[Dashboard] Archived ${archived} session(s) for backend switch`);
         }
-
-        agentService.setBackend(await createBackend(backendName));
         console.log(`[Dashboard] Backend switched to ${backendName}`);
         return backendName;
       },
@@ -568,8 +607,12 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
     checkAgent: async () => {
       const start = Date.now();
       const { execFile } = await import('node:child_process');
+      const isCodexBackend = config.agent.backend === 'codex-sdk' || config.agent.backend === 'codex-cli';
+      const agentCommand = isCodexBackend
+        ? (config.agent.codex.codex_path ?? 'codex')
+        : 'claude';
       return new Promise<{ reachable: boolean; durationMs: number }>((resolve) => {
-        execFile('claude', ['--version'], { timeout: 10_000 }, (err) => {
+        execFile(agentCommand, ['--version'], { timeout: 10_000 }, (err) => {
           resolve({ reachable: !err, durationMs: Date.now() - start });
         });
       });

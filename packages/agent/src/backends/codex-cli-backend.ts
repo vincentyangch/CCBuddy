@@ -1,12 +1,37 @@
 import { spawn, type ChildProcess } from 'child_process';
-import { writeFileSync, unlinkSync } from 'node:fs';
-import { join } from 'node:path';
+import { writeFileSync, unlinkSync, mkdirSync, rmSync } from 'node:fs';
+import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import type { AgentBackend, AgentRequest, AgentEvent, AgentEventBase } from '@ccbuddy/core';
+import type { AgentBackend, AgentRequest, AgentEvent, AgentEventBase, PermissionGateRule } from '@ccbuddy/core';
+import { generateCodexRules } from './codex-rules.js';
+import { restoreModifiedProtectedFiles, serializeCodexConfigOverrides, snapshotProtectedFiles, type CodexConfigOverrideObject } from './codex-runtime-helpers.js';
+
+export interface CodexCliBackendOptions {
+  codexPath?: string;
+  apiKey?: string;
+  networkAccess?: boolean;
+  defaultSandbox?: 'read-only' | 'workspace-write' | 'danger-full-access';
+  permissionGateRules?: PermissionGateRule[];
+}
 
 export class CodexCliBackend implements AgentBackend {
+  private readonly options: CodexCliBackendOptions;
   private processes: Map<string, ChildProcess> = new Map();
+  private readonly rulesFilePath: string | null;
+
+  constructor(options: CodexCliBackendOptions = {}) {
+    this.options = options;
+
+    if (options.permissionGateRules && options.permissionGateRules.length > 0) {
+      const rulesDir = join(tmpdir(), `ccbuddy-codex-rules-${randomUUID()}`);
+      mkdirSync(rulesDir, { recursive: true });
+      this.rulesFilePath = join(rulesDir, 'ccbuddy.rules');
+      writeFileSync(this.rulesFilePath, generateCodexRules(options.permissionGateRules), 'utf8');
+    } else {
+      this.rulesFilePath = null;
+    }
+  }
 
   async *execute(request: AgentRequest): AsyncGenerator<AgentEvent> {
     const base: AgentEventBase = {
@@ -41,9 +66,24 @@ export class CodexCliBackend implements AgentBackend {
     }
 
     const args: string[] = ['exec', '--experimental-json'];
+    const configOverrides: CodexConfigOverrideObject = {};
+    const protectedFiles = snapshotProtectedFiles(request.workingDirectory, this.options.permissionGateRules);
 
     if (request.workingDirectory) args.push('--cd', request.workingDirectory);
     if (request.model) args.push('--model', request.model);
+    if (request.reasoningEffort) {
+      configOverrides.model_reasoning_effort = request.reasoningEffort;
+    }
+    if (request.verbosity) {
+      configOverrides.model_verbosity = request.verbosity;
+    }
+
+    if (this.options.networkAccess !== undefined) {
+      configOverrides.sandbox_workspace_write = { network_access: this.options.networkAccess };
+    }
+    if (this.rulesFilePath) {
+      configOverrides.exec_policy = { rules_file: this.rulesFilePath };
+    }
 
     // Image attachments via --image flags
     const tempImages: string[] = [];
@@ -64,13 +104,32 @@ export class CodexCliBackend implements AgentBackend {
       case 'admin':
       case 'system':
         args.push('--sandbox', 'danger-full-access');
+        configOverrides.approval_policy = 'never';
         break;
       case 'trusted':
-        args.push('--sandbox', 'workspace-write');
+        args.push('--sandbox', this.options.defaultSandbox ?? 'workspace-write');
+        configOverrides.approval_policy = 'never';
         break;
       case 'chat':
         args.push('--sandbox', 'read-only');
+        configOverrides.approval_policy = 'never';
         break;
+    }
+
+    if (request.mcpServers && request.mcpServers.length > 0) {
+      configOverrides.mcp_servers = Object.fromEntries(request.mcpServers.map((server) => [
+        server.name,
+        {
+          type: 'stdio',
+          command: server.command,
+          args: server.args,
+          ...(server.env && Object.keys(server.env).length > 0 ? { env: server.env } : {}),
+        },
+      ]));
+    }
+
+    for (const override of serializeCodexConfigOverrides(configOverrides)) {
+      args.push('--config', override);
     }
 
     // Session resumption
@@ -78,22 +137,22 @@ export class CodexCliBackend implements AgentBackend {
       args.push('resume', request.resumeSessionId);
     }
 
-    // MCP config via temp TOML file
-    let mcpConfigPath: string | undefined;
-    if (request.mcpServers && request.mcpServers.length > 0) {
-      mcpConfigPath = this.writeTempMcpConfig(request.mcpServers);
-      args.push('--config', `config_file=${mcpConfigPath}`);
-    }
-
     try {
       const result = await this.runCodex(args, attachmentNote + fullPrompt, request.sessionId, request.env);
-      yield { ...base, type: 'complete', response: result.text, sdkSessionId: result.threadId ?? request.sdkSessionId };
-    } catch (err) {
-      yield { ...base, type: 'error', error: (err as Error).message };
-    } finally {
-      if (mcpConfigPath) {
-        try { unlinkSync(mcpConfigPath); } catch { /* ignore */ }
+      const restored = restoreModifiedProtectedFiles(protectedFiles);
+      if (restored.length > 0) {
+        const suffix = result.error ? ` Underlying error: ${result.error}` : '';
+        yield { ...base, type: 'error', error: `Blocked protected file modification and restored: ${restored.join(', ')}.${suffix}` };
+      } else if (result.error) {
+        yield { ...base, type: 'error', error: result.error };
+      } else {
+        yield { ...base, type: 'complete', response: result.text, sdkSessionId: result.threadId ?? request.sdkSessionId };
       }
+    } catch (err) {
+      const restored = restoreModifiedProtectedFiles(protectedFiles);
+      const suffix = restored.length > 0 ? ` Protected files restored: ${restored.join(', ')}` : '';
+      yield { ...base, type: 'error', error: `${(err as Error).message}${suffix}` };
+    } finally {
       for (const f of tempImages) {
         try { unlinkSync(f); } catch { /* ignore */ }
       }
@@ -108,18 +167,10 @@ export class CodexCliBackend implements AgentBackend {
     }
   }
 
-  private writeTempMcpConfig(mcpServers: AgentRequest['mcpServers']): string {
-    const escapeToml = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-    let toml = '';
-    for (const s of mcpServers ?? []) {
-      toml += `[mcp_servers.${s.name}]\n`;
-      toml += `type = "stdio"\n`;
-      toml += `command = "${escapeToml(s.command)}"\n`;
-      toml += `args = [${s.args.map(a => `"${escapeToml(a)}"`).join(', ')}]\n\n`;
+  destroy(): void {
+    if (this.rulesFilePath) {
+      try { rmSync(dirname(this.rulesFilePath), { recursive: true, force: true }); } catch { /* ignore */ }
     }
-    const configPath = join(tmpdir(), `ccbuddy-codex-mcp-${randomUUID()}.toml`);
-    writeFileSync(configPath, toml);
-    return configPath;
   }
 
   private runCodex(
@@ -127,10 +178,14 @@ export class CodexCliBackend implements AgentBackend {
     prompt: string,
     sessionId: string,
     extraEnv?: Record<string, string>,
-  ): Promise<{ text: string; threadId?: string }> {
+  ): Promise<{ text: string; threadId?: string; error?: string }> {
     return new Promise((resolve, reject) => {
       const env = { ...process.env, ...extraEnv } as Record<string, string>;
-      const proc = spawn('codex', args, {
+      if (this.options.apiKey) {
+        env.CODEX_API_KEY = this.options.apiKey;
+      }
+
+      const proc = spawn(this.options.codexPath ?? 'codex', args, {
         stdio: ['pipe', 'pipe', 'pipe'],
         env,
       });
@@ -142,21 +197,22 @@ export class CodexCliBackend implements AgentBackend {
 
       let stdout = '';
       let stderr = '';
+      let spawnError: Error | null = null;
 
       proc.stdout.on('data', (data: Buffer) => { stdout += data.toString(); });
       proc.stderr.on('data', (data: Buffer) => { stderr += data.toString(); });
+      proc.once('error', (err) => {
+        spawnError = err;
+      });
 
       proc.on('close', (code: number | null) => {
         this.processes.delete(sessionId);
-        if (code !== 0) {
-          reject(new Error(`codex CLI exited with code ${code}: ${stderr}`));
-          return;
-        }
         try {
           // Parse NDJSON — extract final response and thread ID
           const lines = stdout.trim().split('\n').filter(Boolean);
           let responseText = '';
           let threadId: string | undefined;
+          let turnError: string | undefined;
           for (const line of lines) {
             try {
               const obj = JSON.parse(line);
@@ -165,14 +221,20 @@ export class CodexCliBackend implements AgentBackend {
               } else if (obj.type === 'item.completed' && obj.item?.type === 'agent_message') {
                 responseText = obj.item.text ?? '';
               } else if (obj.type === 'turn.failed') {
-                reject(new Error(obj.error?.message ?? 'Codex turn failed'));
-                return;
+                turnError = obj.error?.message ?? 'Codex turn failed';
               }
             } catch { /* skip unparseable lines */ }
           }
-          resolve({ text: responseText || stdout, threadId });
+          const exitError = code !== 0
+            ? `codex CLI exited with code ${code}: ${stderr || spawnError?.message || 'unknown error'}`
+            : undefined;
+          resolve({ text: responseText || stdout, threadId, error: turnError ?? exitError });
         } catch {
-          resolve({ text: stdout });
+          if (code !== 0) {
+            reject(new Error(`codex CLI exited with code ${code}: ${stderr || spawnError?.message || 'unknown error'}`));
+          } else {
+            resolve({ text: stdout });
+          }
         }
       });
     });

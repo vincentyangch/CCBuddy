@@ -34,6 +34,7 @@ function createMockDeps(overrides: Partial<GatewayDeps> = {}): GatewayDeps {
     storeMessage: vi.fn(),
     gatewayConfig: { unknown_user_reply: true },
     platformsConfig: {},
+    backend: undefined,
     ...overrides,
   };
 }
@@ -961,6 +962,22 @@ describe('Gateway — model injection', () => {
     expect(request.model).toBe('sonnet');
   });
 
+  it('falls back to default reasoning effort and verbosity when sessionStore has no override', async () => {
+    const deps = createMockDeps({
+      defaultReasoningEffort: 'minimal',
+      defaultVerbosity: 'high',
+    } as Partial<GatewayDeps>);
+    const gateway = new Gateway(deps);
+    const adapter = createMockAdapter();
+    gateway.registerAdapter(adapter);
+
+    await adapter.simulateMessage(createDmMessage());
+
+    const request = (deps.executeAgentRequest as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentRequest;
+    expect(request.reasoningEffort).toBe('minimal');
+    expect(request.verbosity).toBe('high');
+  });
+
   it('model is undefined when neither sessionStore model nor defaultModel is set', async () => {
     const deps = createMockDeps();
     const gateway = new Gateway(deps);
@@ -990,6 +1007,24 @@ describe('Gateway — model injection', () => {
     expect(request.model).toBe('opus[1m]');
   });
 
+  it('uses sessionStore reasoning effort and verbosity when set', async () => {
+    const sessionStore = new SessionStore(3_600_000);
+    vi.spyOn(sessionStore, 'getReasoningEffort').mockReturnValue('high');
+    vi.spyOn(sessionStore, 'getVerbosity').mockReturnValue('low');
+    const deps = createMockDeps({
+      sessionStore,
+    });
+    const gateway = new Gateway(deps);
+    const adapter = createMockAdapter();
+    gateway.registerAdapter(adapter);
+
+    await adapter.simulateMessage(createDmMessage());
+
+    const request = (deps.executeAgentRequest as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentRequest;
+    expect(request.reasoningEffort).toBe('high');
+    expect(request.verbosity).toBe('low');
+  });
+
   it('injects model awareness system prompt when effectiveModel is set', async () => {
     const deps = createMockDeps({
       defaultModel: 'sonnet',
@@ -1003,6 +1038,25 @@ describe('Gateway — model injection', () => {
     const request = (deps.executeAgentRequest as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentRequest;
     expect(request.systemPrompt).toContain('You are currently running on model: sonnet');
     expect(request.systemPrompt).toContain('switch_model');
+  });
+
+  it('injects backend-aware model guidance for Codex backends', async () => {
+    const deps = createMockDeps({
+      defaultModel: 'gpt-5.4',
+      backend: 'codex-sdk',
+    });
+    const gateway = new Gateway(deps);
+    const adapter = createMockAdapter();
+    gateway.registerAdapter(adapter);
+
+    await adapter.simulateMessage(createDmMessage());
+
+    const request = (deps.executeAgentRequest as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentRequest;
+    expect(request.systemPrompt).toContain('You are currently running on model: gpt-5.4');
+    expect(request.systemPrompt).toContain('gpt-5.4-pro');
+    expect(request.systemPrompt).toContain('gpt-5.4-mini');
+    expect(request.systemPrompt).toContain('prefer the GPT-5.4 family');
+    expect(request.systemPrompt).not.toContain('opus[1m]');
   });
 
   it('does not inject system prompt when no model is set', async () => {

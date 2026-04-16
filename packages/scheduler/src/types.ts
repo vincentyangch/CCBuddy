@@ -4,6 +4,8 @@ import type {
   AgentRequest,
   AgentEvent,
   CCBuddyConfig,
+  ReasoningEffort,
+  Verbosity,
 } from '@ccbuddy/core';
 
 export interface BaseJob {
@@ -25,6 +27,8 @@ export interface PromptJob extends BaseJob {
   target: MessageTarget;
   permissionLevel: 'admin' | 'system';
   model?: string;
+  reasoningEffort?: ReasoningEffort;
+  verbosity?: Verbosity;
   silent?: boolean;
 }
 
@@ -35,6 +39,8 @@ export interface SkillJob extends BaseJob {
   target: MessageTarget;
   permissionLevel: 'admin' | 'system';
   model?: string;
+  reasoningEffort?: ReasoningEffort;
+  verbosity?: Verbosity;
   silent?: boolean;
 }
 
@@ -63,6 +69,8 @@ export interface SchedulerDeps {
   config: CCBuddyConfig;
   eventBus: EventBus;
   defaultModel?: string;
+  defaultReasoningEffort?: ReasoningEffort;
+  defaultVerbosity?: Verbosity;
   executeAgentRequest: (request: AgentRequest) => AsyncGenerator<AgentEvent>;
   sendProactiveMessage: (target: MessageTarget, text: string) => Promise<void>;
   runSkill?: (name: string, input: Record<string, unknown>) => Promise<string>;

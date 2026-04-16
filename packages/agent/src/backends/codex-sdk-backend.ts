@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import type { AgentBackend, AgentRequest, AgentEvent, AgentEventBase, PermissionGateRule } from '@ccbuddy/core';
 import { Codex, type ThreadOptions, type ThreadEvent, type Input, type UserInput } from '@openai/codex-sdk';
 import { generateCodexRules } from './codex-rules.js';
+import { restoreModifiedProtectedFiles, restoreProtectedFiles, snapshotProtectedFiles } from './codex-runtime-helpers.js';
 
 export interface CodexSdkBackendOptions {
   codexPath?: string;
@@ -51,12 +52,13 @@ export class CodexSdkBackend implements AgentBackend {
     };
 
     const tempFiles: string[] = [];
+    const protectedFiles = snapshotProtectedFiles(request.workingDirectory, this.options.permissionGateRules);
+    const blockedProtectedPaths = new Set<string>();
 
     try {
       // Build Codex instance with env and optional overrides
       const codexEnv: Record<string, string> = { ...process.env as Record<string, string> };
       if (request.env) Object.assign(codexEnv, request.env);
-      if (this.options.apiKey) codexEnv.OPENAI_API_KEY = this.options.apiKey;
 
       const codexConfig: Record<string, string | string[] | Record<string, string>> = {};
 
@@ -74,9 +76,13 @@ export class CodexSdkBackend implements AgentBackend {
       if (this.rulesFilePath) {
         codexConfig['exec_policy.rules_file'] = this.rulesFilePath;
       }
+      if (request.verbosity) {
+        codexConfig.model_verbosity = request.verbosity;
+      }
 
       const codex = new Codex({
         codexPathOverride: this.options.codexPath,
+        apiKey: this.options.apiKey,
         env: codexEnv,
         config: codexConfig,
       });
@@ -89,6 +95,7 @@ export class CodexSdkBackend implements AgentBackend {
       };
 
       if (request.model) threadOpts.model = request.model;
+      if (request.reasoningEffort) threadOpts.modelReasoningEffort = request.reasoningEffort;
 
       // Map permission levels to Codex approval/sandbox modes
       switch (request.permissionLevel) {
@@ -157,6 +164,8 @@ export class CodexSdkBackend implements AgentBackend {
       const streamed = await thread.runStreamed(input, { signal: ac.signal });
       let threadId: string | undefined = request.sdkSessionId;
       let responseText = '';
+      let terminalError: string | undefined;
+      let sawTurnCompleted = false;
 
       for await (const event of streamed.events) {
         const mapped = this.mapEvent(event, base);
@@ -174,18 +183,45 @@ export class CodexSdkBackend implements AgentBackend {
           responseText = event.item.text;
         }
 
+        if (event.type === 'item.completed' && event.item.type === 'file_change') {
+          const restored = restoreProtectedFiles(
+            request.workingDirectory,
+            protectedFiles,
+            event.item.changes.map((change) => change.path),
+          );
+          for (const filePath of restored) blockedProtectedPaths.add(filePath);
+        }
+
         // Handle turn completion
         if (event.type === 'turn.completed') {
-          yield { ...base, type: 'complete', response: responseText, sdkSessionId: threadId };
+          sawTurnCompleted = true;
         }
 
         // Handle turn failure
         if (event.type === 'turn.failed') {
-          yield { ...base, type: 'error', error: event.error.message };
+          terminalError = event.error.message;
+        }
+
+        if (event.type === 'error') {
+          terminalError = event.message;
         }
       }
+
+      const restored = restoreModifiedProtectedFiles(protectedFiles);
+      for (const filePath of restored) blockedProtectedPaths.add(filePath);
+      if (blockedProtectedPaths.size > 0) {
+        const files = [...blockedProtectedPaths].join(', ');
+        const suffix = terminalError ? ` Underlying error: ${terminalError}` : '';
+        yield { ...base, type: 'error', error: `Blocked protected file modification and restored: ${files}.${suffix}` };
+      } else if (terminalError) {
+        yield { ...base, type: 'error', error: terminalError };
+      } else if (sawTurnCompleted) {
+        yield { ...base, type: 'complete', response: responseText, sdkSessionId: threadId };
+      }
     } catch (err) {
-      yield { ...base, type: 'error', error: (err as Error).message };
+      const restored = restoreModifiedProtectedFiles(protectedFiles);
+      const suffix = restored.length > 0 ? ` Protected files restored: ${restored.join(', ')}` : '';
+      yield { ...base, type: 'error', error: `${(err as Error).message}${suffix}` };
     } finally {
       this.abortControllers.delete(request.sessionId);
       for (const f of tempFiles) {
@@ -210,8 +246,6 @@ export class CodexSdkBackend implements AgentBackend {
         return this.mapItemUpdated(event.item, base);
       case 'item.completed':
         return this.mapItemCompleted(event.item, base);
-      case 'error':
-        return [{ ...base, type: 'error', error: event.message }];
       default:
         return null;
     }

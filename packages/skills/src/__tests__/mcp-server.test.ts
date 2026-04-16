@@ -95,6 +95,41 @@ describe('MCP server integration', () => {
     }
   }, 15_000);
 
+  it('switch_model uses runtime-config model lists for validation and tool descriptions', async () => {
+    const { registryPath, skillsDir, tmpDir } = makeTmpEnv();
+    writeFileSync(join(tmpDir, 'runtime-config.json'), JSON.stringify({
+      codex_models: ['gpt-5.4', 'gpt-5.4-mini'],
+    }), 'utf8');
+
+    const { client, transport } = await createClient(registryPath, skillsDir, [
+      '--no-approval',
+      '--no-git-commit',
+      '--backend', 'codex-sdk',
+      '--session-key', 'session-1',
+      '--data-dir', tmpDir,
+    ]);
+
+    try {
+      const tools = await client.listTools();
+      const switchModel = tools.tools.find((tool) => tool.name === 'switch_model');
+      expect(switchModel?.description).toContain('gpt-5.4-mini');
+
+      const result = await client.callTool({
+        name: 'switch_model',
+        arguments: { model: 'gpt-5.4-mini' },
+      });
+      expect((result.content as Array<{ text: string }>)[0].text).toContain('Model switched to gpt-5.4-mini');
+
+      const invalid = await client.callTool({
+        name: 'switch_model',
+        arguments: { model: 'legacy-model' },
+      });
+      expect((invalid.content as Array<{ text: string }>)[0].text).toContain('Invalid model "legacy-model"');
+    } finally {
+      await transport.close();
+    }
+  }, 15_000);
+
   it('send_file copies files into CCBUDDY_OUTBOUND_DIR', async () => {
     const { registryPath, skillsDir } = makeTmpEnv();
     const workingDir = mkdtempSync(join(process.cwd(), 'send-file-test-'));
@@ -387,6 +422,8 @@ describe('with --memory-db', () => {
         channel_id TEXT NOT NULL,
         is_group_channel BOOLEAN NOT NULL DEFAULT 0,
         model TEXT,
+        reasoning_effort TEXT,
+        verbosity TEXT,
         status TEXT NOT NULL DEFAULT 'active',
         created_at INTEGER NOT NULL,
         last_activity INTEGER NOT NULL,
@@ -481,6 +518,68 @@ describe('with --memory-db', () => {
     // Should not throw — will return results or empty array depending on owner user resolution
     expect(parsed).toHaveProperty('messages');
     expect(parsed).toHaveProperty('summaries');
+  });
+
+  it('persists session reasoning effort and verbosity overrides via MCP tools', async () => {
+    const Database = (await import('better-sqlite3')).default;
+    const db = new Database(testDbPath);
+    const now = Date.now();
+    db.prepare(`
+      INSERT OR REPLACE INTO sessions (
+        session_key, sdk_session_id, user_id, platform, channel_id, is_group_channel,
+        model, reasoning_effort, verbosity, status, created_at, last_activity, turns
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run('session-1', 'sdk-1', 'testuser', 'discord', 'ch1', 0, 'gpt-5.4', null, null, 'active', now, now, 0);
+    db.close();
+
+    const { client, transport } = await createClient(registryPath, skillsDir, [
+      '--no-approval',
+      '--no-git-commit',
+      '--memory-db', testDbPath,
+      '--backend', 'codex-sdk',
+      '--session-key', 'session-1',
+      '--data-dir', tmpDir,
+    ]);
+
+    try {
+      const tools = await client.listTools();
+      const names = tools.tools.map((tool) => tool.name);
+      expect(names).toContain('switch_reasoning_effort');
+      expect(names).toContain('switch_verbosity');
+
+      const reasoning = await client.callTool({
+        name: 'switch_reasoning_effort',
+        arguments: { reasoning_effort: 'high' },
+      });
+      expect((reasoning.content as Array<{ text: string }>)[0].text).toContain('Reasoning effort switched to high');
+
+      const verbosity = await client.callTool({
+        name: 'switch_verbosity',
+        arguments: { verbosity: 'low' },
+      });
+      expect((verbosity.content as Array<{ text: string }>)[0].text).toContain('Verbosity switched to low');
+
+      const current = await client.callTool({
+        name: 'get_current_model',
+        arguments: {},
+      });
+      const currentText = (current.content as Array<{ text: string }>)[0].text;
+      expect(currentText).toContain('Current model override: gpt-5.4');
+      expect(currentText).toContain('Reasoning effort override: high');
+      expect(currentText).toContain('Verbosity override: low');
+    } finally {
+      await transport.close();
+    }
+
+    const verifyDb = new Database(testDbPath, { readonly: true });
+    const row = verifyDb.prepare('SELECT reasoning_effort, verbosity FROM sessions WHERE session_key = ?').get('session-1') as {
+      reasoning_effort: string | null;
+      verbosity: string | null;
+    };
+    verifyDb.close();
+
+    expect(row.reasoning_effort).toBe('high');
+    expect(row.verbosity).toBe('low');
   });
 });
 
