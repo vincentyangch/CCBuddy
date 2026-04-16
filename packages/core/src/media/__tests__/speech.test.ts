@@ -13,7 +13,7 @@ describe('SpeechService', () => {
     service = new SpeechService('test-api-key');
   });
 
-  it('calls OpenAI TTS API with correct parameters', async () => {
+  it('calls OpenAI TTS API with the modern GPT-4o mini TTS model', async () => {
     mockFetch.mockResolvedValue({
       ok: true,
       arrayBuffer: async () => new ArrayBuffer(100),
@@ -30,7 +30,7 @@ describe('SpeechService', () => {
           'Content-Type': 'application/json',
         }),
         body: JSON.stringify({
-          model: 'tts-1',
+          model: 'gpt-4o-mini-tts',
           input: 'Hello world',
           voice: 'alloy',
           response_format: 'opus',

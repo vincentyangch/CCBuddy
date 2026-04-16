@@ -13,13 +13,15 @@ describe('TranscriptionService', () => {
     service = new TranscriptionService('test-api-key');
   });
 
-  it('calls OpenAI Whisper API with correct endpoint and auth', async () => {
+  it('calls OpenAI transcription API with the modern GPT-4o mini transcription model', async () => {
     mockFetch.mockResolvedValue({
       ok: true,
       json: async () => ({ text: 'Hello world' }),
     });
 
     await service.transcribe(Buffer.from('audio-data'), 'audio/ogg');
+
+    const body = mockFetch.mock.calls[0][1].body as FormData;
 
     expect(mockFetch).toHaveBeenCalledWith(
       'https://api.openai.com/v1/audio/transcriptions',
@@ -30,6 +32,7 @@ describe('TranscriptionService', () => {
         }),
       }),
     );
+    expect(body.get('model')).toBe('gpt-4o-mini-transcribe');
   });
 
   it('returns transcript text', async () => {

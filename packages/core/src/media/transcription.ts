@@ -8,6 +8,7 @@ const MIME_TO_EXT: Record<string, string> = {
 
 export class TranscriptionService {
   private readonly apiKey: string;
+  private static readonly MODEL = 'gpt-4o-mini-transcribe';
 
   constructor(apiKey: string) {
     this.apiKey = apiKey;
@@ -19,7 +20,7 @@ export class TranscriptionService {
 
     const form = new FormData();
     form.append('file', blob, `audio.${ext}`);
-    form.append('model', 'whisper-1');
+    form.append('model', TranscriptionService.MODEL);
 
     const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',

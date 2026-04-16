@@ -13,6 +13,26 @@ interface ChatEntry {
   attachments?: Array<{ type: string; data: string; filename?: string }>;
 }
 
+interface RuntimeSession {
+  session_key?: string;
+  sessionKey?: string;
+  platform?: string;
+  channel_id?: string;
+  channelId?: string;
+  model?: string | null;
+  reasoning_effort?: string | null;
+  reasoningEffort?: string | null;
+  verbosity?: string | null;
+}
+
+function getRuntimeSessionKey(session: RuntimeSession | null): string | null {
+  return session?.session_key ?? session?.sessionKey ?? null;
+}
+
+function getRuntimeChannelId(session: RuntimeSession | null): string | null {
+  return session?.channel_id ?? session?.channelId ?? null;
+}
+
 export function ChatPage() {
   const [channelId, setChannelId] = useState('webchat-main');
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -21,6 +41,48 @@ export function ChatPage() {
   const [buttons, setButtons] = useState<{ messageId: string; text: string; buttons: Array<{ id: string; label: string }> } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [sidebarRefresh, setSidebarRefresh] = useState(0);
+  const [runtimeSession, setRuntimeSession] = useState<RuntimeSession | null>(null);
+  const [backend, setBackend] = useState('');
+  const [modelOptions, setModelOptions] = useState<string[]>([]);
+  const [reasoningEffortOptions, setReasoningEffortOptions] = useState<string[]>([]);
+  const [verbosityOptions, setVerbosityOptions] = useState<string[]>([]);
+  const [savingSessionSettings, setSavingSessionSettings] = useState(false);
+  const [sessionSettingsStatus, setSessionSettingsStatus] = useState('');
+
+  const loadRuntimeSession = useCallback(async (sessionIdOverride?: string | null, channelIdOverride?: string) => {
+    const targetSessionId = sessionIdOverride ?? activeSessionId;
+    const targetChannelId = channelIdOverride ?? channelId;
+
+    try {
+      const [sessionData, backendData, modelData] = await Promise.all([
+        api.sessions(),
+        api.getBackend(),
+        api.getModel(),
+      ]);
+
+      const webchatSessions = (sessionData.sessions ?? []).filter((session: RuntimeSession) => session.platform === 'webchat');
+      const matchedByKey = targetSessionId
+        ? webchatSessions.find((session: RuntimeSession) => getRuntimeSessionKey(session) === targetSessionId)
+        : null;
+      const matchedByChannel = targetChannelId
+        ? webchatSessions.find((session: RuntimeSession) => getRuntimeChannelId(session) === targetChannelId)
+        : null;
+      const matchedSession = matchedByKey ?? matchedByChannel ?? null;
+
+      setRuntimeSession(matchedSession);
+      setBackend(backendData.backend);
+      setModelOptions(backendData.models);
+      setReasoningEffortOptions(modelData.reasoning_effort_options);
+      setVerbosityOptions(modelData.verbosity_options);
+
+      const matchedSessionKey = getRuntimeSessionKey(matchedSession);
+      if (matchedSessionKey && !targetSessionId) {
+        setActiveSessionId(matchedSessionKey);
+      }
+    } catch {
+      setRuntimeSession(null);
+    }
+  }, [activeSessionId, channelId]);
 
   const handleEvent = useCallback((type: string, data: any) => {
     switch (type) {
@@ -86,6 +148,7 @@ export function ChatPage() {
         : undefined,
     }]);
     send({ type: 'chat.message', text, channelId, attachments: attachments.length > 0 ? attachments : undefined });
+    setSidebarRefresh(n => n + 1);
   }, [send, channelId]);
 
   const handleButtonClick = useCallback((messageId: string, buttonLabel: string) => {
@@ -111,7 +174,8 @@ export function ChatPage() {
     } catch {
       setEntries([]);
     }
-  }, []);
+    await loadRuntimeSession(session.sessionId, session.channelId);
+  }, [loadRuntimeSession]);
 
   const handleDeleteSession = useCallback(async (sessionId: string) => {
     try {
@@ -128,12 +192,38 @@ export function ChatPage() {
     const newId = `webchat-${Date.now()}`;
     setChannelId(newId);
     setActiveSessionId(null);
+    setRuntimeSession(null);
+    setSessionSettingsStatus('');
     setEntries([]);
   }, []);
+
+  const saveSessionSetting = useCallback(async (payload: { model?: string | null; reasoning_effort?: string | null; verbosity?: string | null }) => {
+    const sessionKey = getRuntimeSessionKey(runtimeSession);
+    if (!sessionKey) return;
+
+    setSavingSessionSettings(true);
+    setSessionSettingsStatus('');
+    try {
+      await api.setSessionSettings(sessionKey, payload);
+      await loadRuntimeSession(sessionKey, getRuntimeChannelId(runtimeSession) ?? channelId);
+      setSessionSettingsStatus('Applied');
+      setTimeout(() => setSessionSettingsStatus(''), 2000);
+    } catch (err) {
+      setSessionSettingsStatus(`Error: ${(err as Error).message}`);
+    }
+    setSavingSessionSettings(false);
+  }, [channelId, loadRuntimeSession, runtimeSession]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [entries]);
+
+  useEffect(() => {
+    void loadRuntimeSession();
+  }, [loadRuntimeSession, sidebarRefresh]);
+
+  const runtimeSessionKey = getRuntimeSessionKey(runtimeSession);
+  const runtimeReasoningEffort = runtimeSession?.reasoning_effort ?? runtimeSession?.reasoningEffort ?? null;
 
   return (
     <div className="flex h-[calc(100vh-3rem)] flex-col overflow-hidden rounded-[var(--sd-radius)] border border-[color:var(--sd-border)] bg-[color:var(--sd-panel)] lg:flex-row">
@@ -148,6 +238,92 @@ export function ChatPage() {
             <StatusPill tone={connected ? 'success' : 'danger'}>
               {connected ? 'Connected' : 'Disconnected'}
             </StatusPill>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {runtimeSessionKey ? (
+              <span className="rounded-[var(--sd-radius)] border border-[color:var(--sd-border)] bg-[color:var(--sd-panel-raised)] px-2 py-0.5 text-xs text-[color:var(--sd-muted)]">
+                session: {runtimeSessionKey}
+              </span>
+            ) : (
+              <span className="rounded-[var(--sd-radius)] border border-dashed border-[color:var(--sd-border)] px-2 py-0.5 text-xs text-[color:var(--sd-muted)]">
+                Session controls appear after the runtime session exists for this chat.
+              </span>
+            )}
+            {runtimeSession?.model && (
+              <span className="rounded-[var(--sd-radius)] border border-[color:var(--sd-border)] bg-[color:var(--sd-panel-raised)] px-2 py-0.5 text-xs text-[color:var(--sd-info)]">
+                model: {runtimeSession.model}
+              </span>
+            )}
+            {runtimeReasoningEffort && (
+              <span className="rounded-[var(--sd-radius)] border border-[color:var(--sd-border)] bg-[color:var(--sd-panel-raised)] px-2 py-0.5 text-xs text-[color:var(--sd-warning)]">
+                reasoning: {runtimeReasoningEffort}
+              </span>
+            )}
+            {runtimeSession?.verbosity && (
+              <span className="rounded-[var(--sd-radius)] border border-[color:var(--sd-border)] bg-[color:var(--sd-panel-raised)] px-2 py-0.5 text-xs text-[color:var(--sd-success)]">
+                verbosity: {runtimeSession.verbosity}
+              </span>
+            )}
+            {sessionSettingsStatus && (
+              <span className={`rounded-[var(--sd-radius)] border px-2 py-0.5 text-xs ${
+                sessionSettingsStatus.startsWith('Error')
+                  ? 'border-[color:var(--sd-danger)] text-[color:var(--sd-danger)]'
+                  : 'border-[color:var(--sd-success)] text-[color:var(--sd-success)]'
+              }`}>
+                {sessionSettingsStatus}
+              </span>
+            )}
+          </div>
+          <div className="mt-3 grid gap-3 md:grid-cols-3">
+            <div>
+              <label htmlFor="chat-session-model-select" className="mb-2 block text-sm font-medium text-[color:var(--sd-text)]">Session model</label>
+              <select
+                id="chat-session-model-select"
+                value={runtimeSession?.model ?? ''}
+                onChange={(e) => void saveSessionSetting({ model: e.target.value || null })}
+                disabled={savingSessionSettings || !runtimeSessionKey}
+                className="sd-input w-full text-sm"
+              >
+                <option value="">Use runtime default</option>
+                {modelOptions.map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+            </div>
+            {backend.startsWith('codex') && (
+              <>
+                <div>
+                  <label htmlFor="chat-session-reasoning-select" className="mb-2 block text-sm font-medium text-[color:var(--sd-text)]">Reasoning effort</label>
+                  <select
+                    id="chat-session-reasoning-select"
+                    value={runtimeReasoningEffort ?? ''}
+                    onChange={(e) => void saveSessionSetting({ reasoning_effort: e.target.value || null })}
+                    disabled={savingSessionSettings || !runtimeSessionKey}
+                    className="sd-input w-full text-sm"
+                  >
+                    <option value="">Use backend default</option>
+                    {reasoningEffortOptions.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="chat-session-verbosity-select" className="mb-2 block text-sm font-medium text-[color:var(--sd-text)]">Verbosity</label>
+                  <select
+                    id="chat-session-verbosity-select"
+                    value={runtimeSession?.verbosity ?? ''}
+                    onChange={(e) => void saveSessionSetting({ verbosity: e.target.value || null })}
+                    disabled={savingSessionSettings || !runtimeSessionKey}
+                    className="sd-input w-full text-sm"
+                  >
+                    <option value="">Use backend default</option>
+                    {verbosityOptions.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
           </div>
         </div>
         <div ref={scrollRef} className="flex-1 overflow-auto p-4 space-y-3">

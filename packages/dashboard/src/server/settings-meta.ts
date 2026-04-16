@@ -95,6 +95,9 @@ const SETTINGS_SHAPE: ShapeNode = {
   },
   scheduler: {
     timezone: 'string',
+    default_model: 'string',
+    default_reasoning_effort: 'string',
+    default_verbosity: 'string',
     default_target: {
       platform: 'string',
       channel: 'string',
@@ -113,6 +116,8 @@ const SETTINGS_SHAPE: ShapeNode = {
         permission_level: 'string',
         timezone: 'string',
         model: 'string',
+        reasoning_effort: 'string',
+        verbosity: 'string',
         silent: 'boolean',
         catchup_window_minutes: 'number',
       },

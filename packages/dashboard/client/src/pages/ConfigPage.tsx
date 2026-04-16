@@ -34,6 +34,11 @@ function getDisplayValue(localValue: unknown, effectiveValue: unknown) {
   return localValue ?? effectiveValue ?? '';
 }
 
+function getSelectValue(localValue: unknown, effectiveValue: unknown) {
+  const value = getDisplayValue(localValue, effectiveValue);
+  return typeof value === 'string' ? value : '';
+}
+
 function isEditableSource(source?: string) {
   return source !== 'env' && source !== 'effective_only';
 }
@@ -50,6 +55,61 @@ function SourceBadge({ source }: { source?: string }) {
     <StatusPill tone={sourceTone(source)}>
       {SOURCE_LABELS[source ?? ''] ?? source ?? 'Unknown'}
     </StatusPill>
+  );
+}
+
+function sanitizeFieldSegment(value: string) {
+  return value.replace(/[^A-Za-z0-9_-]/g, '-');
+}
+
+function SelectConfigField({
+  id,
+  label,
+  localValue,
+  effectiveValue,
+  source,
+  options,
+  placeholder,
+  onChange,
+  effectiveLabel = 'Effective value',
+}: {
+  id: string;
+  label: string;
+  localValue: unknown;
+  effectiveValue: unknown;
+  source?: string;
+  options: string[];
+  placeholder: string;
+  onChange: (value: string | undefined) => void;
+  effectiveLabel?: string;
+}) {
+  const editable = isEditableSource(source);
+  const value = getSelectValue(localValue, effectiveValue);
+  const effectiveText = typeof effectiveValue === 'string' && effectiveValue ? effectiveValue : placeholder;
+
+  return (
+    <div className="border-b border-[color:var(--sd-border)] py-3 last:border-b-0">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <label htmlFor={id} className="text-sm text-[color:var(--sd-text)]">{label}</label>
+        <SourceBadge source={source} />
+      </div>
+      <select
+        id={id}
+        value={value}
+        onChange={(e) => onChange(e.target.value || undefined)}
+        disabled={!editable}
+        aria-describedby={`${id}-effective`}
+        className={`sd-input w-full text-sm ${editable ? '' : 'cursor-not-allowed opacity-60'}`}
+      >
+        <option value="">{placeholder}</option>
+        {options.map((option) => (
+          <option key={option} value={option}>{option}</option>
+        ))}
+      </select>
+      <div id={`${id}-effective`} className="mt-1 text-xs text-[color:var(--sd-muted)]">
+        {effectiveLabel}: {effectiveText}
+      </div>
+    </div>
   );
 }
 
@@ -232,6 +292,164 @@ function PermissionGatesControl({
   );
 }
 
+function SchedulerSettingsControl({
+  localConfig,
+  effectiveConfig,
+  sourceMap,
+  onChange,
+}: {
+  localConfig: Record<string, any>;
+  effectiveConfig: Record<string, any>;
+  sourceMap: Record<string, string>;
+  onChange: (path: string[], value: any) => void;
+}) {
+  const effectiveBackend = isPlainObject(effectiveConfig.agent) && typeof effectiveConfig.agent.backend === 'string'
+    ? effectiveConfig.agent.backend
+    : '';
+  const [backend, setBackend] = useState<string>(effectiveBackend);
+  const [modelOptions, setModelOptions] = useState<string[]>([]);
+  const [reasoningEffortOptions, setReasoningEffortOptions] = useState<string[]>([]);
+  const [verbosityOptions, setVerbosityOptions] = useState<string[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    Promise.all([api.getBackend(), api.getModel()])
+      .then(([backendData, modelData]) => {
+        if (cancelled) return;
+        setBackend(backendData.backend);
+        setModelOptions(backendData.models);
+        setReasoningEffortOptions(modelData.reasoning_effort_options);
+        setVerbosityOptions(modelData.verbosity_options);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setBackend(effectiveBackend);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveBackend]);
+
+  const schedulerLocal = isPlainObject(localConfig.scheduler) ? localConfig.scheduler : {};
+  const schedulerEffective = isPlainObject(effectiveConfig.scheduler) ? effectiveConfig.scheduler : {};
+  const localJobs = isPlainObject(schedulerLocal.jobs) ? schedulerLocal.jobs : {};
+  const effectiveJobs = isPlainObject(schedulerEffective.jobs) ? schedulerEffective.jobs : {};
+  const jobNames = Array.from(new Set([
+    ...Object.keys(localJobs),
+    ...Object.keys(effectiveJobs),
+  ])).sort();
+  const isCodex = backend.startsWith('codex') || effectiveBackend.startsWith('codex');
+
+  return (
+    <div className="mb-6 grid gap-4">
+      <Panel className="p-4">
+        <div className="mb-3">
+          <div className="text-sm font-medium text-[color:var(--sd-text)]">Scheduler defaults</div>
+          <div className="mt-1 text-xs text-[color:var(--sd-muted)]">Used when a scheduler job does not specify its own runtime overrides.</div>
+        </div>
+        <div className={`grid gap-3 ${isCodex ? 'lg:grid-cols-3' : 'lg:grid-cols-1'}`}>
+          <SelectConfigField
+            id="scheduler-default-model-select"
+            label="Default model"
+            localValue={schedulerLocal.default_model}
+            effectiveValue={schedulerEffective.default_model}
+            source={sourceMap['scheduler.default_model']}
+            options={modelOptions}
+            placeholder="Use agent default"
+            effectiveLabel="Effective fallback"
+            onChange={(value) => onChange(['scheduler', 'default_model'], value)}
+          />
+          {isCodex && (
+            <SelectConfigField
+              id="scheduler-default-reasoning-select"
+              label="Default reasoning effort"
+              localValue={schedulerLocal.default_reasoning_effort}
+              effectiveValue={schedulerEffective.default_reasoning_effort}
+              source={sourceMap['scheduler.default_reasoning_effort']}
+              options={reasoningEffortOptions}
+              placeholder="Use backend default"
+              effectiveLabel="Effective fallback"
+              onChange={(value) => onChange(['scheduler', 'default_reasoning_effort'], value)}
+            />
+          )}
+          {isCodex && (
+            <SelectConfigField
+              id="scheduler-default-verbosity-select"
+              label="Default verbosity"
+              localValue={schedulerLocal.default_verbosity}
+              effectiveValue={schedulerEffective.default_verbosity}
+              source={sourceMap['scheduler.default_verbosity']}
+              options={verbosityOptions}
+              placeholder="Use backend default"
+              effectiveLabel="Effective fallback"
+              onChange={(value) => onChange(['scheduler', 'default_verbosity'], value)}
+            />
+          )}
+        </div>
+      </Panel>
+
+      {jobNames.map((jobName) => {
+        const localJob = isPlainObject(localJobs[jobName]) ? localJobs[jobName] : {};
+        const effectiveJob = isPlainObject(effectiveJobs[jobName]) ? effectiveJobs[jobName] : {};
+        const safeJobName = sanitizeFieldSegment(jobName);
+        const cron = typeof effectiveJob.cron === 'string' ? effectiveJob.cron : 'Not configured';
+        const jobType = typeof effectiveJob.skill === 'string' ? 'skill' : 'prompt';
+
+        return (
+          <Panel key={jobName} className="p-4">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <div className="text-sm font-medium text-[color:var(--sd-text)]">{jobName}</div>
+              <StatusPill tone="neutral">{jobType}</StatusPill>
+              <span className="text-xs text-[color:var(--sd-muted)]">cron: {cron}</span>
+            </div>
+            <div className={`grid gap-3 ${isCodex ? 'lg:grid-cols-3' : 'lg:grid-cols-1'}`}>
+              <SelectConfigField
+                id={`scheduler-job-${safeJobName}-model-select`}
+                label="Job model"
+                localValue={localJob.model}
+                effectiveValue={effectiveJob.model}
+                source={sourceMap[`scheduler.jobs.${jobName}.model`]}
+                options={modelOptions}
+                placeholder="Use scheduler default"
+                effectiveLabel="Effective override"
+                onChange={(value) => onChange(['scheduler', 'jobs', jobName, 'model'], value)}
+              />
+              {isCodex && (
+                <SelectConfigField
+                  id={`scheduler-job-${safeJobName}-reasoning-select`}
+                  label="Reasoning effort"
+                  localValue={localJob.reasoning_effort}
+                  effectiveValue={effectiveJob.reasoning_effort}
+                  source={sourceMap[`scheduler.jobs.${jobName}.reasoning_effort`]}
+                  options={reasoningEffortOptions}
+                  placeholder="Use scheduler default"
+                  effectiveLabel="Effective override"
+                  onChange={(value) => onChange(['scheduler', 'jobs', jobName, 'reasoning_effort'], value)}
+                />
+              )}
+              {isCodex && (
+                <SelectConfigField
+                  id={`scheduler-job-${safeJobName}-verbosity-select`}
+                  label="Verbosity"
+                  localValue={localJob.verbosity}
+                  effectiveValue={effectiveJob.verbosity}
+                  source={sourceMap[`scheduler.jobs.${jobName}.verbosity`]}
+                  options={verbosityOptions}
+                  placeholder="Use scheduler default"
+                  effectiveLabel="Effective override"
+                  onChange={(value) => onChange(['scheduler', 'jobs', jobName, 'verbosity'], value)}
+                />
+              )}
+            </div>
+          </Panel>
+        );
+      })}
+    </div>
+  );
+}
+
 export function ConfigPage() {
   const [localConfig, setLocalConfig] = useState<Record<string, any> | null>(null);
   const [effectiveConfig, setEffectiveConfig] = useState<Record<string, any> | null>(null);
@@ -296,7 +514,11 @@ export function ConfigPage() {
         obj[path[i]] = obj[path[i]] ?? {};
         obj = obj[path[i]];
       }
-      obj[path[path.length - 1]] = value;
+      if (value === undefined) {
+        delete obj[path[path.length - 1]];
+      } else {
+        obj[path[path.length - 1]] = value;
+      }
       return next;
     });
   };
@@ -335,9 +557,22 @@ export function ConfigPage() {
   const effectiveSection = tabKey === '_root'
     ? { data_dir: effectiveConfig.data_dir, log_level: effectiveConfig.log_level }
     : effectiveConfig[tabKey] ?? {};
-  const hiddenPaths = tabKey === 'agent'
-    ? new Set(['agent.admin_skip_permissions'])
-    : new Set<string>();
+  const hiddenPaths = new Set<string>();
+  if (tabKey === 'agent') {
+    hiddenPaths.add('agent.admin_skip_permissions');
+  }
+  if (tabKey === 'scheduler') {
+    hiddenPaths.add('scheduler.default_model');
+    hiddenPaths.add('scheduler.default_reasoning_effort');
+    hiddenPaths.add('scheduler.default_verbosity');
+    const localJobs = isPlainObject(localConfig.scheduler?.jobs) ? localConfig.scheduler.jobs : {};
+    const effectiveJobs = isPlainObject(effectiveConfig.scheduler?.jobs) ? effectiveConfig.scheduler.jobs : {};
+    for (const jobName of new Set([...Object.keys(localJobs), ...Object.keys(effectiveJobs)])) {
+      hiddenPaths.add(`scheduler.jobs.${jobName}.model`);
+      hiddenPaths.add(`scheduler.jobs.${jobName}.reasoning_effort`);
+      hiddenPaths.add(`scheduler.jobs.${jobName}.verbosity`);
+    }
+  }
 
   return (
     <div>
@@ -402,6 +637,15 @@ export function ConfigPage() {
             onChange={handleChange}
           />
         </div>
+      )}
+
+      {tabKey === 'scheduler' && (
+        <SchedulerSettingsControl
+          localConfig={localConfig}
+          effectiveConfig={effectiveConfig}
+          sourceMap={sourceMap}
+          onChange={handleChange}
+        />
       )}
 
       <Panel className="p-6">

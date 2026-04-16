@@ -1,5 +1,6 @@
 export class SpeechService {
   private readonly apiKey: string;
+  private static readonly MODEL = 'gpt-4o-mini-tts';
 
   constructor(apiKey: string) {
     this.apiKey = apiKey;
@@ -13,7 +14,7 @@ export class SpeechService {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'tts-1',
+        model: SpeechService.MODEL,
         input: text,
         voice,
         response_format: 'opus',

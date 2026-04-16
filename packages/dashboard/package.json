@@ -28,6 +28,7 @@
     "@types/js-yaml": "^4",
     "@types/node": "^22",
     "@types/ws": "^8.18.1",
+    "jsdom": "^26.1.0",
     "vitest": "^3",
     "ws": "^8.19.0"
   }
