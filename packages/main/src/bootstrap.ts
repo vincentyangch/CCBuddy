@@ -24,6 +24,7 @@ import { SchedulerService, NotificationService, resolvePreferences } from '@ccbu
 import { chunkMessage } from '@ccbuddy/gateway';
 import { DashboardServer } from '@ccbuddy/dashboard';
 import { acquirePidLock } from './pid-lock.js';
+import { clearRestartIntent, isRestartIntentFresh, readRestartIntent } from './restart-reports.js';
 
 export interface BootstrapResult {
   stop: () => Promise<void>;
@@ -568,6 +569,44 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
     });
   };
 
+  const sendOwnerStartupDm = async (text: string) => {
+    const adminUser = Object.values(config.users).find((user) => user.role === 'admin');
+    if (!adminUser) return;
+
+    const prefs = resolvePreferences(config.notifications, profileStore, adminUser.name);
+    const platform = prefs.target.platform;
+    const platformUserId = adminUser[`${platform}_id`];
+    if (!platformUserId) return;
+
+    const adapter = gateway.getAdapter(platform);
+    if (!adapter?.resolveDMChannel) return;
+
+    const dmChannel = await adapter.resolveDMChannel(platformUserId);
+    if (!dmChannel) return;
+
+    await sendProactiveMessage({ platform, channel: dmChannel }, text);
+  };
+
+  const processStartupReports = async () => {
+    const intent = readRestartIntent(config.data_dir);
+    if (intent && isRestartIntentFresh(intent)) {
+      try {
+        await sendProactiveMessage(intent.reportTarget, 'Restart complete.');
+      } catch (err) {
+        console.error('[Startup] Failed to send restart confirmation:', err);
+      } finally {
+        clearRestartIntent(config.data_dir);
+      }
+      await sendOwnerStartupDm('CCBuddy startup complete after requested restart.');
+      return;
+    }
+
+    if (intent) {
+      clearRestartIntent(config.data_dir);
+    }
+    await sendOwnerStartupDm('CCBuddy startup complete. No pending restart request was found.');
+  };
+
   // 15. Create and start scheduler
   const internalJobs = new Map<string, () => Promise<void>>([
     ['memory_consolidation', async () => {
@@ -663,6 +702,7 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
     },
   });
   notificationService.start();
+  await processStartupReports();
 
   return {
     stop: async () => {
