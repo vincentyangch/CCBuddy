@@ -132,6 +132,40 @@ describe('CronRunner', () => {
         'Here is your daily report.',
       );
     });
+
+    it('logs prompt job diagnostics for Home Assistant watchdog probes', async () => {
+      const originalToken = process.env.HOMEASSISTANT_TOKEN;
+      process.env.HOMEASSISTANT_TOKEN = 'ha-token';
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+      try {
+        const deps = createMockDeps();
+        const runner = new CronRunner(deps);
+        const job = createMockJob({
+          name: 'service_watchdog',
+          payload: 'Run: `curl -s http://localhost:8123/api/ -H "Authorization: Bearer $HOMEASSISTANT_TOKEN"`',
+        });
+
+        await runner.executeJob(job);
+
+        expect(logSpy).toHaveBeenCalledWith(
+          '[Scheduler] Starting prompt job',
+          expect.objectContaining({
+            jobName: 'service_watchdog',
+            sessionId: expect.stringMatching(/^scheduler:cron:service_watchdog:[a-f0-9]{8}$/),
+            startedAt: expect.any(String),
+            homeAssistantTokenPresent: true,
+          }),
+        );
+      } finally {
+        if (originalToken === undefined) {
+          delete process.env.HOMEASSISTANT_TOKEN;
+        } else {
+          process.env.HOMEASSISTANT_TOKEN = originalToken;
+        }
+        logSpy.mockRestore();
+      }
+    });
   });
 
   describe('executeJob — storeMessage', () => {

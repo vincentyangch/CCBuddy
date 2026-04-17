@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync, mkdirSync, readdirSync } from 'node:fs';
@@ -380,6 +381,52 @@ describe('MCP server integration', () => {
       await transport.close();
     }
   }, 15_000);
+
+  it('restart_gateway accepts JSON pid lockfiles', async () => {
+    const { registryPath, skillsDir, tmpDir } = makeTmpEnv();
+    const child = spawn('/bin/sh', ['-c', 'trap "exit 0" USR1; while true; do sleep 1; done'], {
+      stdio: 'ignore',
+    });
+
+    try {
+      expect(child.pid).toBeTypeOf('number');
+      writeFileSync(join(tmpDir, 'ccbuddy.pid'), JSON.stringify({
+        pid: child.pid,
+        startedAtMs: Date.now(),
+        createdAt: new Date().toISOString(),
+        instanceId: 'test-instance',
+      }), 'utf8');
+
+      const { client, transport } = await createClient(registryPath, skillsDir, [
+        '--no-approval',
+        '--no-git-commit',
+        '--data-dir', tmpDir,
+      ]);
+
+      try {
+        const result = await client.callTool({
+          name: 'restart_gateway',
+          arguments: {},
+        });
+        const text = (result.content as Array<{ text: string }>)[0].text;
+        expect(text).toContain(`Restart signal sent (PID ${child.pid})`);
+      } finally {
+        await transport.close();
+      }
+
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('restart target did not exit after SIGUSR1')), 5_000);
+        child.once('exit', () => {
+          clearTimeout(timer);
+          resolve();
+        });
+      });
+    } finally {
+      if (child.exitCode === null) {
+        child.kill('SIGKILL');
+      }
+    }
+  }, 15_000);
 });
 
 describe('with --memory-db', () => {
@@ -581,6 +628,7 @@ describe('with --memory-db', () => {
     expect(row.reasoning_effort).toBe('high');
     expect(row.verbosity).toBe('low');
   });
+
 });
 
 describe('with --heartbeat-status-file', () => {

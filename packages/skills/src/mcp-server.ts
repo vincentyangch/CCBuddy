@@ -136,6 +136,23 @@ function loadRuntimeModelLists(dataDir: string): { claude_models?: string[]; cod
   }
 }
 
+function parseGatewayPidLock(raw: string): number | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  try {
+    const parsed = JSON.parse(trimmed) as { pid?: unknown };
+    if (typeof parsed.pid === 'number' && Number.isInteger(parsed.pid) && parsed.pid > 0) {
+      return parsed.pid;
+    }
+  } catch {
+    // Fall through to legacy raw-PID parsing.
+  }
+
+  const pid = Number.parseInt(trimmed, 10);
+  return Number.isInteger(pid) && pid > 0 ? pid : null;
+}
+
 // ── Elevated permission check ───────────────────────────────────────────────
 
 const ELEVATED_PERMISSIONS: Set<SkillPermission> = new Set([
@@ -1128,8 +1145,8 @@ async function main(): Promise<void> {
         try {
           const pidFile = pathJoin(args.dataDir, 'ccbuddy.pid');
           const pidContent = readFileSync(pidFile, 'utf8').trim();
-          const pid = parseInt(pidContent, 10);
-          if (isNaN(pid)) {
+          const pid = parseGatewayPidLock(pidContent);
+          if (pid === null) {
             return { content: [{ type: 'text', text: 'Failed to restart: invalid PID in lockfile.' }] };
           }
           process.kill(pid, 'SIGUSR1');

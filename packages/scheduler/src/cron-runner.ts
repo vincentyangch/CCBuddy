@@ -151,9 +151,24 @@ export class CronRunner {
     }
   }
 
+  private logPromptJobDiagnostics(job: PromptJob, sessionId: string): void {
+    const usesHomeAssistantProbe = job.payload.includes('localhost:8123/api/')
+      || job.payload.includes('HOMEASSISTANT_TOKEN');
+
+    if (!usesHomeAssistantProbe) return;
+
+    console.log('[Scheduler] Starting prompt job', {
+      jobName: job.name,
+      sessionId,
+      startedAt: new Date().toISOString(),
+      homeAssistantTokenPresent: Boolean(process.env.HOMEASSISTANT_TOKEN),
+    });
+  }
+
   private async executePromptJob(job: PromptJob): Promise<void> {
     const sessionId = `scheduler:cron:${job.name}:${randomUUID().slice(0, 8)}`;
     const memoryContext = this.opts.assembleContext(job.user, sessionId);
+    this.logPromptJobDiagnostics(job, sessionId);
 
     const request: AgentRequest = {
       prompt: job.payload,
