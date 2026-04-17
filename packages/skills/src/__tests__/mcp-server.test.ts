@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync, mkdirSync, readdirSync } from 'node:fs';
@@ -378,6 +379,45 @@ describe('MCP server integration', () => {
       expect(parsed.error).toContain('elevated permissions');
     } finally {
       await transport.close();
+    }
+  }, 15_000);
+
+  it('restart_gateway writes restart intent before signaling the gateway pid', async () => {
+    const { registryPath, skillsDir, tmpDir } = makeTmpEnv();
+    const child = spawn('/bin/sh', ['-c', 'trap "exit 0" USR1; while true; do sleep 1; done'], {
+      stdio: 'ignore',
+    });
+
+    try {
+      writeFileSync(join(tmpDir, 'ccbuddy.pid'), JSON.stringify({
+        pid: child.pid,
+        startedAtMs: Date.now(),
+        createdAt: new Date().toISOString(),
+        instanceId: 'test-instance',
+      }), 'utf8');
+
+      const { client, transport } = await createClient(registryPath, skillsDir, [
+        '--no-approval',
+        '--no-git-commit',
+        '--data-dir', tmpDir,
+        '--channel-key', 'discord-channel-123',
+        '--session-key', 'alice-discord-channel-123',
+      ]);
+
+      try {
+        const result = await client.callTool({ name: 'restart_gateway', arguments: {} });
+        const text = (result.content as Array<{ text: string }>)[0].text;
+        expect(text).toContain(`Restart signal sent (PID ${child.pid})`);
+
+        const marker = JSON.parse(readFileSync(join(tmpDir, 'restart-intent.json'), 'utf8'));
+        expect(marker.kind).toBe('requested_restart');
+        expect(marker.reportTarget).toEqual({ platform: 'discord', channel: 'channel-123' });
+        expect(marker.sessionKey).toBe('alice-discord-channel-123');
+      } finally {
+        await transport.close();
+      }
+    } finally {
+      if (child.exitCode === null) child.kill('SIGKILL');
     }
   }, 15_000);
 });
