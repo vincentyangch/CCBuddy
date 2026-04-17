@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { AgentRequest } from '@ccbuddy/core';
+import { mkdtempSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { bootstrap } from '../bootstrap.js';
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
@@ -844,5 +847,44 @@ describe('bootstrap', () => {
     // dirname('./skills/generated') = 'skills' (node:path strips leading ./)
     // registryPath = 'skills/registry.yaml'
     expect(mockSkillRegistry).toHaveBeenCalledWith('skills/registry.yaml');
+  });
+
+  it('sends requested-restart confirmation to the original channel and DM to the owner after adapters are ready', async () => {
+    const { writeRestartIntent } = await import('../restart-reports.js');
+    const dataDir = mkdtempSync(join(tmpdir(), 'restart-report-'));
+    fakeConfig.data_dir = dataDir;
+    writeRestartIntent(dataDir, {
+      kind: 'requested_restart',
+      requestedAt: new Date().toISOString(),
+      reportTarget: { platform: 'discord', channel: 'channel-123' },
+      requestedBy: 'alice',
+      sessionKey: 'alice-discord-channel-123',
+    });
+
+    const sendText = vi.fn().mockResolvedValue(undefined);
+    const resolveDMChannel = vi.fn().mockResolvedValue('dm-channel-1');
+    fakeGatewayInstance.getAdapter.mockImplementation((platform: string) => {
+      if (platform !== 'discord') return null;
+      return { sendText, resolveDMChannel };
+    });
+
+    await bootstrap('/config');
+
+    expect(sendText).toHaveBeenCalledWith('channel-123', 'Restart complete.');
+    expect(sendText).toHaveBeenCalledWith('dm-channel-1', 'CCBuddy startup complete after requested restart.');
+  });
+
+  it('sends only the owner DM when startup has no pending restart marker', async () => {
+    const sendText = vi.fn().mockResolvedValue(undefined);
+    const resolveDMChannel = vi.fn().mockResolvedValue('dm-channel-1');
+    fakeGatewayInstance.getAdapter.mockReturnValue({ sendText, resolveDMChannel });
+
+    await bootstrap('/config');
+
+    expect(sendText).toHaveBeenCalledTimes(1);
+    expect(sendText).toHaveBeenCalledWith(
+      'dm-channel-1',
+      'CCBuddy startup complete. No pending restart request was found.',
+    );
   });
 });
