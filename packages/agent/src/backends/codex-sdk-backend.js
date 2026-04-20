@@ -5,6 +5,28 @@ import { randomUUID } from 'node:crypto';
 import { Codex } from '@openai/codex-sdk';
 import { generateCodexRules } from './codex-rules.js';
 import { restoreModifiedProtectedFiles, restoreProtectedFiles, snapshotProtectedFiles } from './codex-runtime-helpers.js';
+const PROVISIONAL_REMOTE_SESSION_PREFIX = '__pending_remote__:';
+function isProvisionalRemoteSdkSessionId(sdkSessionId) {
+    return typeof sdkSessionId === 'string' && sdkSessionId.startsWith(PROVISIONAL_REMOTE_SESSION_PREFIX);
+}
+function awaitWithTimeout(promise, timeoutMs, message, onTimeout) {
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            try {
+                onTimeout?.();
+            }
+            catch { /* ignore timeout cleanup errors */ }
+            reject(new Error(message));
+        }, timeoutMs);
+        promise.then((value) => {
+            clearTimeout(timer);
+            resolve(value);
+        }, (err) => {
+            clearTimeout(timer);
+            reject(err);
+        });
+    });
+}
 export class CodexSdkBackend {
     options;
     abortControllers = new Map();
@@ -140,22 +162,19 @@ export class CodexSdkBackend {
             // Run with streaming
             const ac = new AbortController();
             this.abortControllers.set(request.sessionId, ac);
-            const streamed = await thread.runStreamed(input, { signal: ac.signal });
-            let threadId = request.sdkSessionId;
+            const startupTimeoutMs = this.options.startupTimeoutMs ?? 30000;
+            const timeoutMessage = 'Codex did not start responding in time.';
+            const streamed = await awaitWithTimeout(thread.runStreamed(input, { signal: ac.signal }), startupTimeoutMs, timeoutMessage, () => ac.abort());
+            let threadId = isProvisionalRemoteSdkSessionId(request.sdkSessionId)
+                ? undefined
+                : request.sdkSessionId;
             let responseText = '';
             let terminalError;
             let sawTurnCompleted = false;
-            for await (const event of streamed.events) {
-                const mapped = this.mapEvent(event, base);
-                if (mapped) {
-                    for (const ev of mapped)
-                        yield ev;
-                }
-                // Capture thread ID from thread.started
+            const applyEvent = (event) => {
                 if (event.type === 'thread.started') {
                     threadId = event.thread_id;
                 }
-                // Accumulate final response from agent_message items
                 if (event.type === 'item.completed' && event.item.type === 'agent_message') {
                     responseText = event.item.text;
                 }
@@ -164,16 +183,37 @@ export class CodexSdkBackend {
                     for (const filePath of restored)
                         blockedProtectedPaths.add(filePath);
                 }
-                // Handle turn completion
                 if (event.type === 'turn.completed') {
                     sawTurnCompleted = true;
                 }
-                // Handle turn failure
                 if (event.type === 'turn.failed') {
                     terminalError = event.error.message;
                 }
                 if (event.type === 'error') {
                     terminalError = event.message;
+                }
+                return this.mapEvent(event, base);
+            };
+            const iterator = streamed.events[Symbol.asyncIterator]();
+            const firstEvent = await awaitWithTimeout(iterator.next(), startupTimeoutMs, timeoutMessage, () => ac.abort());
+            if (firstEvent.done) {
+                throw new Error('Codex stream ended before producing any events.');
+            }
+            const firstMapped = applyEvent(firstEvent.value);
+            if (firstMapped) {
+                for (const ev of firstMapped)
+                    yield ev;
+            }
+            const remainingEvents = {
+                [Symbol.asyncIterator]() {
+                    return iterator;
+                },
+            };
+            for await (const event of remainingEvents) {
+                const mapped = applyEvent(event);
+                if (mapped) {
+                    for (const ev of mapped)
+                        yield ev;
                 }
             }
             const restored = restoreModifiedProtectedFiles(protectedFiles);

@@ -148,6 +148,10 @@ export class Gateway {
     }
   }
 
+  private usesProvisionalSdkSessionId(): boolean {
+    return this.deps.backend?.startsWith('codex') ?? false;
+  }
+
   private async handleIncomingMessage(msg: IncomingMessage): Promise<void> {
     // Check for pending follow-up reply (interactive follow-ups)
     const replyKey = `${msg.platform}:${msg.channelId}:${msg.platformUserId}`;
@@ -191,10 +195,14 @@ export class Gateway {
     let resumeSessionId: string | undefined;
     let isNewSession = true;
     if (this.deps.sessionStore) {
+      const useProvisionalSdkSessionId = this.usesProvisionalSdkSessionId();
       const session = this.deps.sessionStore.getOrCreate(
         sessionKey, isGroupChannel, msg.platform, msg.channelId, user.name,
+        { provisionalSdkSessionId: useProvisionalSdkSessionId },
       );
-      isNewSession = session.isNew;
+      const canResumeSession = !useProvisionalSdkSessionId
+        || this.deps.sessionStore.hasConfirmedSdkSessionId(sessionKey);
+      isNewSession = session.isNew || !canResumeSession;
       if (session.isNew) {
         sdkSessionId = session.sdkSessionId;
         // Publish session.started event for notifications
@@ -205,8 +213,10 @@ export class Gateway {
           sessionKey,
           timestamp: Date.now(),
         });
-      } else {
+      } else if (canResumeSession) {
         resumeSessionId = session.sdkSessionId;
+      } else {
+        sdkSessionId = session.sdkSessionId;
       }
     }
 
@@ -608,8 +618,10 @@ export class Gateway {
             ) {
               console.warn(`[Gateway] Resume returned session-not-found for ${request.resumeSessionId}, retrying as new session`);
               this.deps.sessionStore.archive(sessionKey);
+              const useProvisionalSdkSessionId = this.usesProvisionalSdkSessionId();
               const newSession = this.deps.sessionStore.getOrCreate(
                 sessionKey, msg.channelType === 'group', msg.platform, msg.channelId, request.userId,
+                { provisionalSdkSessionId: useProvisionalSdkSessionId },
               );
               const retryRequest: AgentRequest = {
                 ...request,
@@ -695,8 +707,10 @@ export class Gateway {
       if (request.resumeSessionId && sessionKey && this.deps.sessionStore) {
         console.warn(`[Gateway] Resume failed for session ${request.resumeSessionId}, retrying as new session`);
         this.deps.sessionStore.archive(sessionKey);
+        const useProvisionalSdkSessionId = this.usesProvisionalSdkSessionId();
         const newSession = this.deps.sessionStore.getOrCreate(
           sessionKey, msg.channelType === 'group', msg.platform, msg.channelId, request.userId,
+          { provisionalSdkSessionId: useProvisionalSdkSessionId },
         );
         const retryRequest: AgentRequest = {
           ...request,

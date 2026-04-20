@@ -12,6 +12,16 @@ interface SessionEntry {
   status: 'active' | 'paused';
 }
 
+export interface SessionCreateOptions {
+  provisionalSdkSessionId?: boolean;
+}
+
+const PROVISIONAL_REMOTE_SESSION_PREFIX = '__pending_remote__:';
+
+export function isProvisionalRemoteSdkSessionId(sdkSessionId: string | null | undefined): boolean {
+  return typeof sdkSessionId === 'string' && sdkSessionId.startsWith(PROVISIONAL_REMOTE_SESSION_PREFIX);
+}
+
 export interface SessionInfo {
   sessionKey: string;
   sdkSessionId: string;
@@ -52,6 +62,7 @@ export class SessionStore {
     platform?: string,
     channelId?: string,
     userId?: string,
+    options?: SessionCreateOptions,
   ): { sdkSessionId: string; isNew: boolean } {
     // 1. Check memory (fast path — no race possible since JS is single-threaded per tick)
     const existing = this.entries.get(sessionKey);
@@ -103,7 +114,9 @@ export class SessionStore {
       // 3. Create new
       const now = Date.now();
       const entry: SessionEntry = {
-        sdkSessionId: randomUUID(),
+        sdkSessionId: options?.provisionalSdkSessionId
+          ? `${PROVISIONAL_REMOTE_SESSION_PREFIX}${randomUUID()}`
+          : randomUUID(),
         lastActivity: now,
         isGroupChannel,
         model: null,
@@ -310,6 +323,20 @@ export class SessionStore {
       entry.sdkSessionId = newSdkSessionId;
       this.persistence?.updateSdkSessionId?.(sessionKey, newSdkSessionId);
     }
+  }
+
+  hasConfirmedSdkSessionId(sessionKey: string): boolean {
+    const entry = this.entries.get(sessionKey);
+    if (!entry) return false;
+
+    if (this.persistence) {
+      const dbRow = this.persistence.getByKey(sessionKey);
+      if (dbRow && dbRow.sdk_session_id !== entry.sdkSessionId) {
+        entry.sdkSessionId = dbRow.sdk_session_id;
+      }
+    }
+
+    return !isProvisionalRemoteSdkSessionId(entry.sdkSessionId);
   }
 
   deleteSession(sessionKey: string): void {

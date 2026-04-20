@@ -6,6 +6,7 @@ import type { AgentBackend, AgentRequest, AgentEvent, AgentEventBase, Permission
 import { Codex, type ThreadOptions, type ThreadEvent, type Input, type UserInput } from '@openai/codex-sdk';
 import { generateCodexRules } from './codex-rules.js';
 import { restoreModifiedProtectedFiles, restoreProtectedFiles, snapshotProtectedFiles } from './codex-runtime-helpers.js';
+import { isProvisionalRemoteSdkSessionId } from '../session/session-store.js';
 
 export interface CodexSdkBackendOptions {
   codexPath?: string;
@@ -14,6 +15,32 @@ export interface CodexSdkBackendOptions {
   defaultSandbox?: 'read-only' | 'workspace-write' | 'danger-full-access';
   /** Permission gate rules to convert to static Codex deny rules */
   permissionGateRules?: PermissionGateRule[];
+  startupTimeoutMs?: number;
+}
+
+function awaitWithTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  message: string,
+  onTimeout?: () => void,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      try { onTimeout?.(); } catch { /* ignore timeout cleanup errors */ }
+      reject(new Error(message));
+    }, timeoutMs);
+
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
 }
 
 export class CodexSdkBackend implements AgentBackend {
@@ -161,18 +188,22 @@ export class CodexSdkBackend implements AgentBackend {
       const ac = new AbortController();
       this.abortControllers.set(request.sessionId, ac);
 
-      const streamed = await thread.runStreamed(input, { signal: ac.signal });
-      let threadId: string | undefined = request.sdkSessionId;
+      const startupTimeoutMs = this.options.startupTimeoutMs ?? 30_000;
+      const timeoutMessage = 'Codex did not start responding in time.';
+      const streamed = await awaitWithTimeout(
+        thread.runStreamed(input, { signal: ac.signal }),
+        startupTimeoutMs,
+        timeoutMessage,
+        () => ac.abort(),
+      );
+      let threadId: string | undefined = isProvisionalRemoteSdkSessionId(request.sdkSessionId)
+        ? undefined
+        : request.sdkSessionId;
       let responseText = '';
       let terminalError: string | undefined;
       let sawTurnCompleted = false;
 
-      for await (const event of streamed.events) {
-        const mapped = this.mapEvent(event, base);
-        if (mapped) {
-          for (const ev of mapped) yield ev;
-        }
-
+      const applyEvent = (event: ThreadEvent): AgentEvent[] | null => {
         // Capture thread ID from thread.started
         if (event.type === 'thread.started') {
           threadId = event.thread_id;
@@ -204,6 +235,38 @@ export class CodexSdkBackend implements AgentBackend {
 
         if (event.type === 'error') {
           terminalError = event.message;
+        }
+
+        return this.mapEvent(event, base);
+      };
+
+      const iterator = streamed.events[Symbol.asyncIterator]();
+      const firstEvent = await awaitWithTimeout(
+        iterator.next(),
+        startupTimeoutMs,
+        timeoutMessage,
+        () => ac.abort(),
+      );
+
+      if (firstEvent.done) {
+        throw new Error('Codex stream ended before producing any events.');
+      }
+
+      const firstMapped = applyEvent(firstEvent.value);
+      if (firstMapped) {
+        for (const ev of firstMapped) yield ev;
+      }
+
+      const remainingEvents: AsyncIterable<ThreadEvent> = {
+        [Symbol.asyncIterator]() {
+          return iterator;
+        },
+      };
+
+      for await (const event of remainingEvents) {
+        const mapped = applyEvent(event);
+        if (mapped) {
+          for (const ev of mapped) yield ev;
         }
       }
 

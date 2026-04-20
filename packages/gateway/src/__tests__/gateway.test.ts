@@ -738,6 +738,41 @@ describe('Gateway — session continuity', () => {
     expect(secondCall.memoryContext).toBeUndefined();
   });
 
+  it('does not resume Codex sessions until a real thread id is confirmed', async () => {
+    const sessionStore = new SessionStore(3_600_000);
+    const deps = createMockDeps({
+      sessionStore,
+      backend: 'codex-sdk',
+      executeAgentRequest: vi.fn().mockImplementation(async function* (req: AgentRequest) {
+        yield {
+          type: 'complete' as const,
+          response: 'Hello!',
+          sessionId: req.sessionId,
+          userId: req.userId,
+          channelId: req.channelId,
+          platform: req.platform,
+        } satisfies AgentEvent;
+      }),
+    });
+    const gateway = new Gateway(deps);
+    const adapter = createMockAdapter();
+    gateway.registerAdapter(adapter);
+
+    await adapter.simulateMessage(createDmMessage());
+    await adapter.simulateMessage(createDmMessage({ text: 'Follow up' }));
+
+    const calls = (deps.executeAgentRequest as ReturnType<typeof vi.fn>).mock.calls;
+    const firstCall = calls[0][0] as AgentRequest;
+    const secondCall = calls[1][0] as AgentRequest;
+
+    expect(firstCall.sdkSessionId).toBeDefined();
+    expect(firstCall.resumeSessionId).toBeUndefined();
+
+    expect(secondCall.sdkSessionId).toBeDefined();
+    expect(secondCall.resumeSessionId).toBeUndefined();
+    expect(secondCall.memoryContext).toBe('memory context');
+  });
+
   it('uses shared session key for group channels', async () => {
     const sessionStore = new SessionStore(3_600_000);
     let callCount = 0;

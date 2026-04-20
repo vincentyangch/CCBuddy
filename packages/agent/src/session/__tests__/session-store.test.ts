@@ -88,6 +88,19 @@ describe('SessionStore', () => {
     expect(s1.sdkSessionId).not.toBe(s2.sdkSessionId);
   });
 
+  it('tracks provisional remote session ids until a real thread id is confirmed', () => {
+    const store = new SessionStore(3_600_000);
+    const session = store.getOrCreate('dad-discord-ch1', false, 'discord', 'ch1', 'dad', {
+      provisionalSdkSessionId: true,
+    });
+
+    expect(session.sdkSessionId).toContain('__pending_remote__:');
+    expect(store.hasConfirmedSdkSessionId('dad-discord-ch1')).toBe(false);
+
+    store.updateSdkSessionId('dad-discord-ch1', 'thread-123');
+    expect(store.hasConfirmedSdkSessionId('dad-discord-ch1')).toBe(true);
+  });
+
   it('tick does not expire fresh sessions', () => {
     const store = new SessionStore(3_600_000);
     store.getOrCreate('dad-discord-ch1', false);

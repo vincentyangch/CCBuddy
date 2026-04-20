@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import type { AgentBackend, AgentRequest, AgentEvent, AgentEventBase, PermissionGateRule } from '@ccbuddy/core';
 import { generateCodexRules } from './codex-rules.js';
 import { restoreModifiedProtectedFiles, serializeCodexConfigOverrides, snapshotProtectedFiles, type CodexConfigOverrideObject } from './codex-runtime-helpers.js';
+import { isProvisionalRemoteSdkSessionId } from '../session/session-store.js';
 
 export interface CodexCliBackendOptions {
   codexPath?: string;
@@ -146,7 +147,10 @@ export class CodexCliBackend implements AgentBackend {
       } else if (result.error) {
         yield { ...base, type: 'error', error: result.error };
       } else {
-        yield { ...base, type: 'complete', response: result.text, sdkSessionId: result.threadId ?? request.sdkSessionId };
+        const fallbackThreadId = isProvisionalRemoteSdkSessionId(request.sdkSessionId)
+          ? undefined
+          : request.sdkSessionId;
+        yield { ...base, type: 'complete', response: result.text, sdkSessionId: result.threadId ?? fallbackThreadId };
       }
     } catch (err) {
       const restored = restoreModifiedProtectedFiles(protectedFiles);

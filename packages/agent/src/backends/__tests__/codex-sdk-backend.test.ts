@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -45,6 +45,10 @@ describe('CodexSdkBackend', () => {
     const thread = { id: 'thread-123', runStreamed: mockRunStreamed };
     mockStartThread.mockReturnValue(thread);
     mockResumeThread.mockReturnValue(thread);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('emits complete event with response from agent_message', async () => {
@@ -177,6 +181,28 @@ describe('CodexSdkBackend', () => {
 
     expect(mockStartThread).toHaveBeenCalled();
     expect(mockResumeThread).not.toHaveBeenCalled();
+  });
+
+  it('emits error when Codex never starts responding', async () => {
+    vi.useFakeTimers();
+    mockRunStreamed.mockImplementation(() => new Promise(() => {}));
+
+    const backend = new CodexSdkBackend({ startupTimeoutMs: 5_000 });
+    const consumeEvents = (async () => {
+      const events: any[] = [];
+      for await (const event of backend.execute(makeRequest())) { events.push(event); }
+      return events;
+    })();
+
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    const events = await consumeEvents;
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: 'error',
+        error: expect.stringContaining('did not start responding'),
+      }),
+    ]);
   });
 
   it('includes routing metadata in all events', async () => {
