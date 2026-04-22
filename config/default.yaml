@@ -85,6 +85,16 @@ ccbuddy:
       - "gpt-5.4-mini"
       - "gpt-5.4-pro"
       - "gpt-5.4-nano"
+    # Optional extra stdio MCP servers to expose alongside the built-in skills server.
+    # Example:
+    # external_mcp_servers:
+    #   - name: "real-browser"
+    #     command: "/usr/bin/env"
+    #     args: ["node", "/absolute/path/to/real-browser-mcp/dist/cli.js", "mcp"]
+    #     env:
+    #       REAL_BROWSER_MCP_ALLOWED_DOMAINS: "linux.do"
+    #       REAL_BROWSER_MCP_DENIED_DOMAINS: "discord.com"
+    external_mcp_servers: []
 
   # --- Memory ---
   memory:

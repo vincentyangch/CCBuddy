@@ -53,6 +53,12 @@ export interface AgentConfig {
   codex: CodexConfig;
   claude_models: string[];
   codex_models: string[];
+  external_mcp_servers: Array<{
+    name: string;
+    command: string;
+    args: string[];
+    env?: Record<string, string>;
+  }>;
 }
 
 export interface MemoryConfig {
@@ -279,6 +285,7 @@ export const DEFAULT_CONFIG: CCBuddyConfig = {
     },
     claude_models: ['sonnet', 'opus', 'haiku', 'opus[1m]', 'sonnet[1m]', 'opusplan'],
     codex_models: ['gpt-5.4', 'gpt-5.4-mini', 'gpt-5.4-pro', 'gpt-5.4-nano'],
+    external_mcp_servers: [],
   },
   memory: {
     db_path: './data/memory.sqlite',

@@ -300,6 +300,11 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
   for (const k of forwardedEnvKeys) {
     if (process.env[k] !== undefined) forwardedEnv[k] = process.env[k] as string;
   }
+  const baseSubprocessEnv = Object.fromEntries(
+    ['PATH', 'HOME', 'USER', 'TMPDIR']
+      .filter((key) => process.env[key] !== undefined)
+      .map((key) => [key, process.env[key] as string]),
+  );
 
   // Determine owner user ID: the first admin user in config, used as default for memory tool calls
   const adminUser = Object.values(config.users).find(u => u.role === 'admin');
@@ -335,6 +340,16 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
       HOMEASSISTANT_TOKEN: process.env.HOMEASSISTANT_TOKEN ?? '',
     },
   };
+
+  const externalMcpServers = config.agent.external_mcp_servers.map((server) => ({
+    name: server.name,
+    command: server.command,
+    args: server.args,
+    env: {
+      ...baseSubprocessEnv,
+      ...(server.env ?? {}),
+    },
+  }));
 
   // 7b. Wire Apple helper path into MCP server args if enabled
   if (config.apple.enabled) {
@@ -394,7 +409,7 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
       yield* agentService.handleRequest({
         ...request,
         workingDirectory: request.workingDirectory,
-        mcpServers: [mcpServer, haMcpServer],
+        mcpServers: [mcpServer, haMcpServer, ...externalMcpServers],
         env: forwardedEnv,
         systemPrompt: [identityPrompt, request.systemPrompt, skillNudge].filter(Boolean).join('\n\n'),
       });
@@ -642,7 +657,7 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
       mcpServers: [{
         ...skillMcpServer,
         args: [...skillMcpServer.args, '--backend', skillMcpServer.backend],
-      }, haMcpServer],
+      }, haMcpServer, ...externalMcpServers],
       env: forwardedEnv,
       systemPrompt: [identityPrompt, request.systemPrompt, skillNudge].filter(Boolean).join('\n\n'),
     }),

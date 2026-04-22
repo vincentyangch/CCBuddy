@@ -60,6 +60,7 @@ function createMinimalConfig(overrides: Partial<CCBuddyConfig> = {}): CCBuddyCon
       },
       claude_models: ['sonnet', 'opus', 'haiku'],
       codex_models: ['gpt-5.4', 'gpt-5.4-mini'],
+      external_mcp_servers: [],
     },
     memory: {
       db_path: './data/memory.sqlite',

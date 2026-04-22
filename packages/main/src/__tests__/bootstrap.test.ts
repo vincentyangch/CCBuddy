@@ -228,6 +228,7 @@ function makeConfig(overrides: Record<string, unknown> = {}) {
       },
       claude_models: ['sonnet', 'opus'],
       codex_models: ['gpt-5.4', 'gpt-5.4-mini'],
+      external_mcp_servers: [],
     },
     memory: {
       db_path: './data/memory.sqlite',
@@ -589,6 +590,110 @@ describe('bootstrap', () => {
         }),
         expect.any(Object),
       ],
+    }));
+  });
+
+  it('appends configured external MCP servers to gateway requests', async () => {
+    const baseConfig = makeConfig();
+    const cfg = makeConfig({
+      agent: {
+        ...baseConfig.agent,
+        external_mcp_servers: [
+          {
+            name: 'real-browser',
+            command: '/usr/bin/env',
+            args: ['node', '/tmp/real-browser-mcp/dist/cli.js', 'mcp'],
+            env: {
+              REAL_BROWSER_MCP_ALLOWED_DOMAINS: 'linux.do',
+              REAL_BROWSER_MCP_DENIED_DOMAINS: 'discord.com',
+            },
+          },
+        ],
+      },
+    });
+    mockLoadConfig.mockReturnValue(cfg);
+
+    await bootstrap('/config');
+
+    const gatewayDeps = (mockGateway as ReturnType<typeof vi.fn>).mock.calls[0][0] as {
+      executeAgentRequest: (request: AgentRequest) => AsyncGenerator<unknown>;
+    };
+
+    const request: AgentRequest = {
+      prompt: 'hello',
+      userId: 'alice',
+      sessionId: 'alice-discord-ch1',
+      channelId: 'ch1',
+      platform: 'discord',
+      permissionLevel: 'admin',
+    };
+
+    for await (const _event of gatewayDeps.executeAgentRequest(request)) {}
+
+    expect(fakeAgentServiceInstance.handleRequest).toHaveBeenCalledWith(expect.objectContaining({
+      mcpServers: expect.arrayContaining([
+        expect.objectContaining({ name: 'ccbuddy-skills' }),
+        expect.objectContaining({ name: 'home-assistant' }),
+        expect.objectContaining({
+          name: 'real-browser',
+          command: '/usr/bin/env',
+          args: ['node', '/tmp/real-browser-mcp/dist/cli.js', 'mcp'],
+          env: expect.objectContaining({
+            REAL_BROWSER_MCP_ALLOWED_DOMAINS: 'linux.do',
+            REAL_BROWSER_MCP_DENIED_DOMAINS: 'discord.com',
+          }),
+        }),
+      ]),
+    }));
+  });
+
+  it('appends configured external MCP servers to scheduler requests', async () => {
+    const baseConfig = makeConfig();
+    const cfg = makeConfig({
+      agent: {
+        ...baseConfig.agent,
+        external_mcp_servers: [
+          {
+            name: 'real-browser',
+            command: '/usr/bin/env',
+            args: ['node', '/tmp/real-browser-mcp/dist/cli.js', 'mcp'],
+            env: {
+              REAL_BROWSER_MCP_ALLOWED_DOMAINS: 'linux.do',
+            },
+          },
+        ],
+      },
+    });
+    mockLoadConfig.mockReturnValue(cfg);
+
+    await bootstrap('/config');
+
+    const schedulerArgs = mockSchedulerService.mock.calls[0][0] as {
+      executeAgentRequest: (request: AgentRequest) => AsyncGenerator<unknown>;
+    };
+
+    const request: AgentRequest = {
+      prompt: 'scheduler hello',
+      userId: 'system',
+      sessionId: 'job-1',
+      channelId: 'internal',
+      platform: 'system',
+      permissionLevel: 'system',
+    };
+
+    for await (const _event of schedulerArgs.executeAgentRequest(request)) {}
+
+    expect(fakeAgentServiceInstance.handleRequest).toHaveBeenCalledWith(expect.objectContaining({
+      mcpServers: expect.arrayContaining([
+        expect.objectContaining({ name: 'ccbuddy-skills' }),
+        expect.objectContaining({ name: 'home-assistant' }),
+        expect.objectContaining({
+          name: 'real-browser',
+          env: expect.objectContaining({
+            REAL_BROWSER_MCP_ALLOWED_DOMAINS: 'linux.do',
+          }),
+        }),
+      ]),
     }));
   });
 
