@@ -3,7 +3,7 @@ import { writeFileSync, unlinkSync, mkdirSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import type { AgentBackend, AgentRequest, AgentEvent, AgentEventBase, PermissionGateRule } from '@ccbuddy/core';
+import type { AgentBackend, AgentRequest, AgentEvent, AgentEventBase, PermissionGateRule, ServiceTier } from '@ccbuddy/core';
 import { generateCodexRules } from './codex-rules.js';
 import { restoreModifiedProtectedFiles, serializeCodexConfigOverrides, snapshotProtectedFiles, type CodexConfigOverrideObject } from './codex-runtime-helpers.js';
 import { isProvisionalRemoteSdkSessionId } from '../session/session-store.js';
@@ -13,6 +13,7 @@ export interface CodexCliBackendOptions {
   apiKey?: string;
   networkAccess?: boolean;
   defaultSandbox?: 'read-only' | 'workspace-write' | 'danger-full-access';
+  defaultServiceTier?: ServiceTier;
   permissionGateRules?: PermissionGateRule[];
 }
 
@@ -74,6 +75,9 @@ export class CodexCliBackend implements AgentBackend {
     if (request.model) args.push('--model', request.model);
     if (request.reasoningEffort) {
       configOverrides.model_reasoning_effort = request.reasoningEffort;
+    }
+    if (request.serviceTier ?? this.options.defaultServiceTier) {
+      configOverrides.service_tier = request.serviceTier ?? this.options.defaultServiceTier!;
     }
     if (request.verbosity) {
       configOverrides.model_verbosity = request.verbosity;

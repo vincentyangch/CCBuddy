@@ -1,5 +1,5 @@
 import type { MessageTarget } from '../types/events.js';
-import type { ReasoningEffort, Verbosity } from '../types/agent.js';
+import type { ReasoningEffort, ServiceTier, Verbosity } from '../types/agent.js';
 
 export interface PermissionGateRule {
   name: string;
@@ -20,6 +20,7 @@ export interface CodexConfig {
   network_access: boolean;
   default_sandbox: 'read-only' | 'workspace-write' | 'danger-full-access';
   default_reasoning_effort?: ReasoningEffort;
+  default_service_tier?: ServiceTier;
   default_verbosity?: Verbosity;
 }
 

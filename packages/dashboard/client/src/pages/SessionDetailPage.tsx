@@ -13,6 +13,7 @@ export function SessionDetailPage() {
   const [backend, setBackend] = useState<string>('');
   const [modelOptions, setModelOptions] = useState<string[]>([]);
   const [reasoningEffortOptions, setReasoningEffortOptions] = useState<string[]>([]);
+  const [serviceTierOptions, setServiceTierOptions] = useState<string[]>([]);
   const [verbosityOptions, setVerbosityOptions] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<string>('');
@@ -26,6 +27,7 @@ export function SessionDetailPage() {
       setBackend(backendData.backend);
       setModelOptions(backendData.models);
       setReasoningEffortOptions(modelData.reasoning_effort_options);
+      setServiceTierOptions(modelData.service_tier_options ?? []);
       setVerbosityOptions(modelData.verbosity_options);
       setLoading(false);
     });
@@ -35,7 +37,7 @@ export function SessionDetailPage() {
     void load();
   }, [key]);
 
-  const saveSetting = async (payload: { model?: string | null; reasoning_effort?: string | null; verbosity?: string | null }) => {
+  const saveSetting = async (payload: { model?: string | null; reasoning_effort?: string | null; service_tier?: string | null; verbosity?: string | null }) => {
     if (!key) return;
     setSaving(true);
     setStatus('');
@@ -90,13 +92,18 @@ export function SessionDetailPage() {
                 reasoning: {session.reasoning_effort ?? session.reasoningEffort}
               </span>
             )}
+            {(session.service_tier ?? session.serviceTier) && (
+              <span className="rounded-[var(--sd-radius)] border border-[color:var(--sd-border)] bg-[color:var(--sd-panel-raised)] px-2 py-0.5 text-xs text-[color:var(--sd-info)]">
+                service tier: {session.service_tier ?? session.serviceTier}
+              </span>
+            )}
             {session.verbosity && (
               <span className="rounded-[var(--sd-radius)] border border-[color:var(--sd-border)] bg-[color:var(--sd-panel-raised)] px-2 py-0.5 text-xs text-[color:var(--sd-success)]">
                 verbosity: {session.verbosity}
               </span>
             )}
             </div>
-            <div className="grid gap-3 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-4">
               <div>
                 <label htmlFor="session-model-select" className="mb-2 block text-sm font-medium text-[color:var(--sd-text)]">Session model</label>
                 <select
@@ -125,6 +132,21 @@ export function SessionDetailPage() {
                     >
                       <option value="">Use backend default</option>
                       {reasoningEffortOptions.map((option) => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="session-service-tier-select" className="mb-2 block text-sm font-medium text-[color:var(--sd-text)]">Service tier</label>
+                    <select
+                      id="session-service-tier-select"
+                      value={session.service_tier ?? session.serviceTier ?? ''}
+                      onChange={(e) => void saveSetting({ service_tier: e.target.value || null })}
+                      disabled={saving}
+                      className="sd-input w-full text-sm"
+                    >
+                      <option value="">Use backend default</option>
+                      {serviceTierOptions.map((option) => (
                         <option key={option} value={option}>{option}</option>
                       ))}
                     </select>

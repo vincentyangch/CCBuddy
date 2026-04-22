@@ -997,9 +997,10 @@ describe('Gateway — model injection', () => {
     expect(request.model).toBe('sonnet');
   });
 
-  it('falls back to default reasoning effort and verbosity when sessionStore has no override', async () => {
+  it('falls back to default reasoning effort, service tier, and verbosity when sessionStore has no override', async () => {
     const deps = createMockDeps({
       defaultReasoningEffort: 'minimal',
+      defaultServiceTier: 'fast',
       defaultVerbosity: 'high',
     } as Partial<GatewayDeps>);
     const gateway = new Gateway(deps);
@@ -1010,6 +1011,7 @@ describe('Gateway — model injection', () => {
 
     const request = (deps.executeAgentRequest as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentRequest;
     expect(request.reasoningEffort).toBe('minimal');
+    expect(request.serviceTier).toBe('fast');
     expect(request.verbosity).toBe('high');
   });
 
@@ -1042,9 +1044,10 @@ describe('Gateway — model injection', () => {
     expect(request.model).toBe('opus[1m]');
   });
 
-  it('uses sessionStore reasoning effort and verbosity when set', async () => {
+  it('uses sessionStore reasoning effort, service tier, and verbosity when set', async () => {
     const sessionStore = new SessionStore(3_600_000);
     vi.spyOn(sessionStore, 'getReasoningEffort').mockReturnValue('high');
+    vi.spyOn(sessionStore, 'getServiceTier').mockReturnValue('fast');
     vi.spyOn(sessionStore, 'getVerbosity').mockReturnValue('low');
     const deps = createMockDeps({
       sessionStore,
@@ -1057,6 +1060,7 @@ describe('Gateway — model injection', () => {
 
     const request = (deps.executeAgentRequest as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentRequest;
     expect(request.reasoningEffort).toBe('high');
+    expect(request.serviceTier).toBe('fast');
     expect(request.verbosity).toBe('low');
   });
 

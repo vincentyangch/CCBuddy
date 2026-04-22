@@ -7,6 +7,7 @@ export interface Attachment {
 }
 
 export type ReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+export type ServiceTier = 'flex' | 'fast';
 export type Verbosity = 'low' | 'medium' | 'high';
 
 export interface AgentRequest {
@@ -17,6 +18,7 @@ export interface AgentRequest {
   platform: string;
   model?: string;
   reasoningEffort?: ReasoningEffort;
+  serviceTier?: ServiceTier;
   verbosity?: Verbosity;
   workingDirectory?: string;
   outboundMediaDir?: string;

@@ -335,12 +335,12 @@ describe('CodexCliBackend', () => {
     expect(rulesOverride).toContain('ccbuddy.rules');
   });
 
-  it('passes reasoning effort and verbosity config overrides', async () => {
+  it('passes reasoning effort, service tier, and verbosity config overrides', async () => {
     const proc = makeMockProcess();
     mockSpawn.mockReturnValue(proc as any);
 
     const backend = new CodexCliBackend();
-    const gen = backend.execute(makeRequest({ reasoningEffort: 'medium', verbosity: 'high' }));
+    const gen = backend.execute(makeRequest({ reasoningEffort: 'medium', serviceTier: 'fast', verbosity: 'high' }));
     const nextPromise = gen.next();
 
     process.nextTick(() => {
@@ -352,6 +352,7 @@ describe('CodexCliBackend', () => {
 
     const [, args] = mockSpawn.mock.calls[0];
     expect(args).toContain('model_reasoning_effort="medium"');
+    expect(args).toContain('service_tier="fast"');
     expect(args).toContain('model_verbosity="high"');
   });
 

@@ -247,7 +247,7 @@ describe('CodexSdkBackend', () => {
     );
   });
 
-  it('passes reasoning effort and verbosity to Codex', async () => {
+  it('passes reasoning effort, service tier, and verbosity to Codex', async () => {
     mockRunStreamed.mockResolvedValue({
       events: makeEventStream(
         { type: 'thread.started', thread_id: 'thread-1' },
@@ -257,12 +257,13 @@ describe('CodexSdkBackend', () => {
     });
 
     const backend = new CodexSdkBackend();
-    for await (const _ of backend.execute(makeRequest({ reasoningEffort: 'high', verbosity: 'low' }))) { /* consume */ }
+    for await (const _ of backend.execute(makeRequest({ reasoningEffort: 'high', serviceTier: 'fast', verbosity: 'low' }))) { /* consume */ }
 
     expect(mockStartThread).toHaveBeenCalledWith(
       expect.objectContaining({ modelReasoningEffort: 'high' }),
     );
     const codexOpts = MockCodex.mock.calls[0][0] as any;
+    expect(codexOpts.config.service_tier).toBe('fast');
     expect(codexOpts.config.model_verbosity).toBe('low');
   });
 

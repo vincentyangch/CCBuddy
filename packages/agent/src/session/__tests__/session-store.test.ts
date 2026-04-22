@@ -24,6 +24,9 @@ class MockPersistence implements SessionPersistence {
   updateReasoningEffort(key: string, reasoningEffort: SessionRow['reasoning_effort']): void {
     const r = this.rows.get(key); if (r) r.reasoning_effort = reasoningEffort;
   }
+  updateServiceTier(key: string, serviceTier: SessionRow['service_tier']): void {
+    const r = this.rows.get(key); if (r) r.service_tier = serviceTier;
+  }
   updateVerbosity(key: string, verbosity: SessionRow['verbosity']): void {
     const r = this.rows.get(key); if (r) r.verbosity = verbosity;
   }
@@ -177,35 +180,40 @@ describe('SessionStore model field', () => {
 });
 
 describe('SessionStore codex settings', () => {
-  it('returns null reasoning effort and verbosity for new sessions', () => {
+  it('returns null reasoning effort, service tier, and verbosity for new sessions', () => {
     const store = new SessionStore(60_000);
     store.getOrCreate('key1', false);
     const info = store.getAll();
     expect(info[0].reasoningEffort).toBeNull();
+    expect(info[0].serviceTier).toBeNull();
     expect(info[0].verbosity).toBeNull();
   });
 
-  it('persists reasoning effort and verbosity to DB', () => {
+  it('persists reasoning effort, service tier, and verbosity to DB', () => {
     const db = new MockPersistence();
     const store = new SessionStore(60_000, { persistence: db });
     store.getOrCreate('key1', false, 'discord', 'ch1');
 
     store.setReasoningEffort('key1', 'high');
+    store.setServiceTier('key1', 'fast');
     store.setVerbosity('key1', 'low');
 
     expect(db.getByKey('key1')!.reasoning_effort).toBe('high');
+    expect(db.getByKey('key1')!.service_tier).toBe('fast');
     expect(db.getByKey('key1')!.verbosity).toBe('low');
   });
 
-  it('syncs reasoning effort and verbosity from DB writes made out-of-band', () => {
+  it('syncs reasoning effort, service tier, and verbosity from DB writes made out-of-band', () => {
     const db = new MockPersistence();
     const store = new SessionStore(60_000, { persistence: db });
     store.getOrCreate('key1', false, 'discord', 'ch1');
 
     db.updateReasoningEffort('key1', 'medium');
+    db.updateServiceTier('key1', 'fast');
     db.updateVerbosity('key1', 'high');
 
     expect(store.getReasoningEffort('key1')).toBe('medium');
+    expect(store.getServiceTier('key1')).toBe('fast');
     expect(store.getVerbosity('key1')).toBe('high');
   });
 });
@@ -240,6 +248,7 @@ describe('SessionStore with persistence', () => {
       is_group_channel: false,
       model: 'sonnet',
       reasoning_effort: null,
+      service_tier: null,
       verbosity: null,
       turns: 0,
       status: 'active',
@@ -265,6 +274,7 @@ describe('SessionStore with persistence', () => {
       is_group_channel: false,
       model: null,
       reasoning_effort: null,
+      service_tier: null,
       verbosity: null,
       turns: 0,
       status: 'archived',
@@ -290,6 +300,7 @@ describe('SessionStore with persistence', () => {
       is_group_channel: false,
       model: null,
       reasoning_effort: null,
+      service_tier: null,
       verbosity: null,
       turns: 0,
       status: 'paused',
@@ -429,17 +440,17 @@ describe('SessionStore with persistence', () => {
     db.upsert({
       session_key: 'key1', sdk_session_id: 'sdk-1', user_id: null,
       platform: 'discord', channel_id: 'ch1', is_group_channel: false,
-      model: 'opus', reasoning_effort: 'high', verbosity: 'low', turns: 0, status: 'active', created_at: now, last_activity: now,
+      model: 'opus', reasoning_effort: 'high', service_tier: 'fast', verbosity: 'low', turns: 0, status: 'active', created_at: now, last_activity: now,
     });
     db.upsert({
       session_key: 'key2', sdk_session_id: 'sdk-2', user_id: null,
       platform: 'discord', channel_id: 'ch2', is_group_channel: true,
-      model: null, reasoning_effort: null, verbosity: null, turns: 0, status: 'paused', created_at: now, last_activity: now,
+      model: null, reasoning_effort: null, service_tier: null, verbosity: null, turns: 0, status: 'paused', created_at: now, last_activity: now,
     });
     db.upsert({
       session_key: 'key3', sdk_session_id: 'sdk-3', user_id: null,
       platform: 'discord', channel_id: 'ch3', is_group_channel: false,
-      model: null, reasoning_effort: null, verbosity: null, turns: 0, status: 'archived', created_at: now - 10000, last_activity: now - 10000,
+      model: null, reasoning_effort: null, service_tier: null, verbosity: null, turns: 0, status: 'archived', created_at: now - 10000, last_activity: now - 10000,
     });
 
     const store = new SessionStore(60_000, { persistence: db });
@@ -450,6 +461,7 @@ describe('SessionStore with persistence', () => {
     expect(all.map(s => s.sessionKey).sort()).toEqual(['key1', 'key2']);
     const key1 = all.find((session) => session.sessionKey === 'key1');
     expect(key1?.reasoningEffort).toBe('high');
+    expect(key1?.serviceTier).toBe('fast');
     expect(key1?.verbosity).toBe('low');
   });
 
@@ -459,12 +471,12 @@ describe('SessionStore with persistence', () => {
     db.upsert({
       session_key: 'key1', sdk_session_id: 'sdk-1', user_id: null,
       platform: 'discord', channel_id: 'ch1', is_group_channel: false,
-      model: null, reasoning_effort: null, verbosity: null, turns: 0, status: 'archived', created_at: now, last_activity: now,
+      model: null, reasoning_effort: null, service_tier: null, verbosity: null, turns: 0, status: 'archived', created_at: now, last_activity: now,
     });
     db.upsert({
       session_key: 'key2', sdk_session_id: 'sdk-2', user_id: null,
       platform: 'telegram', channel_id: 'ch2', is_group_channel: false,
-      model: null, reasoning_effort: null, verbosity: null, turns: 0, status: 'active', created_at: now, last_activity: now,
+      model: null, reasoning_effort: null, service_tier: null, verbosity: null, turns: 0, status: 'active', created_at: now, last_activity: now,
     });
 
     const store = new SessionStore(60_000, { persistence: db });

@@ -69,6 +69,7 @@ export class MemoryDatabase {
         is_group_channel BOOLEAN NOT NULL DEFAULT 0,
         model TEXT,
         reasoning_effort TEXT,
+        service_tier TEXT,
         verbosity TEXT,
         status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'paused', 'archived')),
         created_at INTEGER NOT NULL,
@@ -102,6 +103,9 @@ export class MemoryDatabase {
     }
     if (sessionCols.length > 0 && !sessionCols.some(c => c.name === 'reasoning_effort')) {
       this.db.exec('ALTER TABLE sessions ADD COLUMN reasoning_effort TEXT');
+    }
+    if (sessionCols.length > 0 && !sessionCols.some(c => c.name === 'service_tier')) {
+      this.db.exec('ALTER TABLE sessions ADD COLUMN service_tier TEXT');
     }
     if (sessionCols.length > 0 && !sessionCols.some(c => c.name === 'verbosity')) {
       this.db.exec('ALTER TABLE sessions ADD COLUMN verbosity TEXT');

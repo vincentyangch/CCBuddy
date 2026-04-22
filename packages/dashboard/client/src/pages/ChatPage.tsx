@@ -22,6 +22,8 @@ interface RuntimeSession {
   model?: string | null;
   reasoning_effort?: string | null;
   reasoningEffort?: string | null;
+  service_tier?: string | null;
+  serviceTier?: string | null;
   verbosity?: string | null;
 }
 
@@ -45,6 +47,7 @@ export function ChatPage() {
   const [backend, setBackend] = useState('');
   const [modelOptions, setModelOptions] = useState<string[]>([]);
   const [reasoningEffortOptions, setReasoningEffortOptions] = useState<string[]>([]);
+  const [serviceTierOptions, setServiceTierOptions] = useState<string[]>([]);
   const [verbosityOptions, setVerbosityOptions] = useState<string[]>([]);
   const [savingSessionSettings, setSavingSessionSettings] = useState(false);
   const [sessionSettingsStatus, setSessionSettingsStatus] = useState('');
@@ -73,6 +76,7 @@ export function ChatPage() {
       setBackend(backendData.backend);
       setModelOptions(backendData.models);
       setReasoningEffortOptions(modelData.reasoning_effort_options);
+      setServiceTierOptions(modelData.service_tier_options ?? []);
       setVerbosityOptions(modelData.verbosity_options);
 
       const matchedSessionKey = getRuntimeSessionKey(matchedSession);
@@ -197,7 +201,7 @@ export function ChatPage() {
     setEntries([]);
   }, []);
 
-  const saveSessionSetting = useCallback(async (payload: { model?: string | null; reasoning_effort?: string | null; verbosity?: string | null }) => {
+  const saveSessionSetting = useCallback(async (payload: { model?: string | null; reasoning_effort?: string | null; service_tier?: string | null; verbosity?: string | null }) => {
     const sessionKey = getRuntimeSessionKey(runtimeSession);
     if (!sessionKey) return;
 
@@ -224,6 +228,7 @@ export function ChatPage() {
 
   const runtimeSessionKey = getRuntimeSessionKey(runtimeSession);
   const runtimeReasoningEffort = runtimeSession?.reasoning_effort ?? runtimeSession?.reasoningEffort ?? null;
+  const runtimeServiceTier = runtimeSession?.service_tier ?? runtimeSession?.serviceTier ?? null;
 
   return (
     <div className="flex h-[calc(100vh-3rem)] flex-col overflow-hidden rounded-[var(--sd-radius)] border border-[color:var(--sd-border)] bg-[color:var(--sd-panel)] lg:flex-row">
@@ -259,6 +264,11 @@ export function ChatPage() {
                 reasoning: {runtimeReasoningEffort}
               </span>
             )}
+            {runtimeServiceTier && (
+              <span className="rounded-[var(--sd-radius)] border border-[color:var(--sd-border)] bg-[color:var(--sd-panel-raised)] px-2 py-0.5 text-xs text-[color:var(--sd-info)]">
+                service tier: {runtimeServiceTier}
+              </span>
+            )}
             {runtimeSession?.verbosity && (
               <span className="rounded-[var(--sd-radius)] border border-[color:var(--sd-border)] bg-[color:var(--sd-panel-raised)] px-2 py-0.5 text-xs text-[color:var(--sd-success)]">
                 verbosity: {runtimeSession.verbosity}
@@ -274,7 +284,7 @@ export function ChatPage() {
               </span>
             )}
           </div>
-          <div className="mt-3 grid gap-3 md:grid-cols-3">
+          <div className="mt-3 grid gap-3 md:grid-cols-4">
             <div>
               <label htmlFor="chat-session-model-select" className="mb-2 block text-sm font-medium text-[color:var(--sd-text)]">Session model</label>
               <select
@@ -303,6 +313,21 @@ export function ChatPage() {
                   >
                     <option value="">Use backend default</option>
                     {reasoningEffortOptions.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="chat-session-service-tier-select" className="mb-2 block text-sm font-medium text-[color:var(--sd-text)]">Service tier</label>
+                  <select
+                    id="chat-session-service-tier-select"
+                    value={runtimeServiceTier ?? ''}
+                    onChange={(e) => void saveSessionSetting({ service_tier: e.target.value || null })}
+                    disabled={savingSessionSettings || !runtimeSessionKey}
+                    className="sd-input w-full text-sm"
+                  >
+                    <option value="">Use backend default</option>
+                    {serviceTierOptions.map((option) => (
                       <option key={option} value={option}>{option}</option>
                     ))}
                   </select>

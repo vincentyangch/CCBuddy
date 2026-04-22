@@ -8,13 +8,14 @@ export class SessionDatabase {
     prepareStatements() {
         this.stmts = {
             upsert: this.db.prepare(`
-        INSERT INTO sessions (session_key, sdk_session_id, user_id, platform, channel_id, is_group_channel, model, reasoning_effort, verbosity, status, created_at, last_activity, turns)
-        VALUES (@session_key, @sdk_session_id, @user_id, @platform, @channel_id, @is_group_channel, @model, @reasoning_effort, @verbosity, @status, @created_at, @last_activity, @turns)
+        INSERT INTO sessions (session_key, sdk_session_id, user_id, platform, channel_id, is_group_channel, model, reasoning_effort, service_tier, verbosity, status, created_at, last_activity, turns)
+        VALUES (@session_key, @sdk_session_id, @user_id, @platform, @channel_id, @is_group_channel, @model, @reasoning_effort, @service_tier, @verbosity, @status, @created_at, @last_activity, @turns)
         ON CONFLICT(session_key) DO UPDATE SET
           sdk_session_id = @sdk_session_id,
           user_id = @user_id,
           model = @model,
           reasoning_effort = @reasoning_effort,
+          service_tier = @service_tier,
           verbosity = @verbosity,
           status = @status,
           last_activity = @last_activity,
@@ -25,6 +26,7 @@ export class SessionDatabase {
             updateLastActivity: this.db.prepare('UPDATE sessions SET last_activity = ? WHERE session_key = ?'),
             updateModel: this.db.prepare('UPDATE sessions SET model = ? WHERE session_key = ?'),
             updateReasoningEffort: this.db.prepare('UPDATE sessions SET reasoning_effort = ? WHERE session_key = ?'),
+            updateServiceTier: this.db.prepare('UPDATE sessions SET service_tier = ? WHERE session_key = ?'),
             updateVerbosity: this.db.prepare('UPDATE sessions SET verbosity = ? WHERE session_key = ?'),
             updateTurns: this.db.prepare('UPDATE sessions SET turns = ? WHERE session_key = ?'),
             updateSdkSessionId: this.db.prepare('UPDATE sessions SET sdk_session_id = ? WHERE session_key = ?'),
@@ -41,6 +43,7 @@ export class SessionDatabase {
             is_group_channel: row.is_group_channel ? 1 : 0,
             model: row.model,
             reasoning_effort: row.reasoning_effort,
+            service_tier: row.service_tier,
             verbosity: row.verbosity,
             status: row.status,
             created_at: row.created_at,
@@ -80,6 +83,9 @@ export class SessionDatabase {
     updateReasoningEffort(sessionKey, reasoningEffort) {
         this.stmts.updateReasoningEffort.run(reasoningEffort, sessionKey);
     }
+    updateServiceTier(sessionKey, serviceTier) {
+        this.stmts.updateServiceTier.run(serviceTier, sessionKey);
+    }
     updateVerbosity(sessionKey, verbosity) {
         this.stmts.updateVerbosity.run(verbosity, sessionKey);
     }
@@ -102,6 +108,7 @@ export class SessionDatabase {
             is_group_channel: !!row.is_group_channel,
             model: row.model ?? null,
             reasoning_effort: row.reasoning_effort ?? null,
+            service_tier: row.service_tier ?? null,
             verbosity: row.verbosity ?? null,
             turns: row.turns ?? 0,
             status: row.status,

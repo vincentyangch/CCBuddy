@@ -13,6 +13,7 @@ function makeRow(overrides?: Partial<SessionRow>): SessionRow {
     is_group_channel: false,
     model: null,
     reasoning_effort: null,
+    service_tier: null,
     verbosity: null,
     turns: 0,
     status: 'active',
@@ -103,6 +104,12 @@ describe('SessionDatabase', () => {
     sessionDb.upsert(makeRow());
     sessionDb.updateReasoningEffort('dad-discord-ch1', 'high');
     expect(sessionDb.getByKey('dad-discord-ch1')!.reasoning_effort).toBe('high');
+  });
+
+  it('updateServiceTier changes service tier', () => {
+    sessionDb.upsert(makeRow());
+    sessionDb.updateServiceTier('dad-discord-ch1', 'fast');
+    expect(sessionDb.getByKey('dad-discord-ch1')!.service_tier).toBe('fast');
   });
 
   it('updateVerbosity changes verbosity', () => {

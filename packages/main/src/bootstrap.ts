@@ -72,6 +72,13 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
       console.log(`[Bootstrap] Runtime codex reasoning_effort override applied: ${runtimeConfig.reasoning_effort}`);
     }
     if (
+      typeof runtimeConfig.service_tier === 'string' &&
+      ['flex', 'fast'].includes(runtimeConfig.service_tier)
+    ) {
+      config.agent.codex.default_service_tier = runtimeConfig.service_tier as typeof config.agent.codex.default_service_tier;
+      console.log(`[Bootstrap] Runtime codex service_tier override applied: ${runtimeConfig.service_tier}`);
+    }
+    if (
       typeof runtimeConfig.verbosity === 'string' &&
       ['low', 'medium', 'high'].includes(runtimeConfig.verbosity)
     ) {
@@ -183,6 +190,7 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
           codexPath: config.agent.codex.codex_path,
           networkAccess: config.agent.codex.network_access,
           defaultSandbox: config.agent.codex.default_sandbox,
+          defaultServiceTier: config.agent.codex.default_service_tier,
           permissionGateRules: config.agent.permission_gates.enabled
             ? config.agent.permission_gates.rules
             : undefined,
@@ -198,6 +206,7 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
           codexPath: config.agent.codex.codex_path,
           networkAccess: config.agent.codex.network_access,
           defaultSandbox: config.agent.codex.default_sandbox,
+          defaultServiceTier: config.agent.codex.default_service_tier,
           permissionGateRules: config.agent.permission_gates.enabled
             ? config.agent.permission_gates.rules
             : undefined,
@@ -415,6 +424,11 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
     get defaultReasoningEffort() {
       return config.agent.backend.startsWith('codex')
         ? config.agent.codex.default_reasoning_effort
+        : undefined;
+    },
+    get defaultServiceTier() {
+      return config.agent.backend.startsWith('codex')
+        ? config.agent.codex.default_service_tier
         : undefined;
     },
     get defaultVerbosity() {

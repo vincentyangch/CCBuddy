@@ -1,4 +1,4 @@
-import type { ReasoningEffort, Verbosity } from './agent.js';
+import type { ReasoningEffort, ServiceTier, Verbosity } from './agent.js';
 
 export type SessionStatus = 'active' | 'paused' | 'archived';
 
@@ -11,6 +11,7 @@ export interface SessionRow {
   is_group_channel: boolean;
   model: string | null;
   reasoning_effort: ReasoningEffort | null;
+  service_tier: ServiceTier | null;
   verbosity: Verbosity | null;
   status: SessionStatus;
   turns: number;
@@ -31,6 +32,7 @@ export interface SessionPersistence {
   updateLastActivity(sessionKey: string, timestamp: number): void;
   updateModel(sessionKey: string, model: string | null): void;
   updateReasoningEffort(sessionKey: string, reasoningEffort: ReasoningEffort | null): void;
+  updateServiceTier(sessionKey: string, serviceTier: ServiceTier | null): void;
   updateVerbosity(sessionKey: string, verbosity: Verbosity | null): void;
   updateTurns(sessionKey: string, turns: number): void;
   updateSdkSessionId?(sessionKey: string, sdkSessionId: string): void;

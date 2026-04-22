@@ -480,6 +480,7 @@ describe('bootstrap', () => {
           api_key_env: 'CUSTOM_OPENAI_API_KEY',
           network_access: false,
           default_sandbox: 'read-only',
+          default_service_tier: 'fast',
         },
       },
     });
@@ -491,6 +492,7 @@ describe('bootstrap', () => {
       apiKey: 'sk-codex-sdk',
       networkAccess: false,
       defaultSandbox: 'read-only',
+      defaultServiceTier: 'fast',
       permissionGateRules: codexConfig.agent.permission_gates.rules,
     }));
   });
@@ -506,6 +508,7 @@ describe('bootstrap', () => {
           codex_path: '/custom/codex',
           network_access: false,
           default_sandbox: 'danger-full-access',
+          default_service_tier: 'flex',
         },
       },
     });
@@ -518,6 +521,7 @@ describe('bootstrap', () => {
       codexPath: '/custom/codex',
       networkAccess: false,
       defaultSandbox: 'danger-full-access',
+      defaultServiceTier: 'flex',
       permissionGateRules: codexConfig.agent.permission_gates.rules,
     }));
   });

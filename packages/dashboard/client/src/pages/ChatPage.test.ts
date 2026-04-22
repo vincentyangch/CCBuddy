@@ -61,6 +61,7 @@ describe('ChatPage', () => {
     channelId: string;
     model: string | null;
     reasoning_effort: string | null;
+    service_tier: string | null;
     verbosity: string | null;
   };
 
@@ -83,6 +84,7 @@ describe('ChatPage', () => {
       channelId: 'webchat-main',
       model: 'gpt-5.4-mini',
       reasoning_effort: 'high',
+      service_tier: 'fast',
       verbosity: 'low',
     };
 
@@ -117,14 +119,18 @@ describe('ChatPage', () => {
       backend: 'codex-sdk',
       reasoning_effort: 'medium',
       reasoning_effort_source: 'runtime_override',
+      service_tier: 'fast',
+      service_tier_source: 'runtime_override',
       verbosity: 'medium',
       verbosity_source: 'runtime_override',
       reasoning_effort_options: ['minimal', 'low', 'medium', 'high', 'xhigh'],
+      service_tier_options: ['flex', 'fast'],
       verbosity_options: ['low', 'medium', 'high'],
     });
     apiMock.setSessionSettings.mockImplementation(async (_key: string, payload: {
       model?: string | null;
       reasoning_effort?: string | null;
+      service_tier?: string | null;
       verbosity?: string | null;
     }) => {
       currentSession = { ...currentSession, ...payload };
@@ -133,6 +139,7 @@ describe('ChatPage', () => {
         session_key: currentSession.session_key,
         model: currentSession.model,
         reasoning_effort: currentSession.reasoning_effort,
+        service_tier: currentSession.service_tier,
         verbosity: currentSession.verbosity,
       };
     });
@@ -175,13 +182,16 @@ describe('ChatPage', () => {
 
     const modelSelect = container.querySelector('#chat-session-model-select') as HTMLSelectElement | null;
     const reasoningSelect = container.querySelector('#chat-session-reasoning-select') as HTMLSelectElement | null;
+    const serviceTierSelect = container.querySelector('#chat-session-service-tier-select') as HTMLSelectElement | null;
     const verbositySelect = container.querySelector('#chat-session-verbosity-select') as HTMLSelectElement | null;
 
     expect(modelSelect).not.toBeNull();
     expect(reasoningSelect).not.toBeNull();
+    expect(serviceTierSelect).not.toBeNull();
     expect(verbositySelect).not.toBeNull();
     expect(modelSelect?.value).toBe('gpt-5.4-mini');
     expect(reasoningSelect?.value).toBe('high');
+    expect(serviceTierSelect?.value).toBe('fast');
     expect(verbositySelect?.value).toBe('low');
 
     await act(async () => {
@@ -199,11 +209,45 @@ describe('ChatPage', () => {
     expect(apiMock.setSessionSettings).toHaveBeenCalledWith('po-webchat-webchat-main', { reasoning_effort: 'xhigh' });
 
     await flushUpdates();
+    const refreshedServiceTierSelect = container.querySelector('#chat-session-service-tier-select') as HTMLSelectElement;
+    await act(async () => {
+      refreshedServiceTierSelect.value = 'flex';
+      refreshedServiceTierSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(apiMock.setSessionSettings).toHaveBeenCalledWith('po-webchat-webchat-main', { service_tier: 'flex' });
+
+    await flushUpdates();
     const refreshedVerbositySelect = container.querySelector('#chat-session-verbosity-select') as HTMLSelectElement;
     await act(async () => {
       refreshedVerbositySelect.value = 'high';
       refreshedVerbositySelect.dispatchEvent(new Event('change', { bubbles: true }));
     });
     expect(apiMock.setSessionSettings).toHaveBeenCalledWith('po-webchat-webchat-main', { verbosity: 'high' });
+  });
+
+  it('still renders when getModel omits service tier fields', async () => {
+    apiMock.getModel.mockResolvedValue({
+      model: 'gpt-5.4',
+      source: 'runtime_override',
+      backend: 'codex-sdk',
+      reasoning_effort: 'medium',
+      reasoning_effort_source: 'runtime_override',
+      verbosity: 'medium',
+      verbosity_source: 'runtime_override',
+      reasoning_effort_options: ['minimal', 'low', 'medium', 'high', 'xhigh'],
+      verbosity_options: ['low', 'medium', 'high'],
+    } as any);
+
+    await renderPage();
+
+    const selectSessionButton = container.querySelector('button');
+    await act(async () => {
+      selectSessionButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushUpdates();
+
+    expect(container.querySelector('#chat-session-model-select')).not.toBeNull();
+    expect(container.querySelector('#chat-session-reasoning-select')).not.toBeNull();
+    expect(container.querySelector('#chat-session-service-tier-select')).not.toBeNull();
   });
 });

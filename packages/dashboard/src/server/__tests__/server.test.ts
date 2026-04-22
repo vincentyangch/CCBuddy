@@ -124,6 +124,7 @@ describe('DashboardServer', () => {
     const deps = createMockDeps();
     const setModel = vi.fn();
     const setReasoningEffort = vi.fn();
+    const setServiceTier = vi.fn();
     const setVerbosity = vi.fn();
     (deps.config as any).agent = {
       backend: 'codex-sdk',
@@ -140,6 +141,7 @@ describe('DashboardServer', () => {
         is_group_channel: false,
         model: 'gpt-5.4',
         reasoning_effort: null,
+        service_tier: null,
         verbosity: null,
         status: 'active',
         created_at: 1000,
@@ -147,6 +149,7 @@ describe('DashboardServer', () => {
       }]),
       setModel,
       setReasoningEffort,
+      setServiceTier,
       setVerbosity,
       deleteSession: vi.fn(),
     };
@@ -163,6 +166,7 @@ describe('DashboardServer', () => {
       body: JSON.stringify({
         model: 'gpt-5.4-mini',
         reasoning_effort: 'high',
+        service_tier: 'fast',
         verbosity: 'low',
       }),
     });
@@ -171,9 +175,11 @@ describe('DashboardServer', () => {
     const data = await res.json();
     expect(data.model).toBe('gpt-5.4-mini');
     expect(data.reasoning_effort).toBe('high');
+    expect(data.service_tier).toBe('fast');
     expect(data.verbosity).toBe('low');
     expect(setModel).toHaveBeenCalledWith('dad-discord-ch1', 'gpt-5.4-mini');
     expect(setReasoningEffort).toHaveBeenCalledWith('dad-discord-ch1', 'high');
+    expect(setServiceTier).toHaveBeenCalledWith('dad-discord-ch1', 'fast');
     expect(setVerbosity).toHaveBeenCalledWith('dad-discord-ch1', 'low');
   });
 
@@ -699,7 +705,7 @@ describe('DashboardServer', () => {
     expect(runtimeConfig.model).toBe('gpt-5.4');
   });
 
-  it('GET /api/config/model includes codex reasoning effort and verbosity state', async () => {
+  it('GET /api/config/model includes codex reasoning effort, service tier, and verbosity state', async () => {
     const deps = createMockDeps();
     const dir = mkdtempSync(join(tmpdir(), 'dashboard-config-model-'));
     tempDirs.push(dir);
@@ -711,12 +717,14 @@ describe('DashboardServer', () => {
       codex_models: ['gpt-5.4', 'gpt-5.4-mini'],
       codex: {
         default_reasoning_effort: 'minimal',
+        default_service_tier: 'flex',
         default_verbosity: 'high',
       },
     };
     writeFileSync(join(dir, 'runtime-config.json'), JSON.stringify({
       model: 'gpt-5.4-mini',
       reasoning_effort: 'high',
+      service_tier: 'fast',
       verbosity: 'low',
     }), 'utf8');
 
@@ -731,14 +739,17 @@ describe('DashboardServer', () => {
     const data = await res.json();
     expect(data.model).toBe('gpt-5.4-mini');
     expect(data.reasoning_effort).toBe('high');
+    expect(data.service_tier).toBe('fast');
     expect(data.verbosity).toBe('low');
     expect(data.reasoning_effort_source).toBe('runtime_override');
+    expect(data.service_tier_source).toBe('runtime_override');
     expect(data.verbosity_source).toBe('runtime_override');
     expect(data.reasoning_effort_options).toEqual(['minimal', 'low', 'medium', 'high', 'xhigh']);
+    expect(data.service_tier_options).toEqual(['flex', 'fast']);
     expect(data.verbosity_options).toEqual(['low', 'medium', 'high']);
   });
 
-  it('PUT /api/config/model updates codex reasoning effort and verbosity runtime overrides', async () => {
+  it('PUT /api/config/model updates codex reasoning effort, service tier, and verbosity runtime overrides', async () => {
     const deps = createMockDeps();
     const dir = mkdtempSync(join(tmpdir(), 'dashboard-config-model-'));
     tempDirs.push(dir);
@@ -763,6 +774,7 @@ describe('DashboardServer', () => {
       body: JSON.stringify({
         model: 'gpt-5.4-mini',
         reasoning_effort: 'high',
+        service_tier: 'fast',
         verbosity: 'low',
       }),
     });
@@ -771,14 +783,17 @@ describe('DashboardServer', () => {
     const data = await res.json();
     expect(data.model).toBe('gpt-5.4-mini');
     expect(data.reasoning_effort).toBe('high');
+    expect(data.service_tier).toBe('fast');
     expect(data.verbosity).toBe('low');
     expect((deps.config as any).agent.model).toBe('gpt-5.4-mini');
     expect((deps.config as any).agent.codex.default_reasoning_effort).toBe('high');
+    expect((deps.config as any).agent.codex.default_service_tier).toBe('fast');
     expect((deps.config as any).agent.codex.default_verbosity).toBe('low');
 
     const runtimeConfig = JSON.parse(readFileSync(join(dir, 'runtime-config.json'), 'utf8'));
     expect(runtimeConfig.model).toBe('gpt-5.4-mini');
     expect(runtimeConfig.reasoning_effort).toBe('high');
+    expect(runtimeConfig.service_tier).toBe('fast');
     expect(runtimeConfig.verbosity).toBe('low');
   });
 });

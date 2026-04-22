@@ -46,6 +46,7 @@ export interface DashboardDeps {
       is_group_channel: boolean;
       model: string | null;
       reasoning_effort: string | null;
+      service_tier: string | null;
       verbosity: string | null;
       status: string;
       created_at: number;
@@ -53,12 +54,14 @@ export interface DashboardDeps {
     }>;
     setModel?(sessionKey: string, model: string | null): void;
     setReasoningEffort?(sessionKey: string, reasoningEffort: string | null): void;
+    setServiceTier?(sessionKey: string, serviceTier: string | null): void;
     setVerbosity?(sessionKey: string, verbosity: string | null): void;
     deleteSession(sessionKey: string): void;
   };
 }
 
 const CODEx_REASONING_EFFORT_OPTIONS = ['minimal', 'low', 'medium', 'high', 'xhigh'] as const;
+const CODEx_SERVICE_TIER_OPTIONS = ['flex', 'fast'] as const;
 const CODEx_VERBOSITY_OPTIONS = ['low', 'medium', 'high'] as const;
 
 /** Constant-time string comparison to prevent timing attacks on token checks. */
@@ -213,14 +216,15 @@ export class DashboardServer {
       const body = request.body as {
         model?: string | null;
         reasoning_effort?: string | null;
+        service_tier?: string | null;
         verbosity?: string | null;
       } | null;
 
       if (!this.deps.sessionStore) {
         return reply.status(501).send({ error: 'Session runtime editing not available' });
       }
-      if (!body || (body.model === undefined && body.reasoning_effort === undefined && body.verbosity === undefined)) {
-        return reply.status(400).send({ error: 'Provide model, reasoning_effort, and/or verbosity in request body' });
+      if (!body || (body.model === undefined && body.reasoning_effort === undefined && body.service_tier === undefined && body.verbosity === undefined)) {
+        return reply.status(400).send({ error: 'Provide model, reasoning_effort, service_tier, and/or verbosity in request body' });
       }
 
       const session = this.deps.sessionStore.getHistory().find((row) => row.session_key === key);
@@ -238,8 +242,8 @@ export class DashboardServer {
         const available = getModelOptionsForBackend(backend, configLists).join(', ');
         return reply.status(400).send({ error: `Invalid model "${body.model}" for ${backend} backend. Available: ${available}` });
       }
-      if ((body.reasoning_effort !== undefined || body.verbosity !== undefined) && !backend.startsWith('codex')) {
-        return reply.status(400).send({ error: `reasoning_effort and verbosity are only supported for Codex backends. Current backend: ${backend}` });
+      if ((body.reasoning_effort !== undefined || body.service_tier !== undefined || body.verbosity !== undefined) && !backend.startsWith('codex')) {
+        return reply.status(400).send({ error: `reasoning_effort, service_tier, and verbosity are only supported for Codex backends. Current backend: ${backend}` });
       }
       if (
         body.reasoning_effort !== undefined &&
@@ -247,6 +251,13 @@ export class DashboardServer {
         !(CODEx_REASONING_EFFORT_OPTIONS as readonly string[]).includes(body.reasoning_effort)
       ) {
         return reply.status(400).send({ error: `Invalid reasoning_effort "${body.reasoning_effort}". Valid: ${CODEx_REASONING_EFFORT_OPTIONS.join(', ')}` });
+      }
+      if (
+        body.service_tier !== undefined &&
+        body.service_tier !== null &&
+        !(CODEx_SERVICE_TIER_OPTIONS as readonly string[]).includes(body.service_tier)
+      ) {
+        return reply.status(400).send({ error: `Invalid service_tier "${body.service_tier}". Valid: ${CODEx_SERVICE_TIER_OPTIONS.join(', ')}` });
       }
       if (
         body.verbosity !== undefined &&
@@ -260,6 +271,9 @@ export class DashboardServer {
       if (body.reasoning_effort !== undefined) {
         this.deps.sessionStore.setReasoningEffort?.(key, body.reasoning_effort);
       }
+      if (body.service_tier !== undefined) {
+        this.deps.sessionStore.setServiceTier?.(key, body.service_tier);
+      }
       if (body.verbosity !== undefined) {
         this.deps.sessionStore.setVerbosity?.(key, body.verbosity);
       }
@@ -269,6 +283,7 @@ export class DashboardServer {
         session_key: key,
         model: body.model ?? null,
         reasoning_effort: body.reasoning_effort ?? null,
+        service_tier: body.service_tier ?? null,
         verbosity: body.verbosity ?? null,
       };
     });
@@ -542,15 +557,18 @@ export class DashboardServer {
       const runtimePath = join(this.deps.config.data_dir, 'runtime-config.json');
       let runtimeModel: string | null = null;
       let runtimeReasoningEffort: string | null = null;
+      let runtimeServiceTier: string | null = null;
       let runtimeVerbosity: string | null = null;
       try {
         const data = JSON.parse(readFileSync(runtimePath, 'utf8'));
         runtimeModel = data.model ?? null;
         runtimeReasoningEffort = data.reasoning_effort ?? null;
+        runtimeServiceTier = data.service_tier ?? null;
         runtimeVerbosity = data.verbosity ?? null;
       } catch { /* no runtime override */ }
 
       const configReasoningEffort = this.deps.config.agent.codex.default_reasoning_effort ?? null;
+      const configServiceTier = this.deps.config.agent.codex.default_service_tier ?? null;
       const configVerbosity = this.deps.config.agent.codex.default_verbosity ?? null;
       return {
         model: runtimeModel ?? this.deps.config.agent.model,
@@ -558,9 +576,12 @@ export class DashboardServer {
         backend: this.deps.config.agent.backend,
         reasoning_effort: runtimeReasoningEffort ?? configReasoningEffort,
         reasoning_effort_source: runtimeReasoningEffort ? 'runtime_override' : configReasoningEffort ? 'config' : 'effective_only',
+        service_tier: runtimeServiceTier ?? configServiceTier,
+        service_tier_source: runtimeServiceTier ? 'runtime_override' : configServiceTier ? 'config' : 'effective_only',
         verbosity: runtimeVerbosity ?? configVerbosity,
         verbosity_source: runtimeVerbosity ? 'runtime_override' : configVerbosity ? 'config' : 'effective_only',
         reasoning_effort_options: [...CODEx_REASONING_EFFORT_OPTIONS],
+        service_tier_options: [...CODEx_SERVICE_TIER_OPTIONS],
         verbosity_options: [...CODEx_VERBOSITY_OPTIONS],
       };
     });
@@ -570,10 +591,11 @@ export class DashboardServer {
       const body = request.body as {
         model?: string | null;
         reasoning_effort?: string | null;
+        service_tier?: string | null;
         verbosity?: string | null;
       } | null;
-      if (!body || (body.model === undefined && body.reasoning_effort === undefined && body.verbosity === undefined)) {
-        return reply.status(400).send({ error: 'Provide model, reasoning_effort, and/or verbosity in request body' });
+      if (!body || (body.model === undefined && body.reasoning_effort === undefined && body.service_tier === undefined && body.verbosity === undefined)) {
+        return reply.status(400).send({ error: 'Provide model, reasoning_effort, service_tier, and/or verbosity in request body' });
       }
 
       const backend = this.deps.config.agent.backend as BackendType;
@@ -585,8 +607,8 @@ export class DashboardServer {
         const available = getModelOptionsForBackend(backend, configLists).join(', ');
         return reply.status(400).send({ error: `Invalid model "${body.model}" for ${backend} backend. Available: ${available}` });
       }
-      if ((body.reasoning_effort !== undefined || body.verbosity !== undefined) && !backend.startsWith('codex')) {
-        return reply.status(400).send({ error: `reasoning_effort and verbosity are only supported for Codex backends. Current backend: ${backend}` });
+      if ((body.reasoning_effort !== undefined || body.service_tier !== undefined || body.verbosity !== undefined) && !backend.startsWith('codex')) {
+        return reply.status(400).send({ error: `reasoning_effort, service_tier, and verbosity are only supported for Codex backends. Current backend: ${backend}` });
       }
       if (
         body.reasoning_effort !== undefined &&
@@ -594,6 +616,13 @@ export class DashboardServer {
         !(CODEx_REASONING_EFFORT_OPTIONS as readonly string[]).includes(body.reasoning_effort)
       ) {
         return reply.status(400).send({ error: `Invalid reasoning_effort "${body.reasoning_effort}". Valid: ${CODEx_REASONING_EFFORT_OPTIONS.join(', ')}` });
+      }
+      if (
+        body.service_tier !== undefined &&
+        body.service_tier !== null &&
+        !(CODEx_SERVICE_TIER_OPTIONS as readonly string[]).includes(body.service_tier)
+      ) {
+        return reply.status(400).send({ error: `Invalid service_tier "${body.service_tier}". Valid: ${CODEx_SERVICE_TIER_OPTIONS.join(', ')}` });
       }
       if (
         body.verbosity !== undefined &&
@@ -622,6 +651,15 @@ export class DashboardServer {
           this.deps.config.agent.codex.default_reasoning_effort = body.reasoning_effort as typeof this.deps.config.agent.codex.default_reasoning_effort;
         }
       }
+      if (body.service_tier !== undefined) {
+        if (body.service_tier === null) {
+          delete runtimeConfig.service_tier;
+          delete this.deps.config.agent.codex.default_service_tier;
+        } else {
+          runtimeConfig.service_tier = body.service_tier;
+          this.deps.config.agent.codex.default_service_tier = body.service_tier as typeof this.deps.config.agent.codex.default_service_tier;
+        }
+      }
       if (body.verbosity !== undefined) {
         if (body.verbosity === null) {
           delete runtimeConfig.verbosity;
@@ -638,6 +676,7 @@ export class DashboardServer {
         ok: true,
         model: this.deps.config.agent.model,
         reasoning_effort: this.deps.config.agent.codex.default_reasoning_effort ?? null,
+        service_tier: this.deps.config.agent.codex.default_service_tier ?? null,
         verbosity: this.deps.config.agent.codex.default_verbosity ?? null,
       };
     });

@@ -20,6 +20,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 type SettingsResponse = { config: any };
 type ReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+type ServiceTier = 'flex' | 'fast';
 type Verbosity = 'low' | 'medium' | 'high';
 
 export const api = {
@@ -42,9 +43,9 @@ export const api = {
     }).then(r => r.json()),
   setSessionSettings: (
     key: string,
-    payload: { model?: string | null; reasoning_effort?: ReasoningEffort | null; verbosity?: Verbosity | null },
+    payload: { model?: string | null; reasoning_effort?: ReasoningEffort | null; service_tier?: ServiceTier | null; verbosity?: Verbosity | null },
   ) =>
-    request<{ ok: boolean; session_key: string; model: string | null; reasoning_effort: ReasoningEffort | null; verbosity: Verbosity | null }>(
+    request<{ ok: boolean; session_key: string; model: string | null; reasoning_effort: ReasoningEffort | null; service_tier: ServiceTier | null; verbosity: Verbosity | null }>(
       `/api/sessions/${encodeURIComponent(key)}/settings`,
       {
         method: 'PUT',
@@ -79,13 +80,16 @@ export const api = {
     backend: string;
     reasoning_effort: ReasoningEffort | null;
     reasoning_effort_source: string;
+    service_tier: ServiceTier | null;
+    service_tier_source: string;
     verbosity: Verbosity | null;
     verbosity_source: string;
     reasoning_effort_options: ReasoningEffort[];
+    service_tier_options: ServiceTier[];
     verbosity_options: Verbosity[];
   }>('/api/config/model'),
-  setModel: (payload: { model?: string | null; reasoning_effort?: ReasoningEffort | null; verbosity?: Verbosity | null }) =>
-    request<{ ok: boolean; model: string; reasoning_effort: ReasoningEffort | null; verbosity: Verbosity | null }>('/api/config/model', {
+  setModel: (payload: { model?: string | null; reasoning_effort?: ReasoningEffort | null; service_tier?: ServiceTier | null; verbosity?: Verbosity | null }) =>
+    request<{ ok: boolean; model: string; reasoning_effort: ReasoningEffort | null; service_tier: ServiceTier | null; verbosity: Verbosity | null }>('/api/config/model', {
       method: 'PUT',
       body: JSON.stringify(payload),
     }),

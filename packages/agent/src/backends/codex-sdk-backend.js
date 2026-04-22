@@ -84,6 +84,9 @@ export class CodexSdkBackend {
             if (this.rulesFilePath) {
                 codexConfig['exec_policy.rules_file'] = this.rulesFilePath;
             }
+            if (request.serviceTier ?? this.options.defaultServiceTier) {
+                codexConfig.service_tier = request.serviceTier ?? this.options.defaultServiceTier;
+            }
             if (request.verbosity) {
                 codexConfig.model_verbosity = request.verbosity;
             }

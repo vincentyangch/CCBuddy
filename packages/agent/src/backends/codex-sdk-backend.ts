@@ -2,7 +2,7 @@ import { writeFileSync, unlinkSync, mkdirSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import type { AgentBackend, AgentRequest, AgentEvent, AgentEventBase, PermissionGateRule } from '@ccbuddy/core';
+import type { AgentBackend, AgentRequest, AgentEvent, AgentEventBase, PermissionGateRule, ServiceTier } from '@ccbuddy/core';
 import { Codex, type ThreadOptions, type ThreadEvent, type Input, type UserInput } from '@openai/codex-sdk';
 import { generateCodexRules } from './codex-rules.js';
 import { restoreModifiedProtectedFiles, restoreProtectedFiles, snapshotProtectedFiles } from './codex-runtime-helpers.js';
@@ -13,6 +13,7 @@ export interface CodexSdkBackendOptions {
   apiKey?: string;
   networkAccess?: boolean;
   defaultSandbox?: 'read-only' | 'workspace-write' | 'danger-full-access';
+  defaultServiceTier?: ServiceTier;
   /** Permission gate rules to convert to static Codex deny rules */
   permissionGateRules?: PermissionGateRule[];
   startupTimeoutMs?: number;
@@ -102,6 +103,9 @@ export class CodexSdkBackend implements AgentBackend {
       // Wire in deny rules file if generated
       if (this.rulesFilePath) {
         codexConfig['exec_policy.rules_file'] = this.rulesFilePath;
+      }
+      if (request.serviceTier ?? this.options.defaultServiceTier) {
+        codexConfig.service_tier = request.serviceTier ?? this.options.defaultServiceTier!;
       }
       if (request.verbosity) {
         codexConfig.model_verbosity = request.verbosity;

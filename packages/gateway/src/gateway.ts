@@ -59,6 +59,7 @@ export interface GatewayDeps {
   sessionStore?: SessionStore;
   defaultModel?: string;
   defaultReasoningEffort?: AgentRequest['reasoningEffort'];
+  defaultServiceTier?: AgentRequest['serviceTier'];
   defaultVerbosity?: AgentRequest['verbosity'];
   backend?: string;
   userInputTimeoutMs?: number;
@@ -223,6 +224,7 @@ export class Gateway {
     // 3d. Resolve model for this session
     let sessionModel: string | undefined;
     let sessionReasoningEffort: AgentRequest['reasoningEffort'] | undefined;
+    let sessionServiceTier: AgentRequest['serviceTier'] | undefined;
     let sessionVerbosity: AgentRequest['verbosity'] | undefined;
     if (this.deps.sessionStore) {
       const storeModel = this.deps.sessionStore.getModel(sessionKey);
@@ -233,6 +235,10 @@ export class Gateway {
       if (storeReasoningEffort) {
         sessionReasoningEffort = storeReasoningEffort;
       }
+      const storeServiceTier = this.deps.sessionStore.getServiceTier?.(sessionKey);
+      if (storeServiceTier) {
+        sessionServiceTier = storeServiceTier;
+      }
       const storeVerbosity = this.deps.sessionStore.getVerbosity?.(sessionKey);
       if (storeVerbosity) {
         sessionVerbosity = storeVerbosity;
@@ -240,6 +246,7 @@ export class Gateway {
     }
     const effectiveModel = sessionModel ?? this.deps.defaultModel;
     const effectiveReasoningEffort = sessionReasoningEffort ?? this.deps.defaultReasoningEffort;
+    const effectiveServiceTier = sessionServiceTier ?? this.deps.defaultServiceTier;
     const effectiveVerbosity = sessionVerbosity ?? this.deps.defaultVerbosity;
 
     // 4. Publish incoming event
@@ -290,6 +297,7 @@ export class Gateway {
       platform: msg.platform,
       model: effectiveModel,
       reasoningEffort: effectiveReasoningEffort,
+      serviceTier: effectiveServiceTier,
       verbosity: effectiveVerbosity,
       memoryContext,
       attachments: msg.attachments.length > 0 ? msg.attachments : undefined,

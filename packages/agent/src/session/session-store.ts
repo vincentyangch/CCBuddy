@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { ReasoningEffort, SessionPersistence, SessionRow, SessionQueryFilters, Verbosity } from '@ccbuddy/core';
+import type { ReasoningEffort, ServiceTier, SessionPersistence, SessionRow, SessionQueryFilters, Verbosity } from '@ccbuddy/core';
 
 interface SessionEntry {
   sdkSessionId: string;
@@ -7,6 +7,7 @@ interface SessionEntry {
   isGroupChannel: boolean;
   model: string | null;
   reasoningEffort: ReasoningEffort | null;
+  serviceTier: ServiceTier | null;
   verbosity: Verbosity | null;
   turns: number;
   status: 'active' | 'paused';
@@ -29,6 +30,7 @@ export interface SessionInfo {
   isGroupChannel: boolean;
   model: string | null;
   reasoningEffort: ReasoningEffort | null;
+  serviceTier: ServiceTier | null;
   verbosity: Verbosity | null;
   turns: number;
   status: 'active' | 'paused';
@@ -98,6 +100,7 @@ export class SessionStore {
             isGroupChannel: row.is_group_channel,
             model: row.model,
             reasoningEffort: row.reasoning_effort,
+            serviceTier: row.service_tier,
             verbosity: row.verbosity,
             turns: row.turns ?? 0,
             status: 'active',
@@ -121,6 +124,7 @@ export class SessionStore {
         isGroupChannel,
         model: null,
         reasoningEffort: null,
+        serviceTier: null,
         verbosity: null,
         turns: 0,
         status: 'active',
@@ -137,6 +141,7 @@ export class SessionStore {
           is_group_channel: isGroupChannel,
           model: null,
           reasoning_effort: null,
+          service_tier: null,
           verbosity: null,
           turns: 0,
           status: 'active',
@@ -239,6 +244,7 @@ export class SessionStore {
       isGroupChannel: entry.isGroupChannel,
       model: entry.model,
       reasoningEffort: entry.reasoningEffort,
+      serviceTier: entry.serviceTier,
       verbosity: entry.verbosity,
       turns: entry.turns,
       status: entry.status,
@@ -283,6 +289,35 @@ export class SessionStore {
       }
     }
     return entry.reasoningEffort;
+  }
+
+  setServiceTier(sessionKey: string, serviceTier: ServiceTier | null): void {
+    const entry = this.entries.get(sessionKey);
+    if (entry) {
+      entry.serviceTier = serviceTier;
+      this.persistence?.updateServiceTier(sessionKey, serviceTier);
+      return;
+    }
+    if (this.persistence) {
+      const dbRow = this.persistence.getByKey(sessionKey);
+      if (dbRow && dbRow.service_tier !== serviceTier) {
+        this.persistence.updateServiceTier(sessionKey, serviceTier);
+      }
+    }
+  }
+
+  getServiceTier(sessionKey: string): ServiceTier | null {
+    const entry = this.entries.get(sessionKey);
+    if (entry) {
+      if (this.persistence) {
+        const dbRow = this.persistence.getByKey(sessionKey);
+        if (dbRow && dbRow.service_tier !== entry.serviceTier) {
+          entry.serviceTier = dbRow.service_tier;
+        }
+      }
+      return entry.serviceTier;
+    }
+    return this.persistence?.getByKey(sessionKey)?.service_tier ?? null;
   }
 
   setVerbosity(sessionKey: string, verbosity: Verbosity | null): void {
@@ -355,6 +390,7 @@ export class SessionStore {
         isGroupChannel: row.is_group_channel,
         model: row.model,
         reasoningEffort: row.reasoning_effort,
+        serviceTier: row.service_tier,
         verbosity: row.verbosity,
         turns: row.turns ?? 0,
         status: row.status as 'active' | 'paused',
