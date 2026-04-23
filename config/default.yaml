@@ -93,7 +93,7 @@ ccbuddy:
     #     args: ["node", "/absolute/path/to/real-browser-mcp/dist/cli.js", "mcp"]
     #     env:
     #       REAL_BROWSER_MCP_BRIDGE_MODE: "auto"
-    #       REAL_BROWSER_MCP_ALLOWED_DOMAINS: "linux.do"
+    #       REAL_BROWSER_MCP_ALLOWED_DOMAINS: "yahoo.com"
     #       REAL_BROWSER_MCP_DENIED_DOMAINS: "discord.com"
     external_mcp_servers: []
 
