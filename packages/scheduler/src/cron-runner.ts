@@ -1,7 +1,9 @@
 import nodeCron, { type ScheduledTask } from 'node-cron';
 import { CronExpressionParser } from 'cron-parser';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type {
   EventBus,
@@ -9,7 +11,15 @@ import type {
   AgentEvent,
   MessageTarget,
 } from '@ccbuddy/core';
-import type { ScheduledJob, PromptJob, SkillJob, InternalJob } from './types.js';
+import type { ScheduledJob, PromptJob, SkillJob, ShellJob, InternalJob } from './types.js';
+
+interface ShellJobError extends Error {
+  code?: number | string | null;
+  signal?: string | null;
+  killed?: boolean;
+  stdout?: string | Buffer;
+  stderr?: string | Buffer;
+}
 
 export interface CronRunnerOptions {
   eventBus: EventBus;
@@ -127,6 +137,8 @@ export class CronRunner {
         await this.executeInternalJob(job);
       } else if (job.type === 'skill') {
         await this.executeSkillJob(job);
+      } else if (job.type === 'shell') {
+        await this.executeShellJob(job);
       } else {
         await this.executePromptJob(job);
       }
@@ -144,7 +156,7 @@ export class CronRunner {
   }
 
   private async storeJobMessages(
-    job: PromptJob | SkillJob,
+    job: PromptJob | SkillJob | ShellJob,
     sessionId: string,
     response: string,
   ): Promise<void> {
@@ -281,7 +293,128 @@ export class CronRunner {
     }
   }
 
-  private async handleError(job: PromptJob | SkillJob, error: string): Promise<void> {
+  private async executeShellJob(job: ShellJob): Promise<void> {
+    const sessionId = `scheduler:cron:${job.name}:${randomUUID().slice(0, 8)}`;
+    console.log('[Scheduler] Starting shell job', {
+      jobName: job.name,
+      sessionId,
+      startedAt: new Date().toISOString(),
+    });
+
+    try {
+      const { stdout, stderr } = await this.runShellCommand(job);
+      console.log('[Scheduler] Shell command exited', {
+        jobName: job.name,
+        sessionId,
+        exitedAt: new Date().toISOString(),
+      });
+      const response = this.formatShellOutput(stdout, stderr);
+      if (!job.silent) {
+        await this.opts.sendProactiveMessage(job.target, response);
+        await this.storeJobMessages(job, sessionId, response);
+      }
+      await this.publishComplete(job, true);
+      console.log('[Scheduler] Shell job completed', {
+        jobName: job.name,
+        sessionId,
+        completedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      const message = this.formatShellError(err, job.timeoutMs);
+      console.error('[Scheduler] Shell job failed', {
+        jobName: job.name,
+        sessionId,
+        error: message,
+      });
+      await this.handleError(job, message);
+    }
+  }
+
+  private async runShellCommand(job: ShellJob): Promise<{ stdout: string; stderr: string }> {
+    if (job.workingDirectory) {
+      try {
+        const stat = statSync(job.workingDirectory);
+        if (!stat.isDirectory()) {
+          throw new Error('not a directory');
+        }
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        throw new Error(`working directory is not usable: ${job.workingDirectory} (${reason})`);
+      }
+    }
+
+    const captureDir = mkdtempSync(join(tmpdir(), 'ccbuddy-shell-'));
+    const stdoutPath = join(captureDir, 'stdout.log');
+    const stderrPath = join(captureDir, 'stderr.log');
+    const stdoutFd = openSync(stdoutPath, 'w');
+    const stderrFd = openSync(stderrPath, 'w');
+    let stdout = '';
+    let stderr = '';
+    let result: ReturnType<typeof spawnSync>;
+
+    try {
+      result = spawnSync('/bin/zsh', ['-lc', job.payload], {
+        cwd: job.workingDirectory,
+        env: process.env,
+        encoding: 'utf8',
+        timeout: job.timeoutMs && job.timeoutMs > 0 ? job.timeoutMs : undefined,
+        stdio: ['ignore', stdoutFd, stderrFd],
+      });
+    } finally {
+      closeSync(stdoutFd);
+      closeSync(stderrFd);
+      try { stdout = readFileSync(stdoutPath, 'utf8'); } catch { stdout = ''; }
+      try { stderr = readFileSync(stderrPath, 'utf8'); } catch { stderr = ''; }
+      rmSync(captureDir, { recursive: true, force: true });
+    }
+
+    if (result.error) {
+      const err = result.error as ShellJobError;
+      err.stdout = stdout;
+      err.stderr = stderr;
+      if (err.message.includes('ETIMEDOUT')) {
+        err.killed = true;
+      }
+      throw err;
+    }
+
+    if (result.status !== 0) {
+      const err = new Error(`shell exited with ${result.signal ?? result.status}`) as ShellJobError;
+      err.code = result.status;
+      err.signal = result.signal;
+      err.stdout = stdout;
+      err.stderr = stderr;
+      throw err;
+    }
+
+    return { stdout, stderr };
+  }
+
+  private formatShellOutput(stdout: string | Buffer, stderr: string | Buffer): string {
+    const out = stdout.toString().trim();
+    const err = stderr.toString().trim();
+    if (out && err) return `${out}\n\nstderr:\n${err}`;
+    if (out) return out;
+    if (err) return `stderr:\n${err}`;
+    return 'Shell job completed.';
+  }
+
+  private formatShellError(err: unknown, timeoutMs?: number): string {
+    const shellErr = err as ShellJobError;
+    if (shellErr.killed && timeoutMs && timeoutMs > 0) {
+      return `timed out after ${timeoutMs}ms`;
+    }
+
+    const stderr = shellErr.stderr?.toString().trim();
+    const stdout = shellErr.stdout?.toString().trim();
+    const detail = stderr || stdout || shellErr.message || String(err);
+    const code = shellErr.signal ?? shellErr.code;
+    return code === undefined || code === null
+      ? detail
+      : `shell exited with ${code}: ${detail}`;
+  }
+
+  private async handleError(job: PromptJob | SkillJob | ShellJob, error: string): Promise<void> {
     await this.opts.sendProactiveMessage(
       job.target,
       `Scheduled job "${job.name}" failed: ${error}`,
@@ -289,7 +422,7 @@ export class CronRunner {
     await this.publishComplete(job, false);
   }
 
-  private async publishComplete(job: PromptJob | SkillJob, success: boolean): Promise<void> {
+  private async publishComplete(job: PromptJob | SkillJob | ShellJob, success: boolean): Promise<void> {
     await this.opts.eventBus.publish('scheduler.job.complete', {
       jobName: job.name,
       source: 'cron',

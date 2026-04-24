@@ -5,7 +5,7 @@ import type {
   EventBus,
   CCBuddyConfig,
 } from '@ccbuddy/core';
-import type { SchedulerDeps, PromptJob } from '../types.js';
+import type { SchedulerDeps, PromptJob, ShellJob } from '../types.js';
 
 const { mockSchedule, mockValidate } = vi.hoisted(() => ({
   mockSchedule: vi.fn(() => ({ stop: vi.fn() })),
@@ -275,6 +275,32 @@ describe('SchedulerService', () => {
 
     const jobs = service.getJobs();
     expect(jobs[0].timezone).toBe('America/Chicago');
+
+    await service.stop();
+  });
+
+  it('maps shell job config to a shell ScheduledJob', async () => {
+    const config = createMinimalConfig();
+    config.scheduler.jobs = {
+      watchdog: {
+        cron: '*/10 * * * *',
+        shell: 'printf ok',
+        user: 'testuser',
+        silent: true,
+        timeout_ms: 5000,
+        working_directory: '/tmp',
+      },
+    };
+    const deps = createMockDeps({ config });
+    const service = new SchedulerService(deps);
+    await service.start();
+
+    const job = service.getJobs()[0] as ShellJob;
+    expect(job.type).toBe('shell');
+    expect(job.payload).toBe('printf ok');
+    expect(job.silent).toBe(true);
+    expect(job.timeoutMs).toBe(5000);
+    expect(job.workingDirectory).toBe('/tmp');
 
     await service.stop();
   });

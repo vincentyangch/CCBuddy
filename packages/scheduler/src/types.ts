@@ -46,11 +46,21 @@ export interface SkillJob extends BaseJob {
   silent?: boolean;
 }
 
+export interface ShellJob extends BaseJob {
+  type: 'shell';
+  payload: string;
+  user: string;
+  target: MessageTarget;
+  permissionLevel: 'admin' | 'system';
+  workingDirectory?: string;
+  silent?: boolean;
+}
+
 export interface InternalJob extends BaseJob {
   type: 'internal';
 }
 
-export type ScheduledJob = PromptJob | SkillJob | InternalJob;
+export type ScheduledJob = PromptJob | SkillJob | ShellJob | InternalJob;
 
 export interface TriggerResult {
   source: 'cron' | 'heartbeat' | 'webhook';

@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AgentEvent, AgentRequest, MessageTarget, EventBus } from '@ccbuddy/core';
-import type { PromptJob, SkillJob, InternalJob } from '../types.js';
+import type { PromptJob, SkillJob, ShellJob, InternalJob } from '../types.js';
 
 const { mockSchedule, mockValidate } = vi.hoisted(() => ({
   mockSchedule: vi.fn(() => ({ stop: vi.fn() })),
@@ -462,6 +462,103 @@ describe('CronRunner', () => {
         job.target,
         'skill-result-text',
       );
+    });
+  });
+
+  describe('executeJob — shell', () => {
+    it('runs shell jobs without executeAgentRequest', async () => {
+      const deps = createMockDeps();
+      const runner = new CronRunner(deps);
+      const job: ShellJob = {
+        ...createMockJob(),
+        name: 'shell-check',
+        type: 'shell',
+        payload: 'printf shell-result',
+      };
+
+      await runner.executeJob(job);
+
+      expect(deps.executeAgentRequest).not.toHaveBeenCalled();
+      expect(deps.sendProactiveMessage).toHaveBeenCalledWith(job.target, 'shell-result');
+      expect(deps.eventBus.publish).toHaveBeenCalledWith(
+        'scheduler.job.complete',
+        expect.objectContaining({ jobName: 'shell-check', success: true }),
+      );
+    });
+
+    it('does not send successful shell output when silent', async () => {
+      const deps = createMockDeps();
+      const runner = new CronRunner(deps);
+      const job: ShellJob = {
+        ...createMockJob(),
+        name: 'silent-shell-check',
+        type: 'shell',
+        payload: 'printf hidden-result',
+        silent: true,
+      };
+
+      await runner.executeJob(job);
+
+      expect(deps.sendProactiveMessage).not.toHaveBeenCalled();
+      expect(deps.eventBus.publish).toHaveBeenCalledWith(
+        'scheduler.job.complete',
+        expect.objectContaining({ jobName: 'silent-shell-check', success: true }),
+      );
+    });
+
+    it('fails shell jobs that exceed their timeout', async () => {
+      const deps = createMockDeps();
+      const runner = new CronRunner(deps);
+      const job: ShellJob = {
+        ...createMockJob(),
+        name: 'slow-shell-check',
+        type: 'shell',
+        payload: 'sleep 1',
+        timeoutMs: 10,
+      };
+
+      await runner.executeJob(job);
+
+      expect(deps.sendProactiveMessage).toHaveBeenCalledWith(
+        job.target,
+        'Scheduled job "slow-shell-check" failed: timed out after 10ms',
+      );
+      expect(deps.eventBus.publish).toHaveBeenCalledWith(
+        'scheduler.job.complete',
+        expect.objectContaining({ jobName: 'slow-shell-check', success: false }),
+      );
+    });
+
+    it('fails clearly when a shell working directory does not exist', async () => {
+      const tempRoot = mkdtempSync(join(tmpdir(), 'ccbuddy-shell-missing-cwd-'));
+      const deps = createMockDeps();
+      const runner = new CronRunner(deps);
+      const job: ShellJob = {
+        ...createMockJob(),
+        name: 'missing-cwd-shell-check',
+        type: 'shell',
+        payload: 'printf never-runs',
+        workingDirectory: join(tempRoot, 'missing'),
+      };
+
+      try {
+        await runner.executeJob(job);
+
+        expect(deps.sendProactiveMessage).toHaveBeenCalledWith(
+          job.target,
+          expect.stringContaining('working directory is not usable:'),
+        );
+        expect(deps.sendProactiveMessage).toHaveBeenCalledWith(
+          job.target,
+          expect.stringContaining(job.workingDirectory!),
+        );
+        expect(deps.eventBus.publish).toHaveBeenCalledWith(
+          'scheduler.job.complete',
+          expect.objectContaining({ jobName: 'missing-cwd-shell-check', success: false }),
+        );
+      } finally {
+        rmSync(tempRoot, { recursive: true, force: true });
+      }
     });
   });
 

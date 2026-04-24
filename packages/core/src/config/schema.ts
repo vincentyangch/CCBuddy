@@ -155,10 +155,12 @@ export interface ScheduledJobConfig {
   cron: string;
   prompt?: string;
   skill?: string;
+  shell?: string;
   user: string;
   target?: MessageTarget;
   enabled?: boolean;
   permission_level?: 'admin' | 'system';
+  working_directory?: string;
   timezone?: string;
   model?: string;
   reasoning_effort?: ReasoningEffort;
