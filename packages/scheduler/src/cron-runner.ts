@@ -1,9 +1,8 @@
 import nodeCron, { type ScheduledTask } from 'node-cron';
 import { CronExpressionParser } from 'cron-parser';
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import type {
   EventBus,
   AgentRequest,
@@ -15,6 +14,7 @@ import type { ScheduledJob, PromptJob, SkillJob, InternalJob } from './types.js'
 export interface CronRunnerOptions {
   eventBus: EventBus;
   executeAgentRequest: (request: AgentRequest) => AsyncGenerator<AgentEvent>;
+  abortAgentRequest?: (sessionId: string) => Promise<void>;
   sendProactiveMessage: (target: MessageTarget, text: string) => Promise<void>;
   runSkill?: (name: string, input: Record<string, unknown>) => Promise<string>;
   assembleContext: (userId: string, sessionId: string) => string;
@@ -22,6 +22,8 @@ export interface CronRunnerOptions {
   defaultModel?: string;
   defaultReasoningEffort?: AgentRequest['reasoningEffort'];
   defaultVerbosity?: AgentRequest['verbosity'];
+  defaultPromptJobTimeoutMs?: number;
+  systemWorkspaceRoot?: string;
   internalJobs?: Map<string, () => Promise<void>>;
   storeMessage?: (params: {
     userId: string;
@@ -39,6 +41,22 @@ export class CronRunner {
 
   constructor(opts: CronRunnerOptions) {
     this.opts = opts;
+  }
+
+  private getSystemJobWorkingDirectory(job: PromptJob): string | undefined {
+    if (job.permissionLevel !== 'system' || !this.opts.systemWorkspaceRoot) return undefined;
+
+    const safeName = job.name
+      .replace(/[^A-Za-z0-9._-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      || 'job';
+    const workingDirectory = join(this.opts.systemWorkspaceRoot, safeName);
+    mkdirSync(workingDirectory, { recursive: true });
+    return workingDirectory;
+  }
+
+  private getPromptJobTimeoutMs(job: PromptJob): number | undefined {
+    return job.timeoutMs ?? this.opts.defaultPromptJobTimeoutMs;
   }
 
   registerJob(job: ScheduledJob): void {
@@ -181,18 +199,41 @@ export class CronRunner {
       model: job.model ?? this.opts.defaultModel,
       reasoningEffort: job.reasoningEffort ?? this.opts.defaultReasoningEffort,
       verbosity: job.verbosity ?? this.opts.defaultVerbosity,
-      // System jobs use a unique temp dir per invocation to avoid directory lock
-      // conflicts with interactive sessions (which may also use HOME)
-      workingDirectory: job.permissionLevel === 'system'
-        ? mkdtempSync(join(tmpdir(), `ccbuddy-cron-${job.name}-`))
-        : undefined,
+      // System jobs use scheduler-owned stable workspaces to avoid HOME locks
+      // without polluting Codex's per-project trust config on every invocation.
+      workingDirectory: this.getSystemJobWorkingDirectory(job),
     };
 
     const generator = this.opts.executeAgentRequest(request);
+    const timeoutMs = this.getPromptJobTimeoutMs(job);
+    const timeoutError = timeoutMs !== undefined && timeoutMs > 0
+      ? `timed out after ${timeoutMs}ms`
+      : undefined;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    let timedOut = false;
+    const timeoutPromise = timeoutError
+      ? new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => {
+          timedOut = true;
+          void this.opts.abortAgentRequest?.(sessionId).catch((err) => {
+            console.warn(`[Scheduler] abort failed for "${job.name}":`, err);
+          });
+          reject(new Error(timeoutError));
+        }, timeoutMs);
+      })
+      : undefined;
+
     try {
-      for await (const event of generator) {
+      const iterator = generator[Symbol.asyncIterator]();
+      for (;;) {
+        const result = timeoutPromise
+          ? await Promise.race([iterator.next(), timeoutPromise])
+          : await iterator.next();
+        if (result.done) break;
+
+        const event = result.value;
         if (event.type === 'error') {
-          await this.handleError(job, event.error);
+          await this.handleError(job, timedOut && timeoutError ? timeoutError : event.error);
           return;
         }
         if (event.type === 'complete') {
@@ -204,9 +245,18 @@ export class CronRunner {
           return;
         }
       }
+
+      await this.handleError(job, timedOut && timeoutError ? timeoutError : 'agent ended without a result');
     } catch (err) {
+      if (timedOut && timeoutError) {
+        void generator.return?.(undefined);
+        await this.handleError(job, timeoutError);
+        return;
+      }
       const message = err instanceof Error ? err.message : String(err);
       await this.handleError(job, message);
+    } finally {
+      if (timeout) clearTimeout(timeout);
     }
   }
 

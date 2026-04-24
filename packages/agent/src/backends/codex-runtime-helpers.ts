@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, normalize, resolve } from 'node:path';
-import type { PermissionGateRule } from '@ccbuddy/core';
+import type { AgentRequest, PermissionGateRule } from '@ccbuddy/core';
 
 export type CodexConfigValue =
   | string
@@ -10,6 +10,14 @@ export type CodexConfigValue =
   | { [key: string]: CodexConfigValue };
 
 export type CodexConfigOverrideObject = Record<string, CodexConfigValue>;
+
+export interface PreparedCodexMcpServer {
+  [key: string]: CodexConfigValue | undefined;
+  type: 'stdio';
+  command: string;
+  args: string[];
+  env?: Record<string, string>;
+}
 
 interface ProtectedFileSnapshot {
   relativePath: string;
@@ -21,6 +29,8 @@ interface ProtectedFileSnapshot {
 const DIRECT_FILE_RULES = new Map<string, string>([
   ['local-config', 'config/local.yaml'],
 ]);
+
+const SENSITIVE_ENV_KEY_PATTERN = /(TOKEN|SECRET|PASSWORD|PASS|API_KEY|AUTH|CREDENTIAL|COOKIE|SESSION|JWT)/i;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -113,6 +123,36 @@ export function serializeCodexConfigOverrides(configOverrides: CodexConfigOverri
   const overrides: string[] = [];
   flattenConfigOverrides(configOverrides, '', overrides);
   return overrides;
+}
+
+export function prepareCodexMcpServers(
+  mcpServers: AgentRequest['mcpServers'],
+): {
+  config: Record<string, PreparedCodexMcpServer>;
+  inheritedEnv: Record<string, string>;
+} {
+  const config: Record<string, PreparedCodexMcpServer> = {};
+  const inheritedEnv: Record<string, string> = {};
+
+  for (const server of mcpServers ?? []) {
+    const inlineEnv: Record<string, string> = {};
+    for (const [key, value] of Object.entries(server.env ?? {})) {
+      if (SENSITIVE_ENV_KEY_PATTERN.test(key)) {
+        inheritedEnv[key] = value;
+      } else {
+        inlineEnv[key] = value;
+      }
+    }
+
+    config[server.name] = {
+      type: 'stdio',
+      command: server.command,
+      args: server.args,
+      ...(Object.keys(inlineEnv).length > 0 ? { env: inlineEnv } : {}),
+    };
+  }
+
+  return { config, inheritedEnv };
 }
 
 export function snapshotProtectedFiles(

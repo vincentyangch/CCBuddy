@@ -267,6 +267,41 @@ describe('CodexSdkBackend', () => {
     expect(codexOpts.config.model_verbosity).toBe('low');
   });
 
+  it('keeps sensitive MCP env values out of Codex config while preserving process env', async () => {
+    mockRunStreamed.mockResolvedValue({
+      events: makeEventStream(
+        { type: 'thread.started', thread_id: 'thread-1' },
+        { type: 'item.completed', item: { id: 'msg1', type: 'agent_message', text: 'ok' } },
+        { type: 'turn.completed', usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } },
+      ),
+    });
+
+    const backend = new CodexSdkBackend();
+    for await (const _ of backend.execute(makeRequest({
+      env: { HOMEASSISTANT_TOKEN: 'parent-secret' },
+      mcpServers: [{
+        name: 'secrets',
+        command: 'node',
+        args: ['server.js'],
+        env: {
+          HOMEASSISTANT_TOKEN: 'mcp-secret',
+          CCBUDDY_DASHBOARD_TOKEN: 'dashboard-secret',
+          PUBLIC_SETTING: 'visible',
+        },
+      }],
+    }))) { /* consume */ }
+
+    const codexOpts = MockCodex.mock.calls[0][0] as any;
+    const renderedConfig = JSON.stringify(codexOpts.config);
+    expect(renderedConfig).toContain('PUBLIC_SETTING');
+    expect(renderedConfig).not.toContain('mcp-secret');
+    expect(renderedConfig).not.toContain('dashboard-secret');
+    expect(renderedConfig).not.toContain('HOMEASSISTANT_TOKEN');
+    expect(renderedConfig).not.toContain('CCBUDDY_DASHBOARD_TOKEN');
+    expect(codexOpts.env.HOMEASSISTANT_TOKEN).toBe('mcp-secret');
+    expect(codexOpts.env.CCBUDDY_DASHBOARD_TOKEN).toBe('dashboard-secret');
+  });
+
   it('prepends memory context and system prompt to prompt', async () => {
     let capturedInput: any;
     mockRunStreamed.mockImplementation((input: any) => {

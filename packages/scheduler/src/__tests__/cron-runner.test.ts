@@ -1,4 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { AgentEvent, AgentRequest, MessageTarget, EventBus } from '@ccbuddy/core';
 import type { PromptJob, SkillJob, InternalJob } from '../types.js';
 
@@ -80,6 +83,10 @@ function createMockDeps(overrides: Partial<CronRunnerOptions> = {}): CronRunnerO
 describe('CronRunner', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   describe('registerJob', () => {
@@ -165,6 +172,67 @@ describe('CronRunner', () => {
         }
         logSpy.mockRestore();
       }
+    });
+
+    it('uses a stable workspace for repeated system prompt job runs', async () => {
+      const systemWorkspaceRoot = mkdtempSync(join(tmpdir(), 'ccbuddy-scheduler-workspaces-'));
+      const deps = createMockDeps({ systemWorkspaceRoot });
+      const runner = new CronRunner(deps);
+      const job = createMockJob({ name: 'daily report' });
+
+      try {
+        await runner.executeJob(job);
+        await runner.executeJob(job);
+
+        const calls = (deps.executeAgentRequest as ReturnType<typeof vi.fn>).mock.calls;
+        expect(calls[0][0].workingDirectory).toBe(join(systemWorkspaceRoot, 'daily-report'));
+        expect(calls[1][0].workingDirectory).toBe(join(systemWorkspaceRoot, 'daily-report'));
+        expect(existsSync(join(systemWorkspaceRoot, 'daily-report'))).toBe(true);
+      } finally {
+        rmSync(systemWorkspaceRoot, { recursive: true, force: true });
+      }
+    });
+
+    it('aborts and fails prompt jobs that exceed the configured timeout', async () => {
+      vi.useFakeTimers();
+
+      const completeEvent: AgentEvent = {
+        type: 'complete',
+        response: 'too late',
+        sessionId: 'test-session',
+        userId: 'user-123',
+        channelId: 'general',
+        platform: 'discord',
+      };
+      const executeAgentRequest = vi.fn(async function* (): AsyncGenerator<AgentEvent> {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        yield completeEvent;
+      });
+      const abortAgentRequest = vi.fn(async () => {});
+      const deps = createMockDeps({
+        executeAgentRequest,
+        abortAgentRequest,
+        defaultPromptJobTimeoutMs: 10,
+      });
+      const runner = new CronRunner(deps);
+      const job = createMockJob();
+
+      const run = runner.executeJob(job);
+      await vi.advanceTimersByTimeAsync(11);
+      await run;
+
+      expect(abortAgentRequest).toHaveBeenCalledWith(
+        expect.stringMatching(/^scheduler:cron:daily-report:[a-f0-9]{8}$/),
+      );
+      expect(deps.sendProactiveMessage).toHaveBeenCalledWith(
+        job.target,
+        expect.stringContaining('timed out after 10ms'),
+      );
+      expect(deps.eventBus.publish).toHaveBeenCalledWith(
+        'scheduler.job.complete',
+        expect.objectContaining({ jobName: 'daily-report', success: false }),
+      );
+      expect(job.running).toBe(false);
     });
   });
 

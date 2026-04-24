@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import type { AgentBackend, AgentRequest, AgentEvent, AgentEventBase, PermissionGateRule, ServiceTier } from '@ccbuddy/core';
 import { Codex, type ThreadOptions, type ThreadEvent, type Input, type UserInput } from '@openai/codex-sdk';
 import { generateCodexRules } from './codex-rules.js';
-import { restoreModifiedProtectedFiles, restoreProtectedFiles, snapshotProtectedFiles } from './codex-runtime-helpers.js';
+import { prepareCodexMcpServers, restoreModifiedProtectedFiles, restoreProtectedFiles, snapshotProtectedFiles } from './codex-runtime-helpers.js';
 import { isProvisionalRemoteSdkSessionId } from '../session/session-store.js';
 
 export interface CodexSdkBackendOptions {
@@ -92,11 +92,13 @@ export class CodexSdkBackend implements AgentBackend {
 
       // MCP servers — pass via config overrides
       if (request.mcpServers && request.mcpServers.length > 0) {
-        for (const s of request.mcpServers) {
-          codexConfig[`mcp_servers.${s.name}.type`] = 'stdio';
-          codexConfig[`mcp_servers.${s.name}.command`] = s.command;
-          codexConfig[`mcp_servers.${s.name}.args`] = s.args;
-          if (s.env) codexConfig[`mcp_servers.${s.name}.env`] = s.env;
+        const prepared = prepareCodexMcpServers(request.mcpServers);
+        Object.assign(codexEnv, prepared.inheritedEnv);
+        for (const [name, server] of Object.entries(prepared.config)) {
+          codexConfig[`mcp_servers.${name}.type`] = server.type;
+          codexConfig[`mcp_servers.${name}.command`] = server.command;
+          codexConfig[`mcp_servers.${name}.args`] = server.args;
+          if (server.env) codexConfig[`mcp_servers.${name}.env`] = server.env;
         }
       }
 

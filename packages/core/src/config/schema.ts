@@ -166,6 +166,8 @@ export interface ScheduledJobConfig {
   silent?: boolean;
   /** If set, fire the job at startup if it was missed within this many minutes (e.g. 120 = 2 hours) */
   catchup_window_minutes?: number;
+  /** Abort prompt jobs after this many milliseconds. */
+  timeout_ms?: number;
 }
 
 export interface SchedulerConfig {

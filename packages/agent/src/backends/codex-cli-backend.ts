@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import type { AgentBackend, AgentRequest, AgentEvent, AgentEventBase, PermissionGateRule, ServiceTier } from '@ccbuddy/core';
 import { generateCodexRules } from './codex-rules.js';
-import { restoreModifiedProtectedFiles, serializeCodexConfigOverrides, snapshotProtectedFiles, type CodexConfigOverrideObject } from './codex-runtime-helpers.js';
+import { prepareCodexMcpServers, restoreModifiedProtectedFiles, serializeCodexConfigOverrides, snapshotProtectedFiles, type CodexConfigOverrideObject } from './codex-runtime-helpers.js';
 import { isProvisionalRemoteSdkSessionId } from '../session/session-store.js';
 
 export interface CodexCliBackendOptions {
@@ -70,6 +70,7 @@ export class CodexCliBackend implements AgentBackend {
     const args: string[] = ['exec', '--experimental-json'];
     const configOverrides: CodexConfigOverrideObject = {};
     const protectedFiles = snapshotProtectedFiles(request.workingDirectory, this.options.permissionGateRules);
+    let codexEnv = request.env;
 
     if (request.workingDirectory) args.push('--cd', request.workingDirectory);
     if (request.model) args.push('--model', request.model);
@@ -122,15 +123,9 @@ export class CodexCliBackend implements AgentBackend {
     }
 
     if (request.mcpServers && request.mcpServers.length > 0) {
-      configOverrides.mcp_servers = Object.fromEntries(request.mcpServers.map((server) => [
-        server.name,
-        {
-          type: 'stdio',
-          command: server.command,
-          args: server.args,
-          ...(server.env && Object.keys(server.env).length > 0 ? { env: server.env } : {}),
-        },
-      ]));
+      const prepared = prepareCodexMcpServers(request.mcpServers);
+      configOverrides.mcp_servers = prepared.config as CodexConfigOverrideObject;
+      codexEnv = { ...(codexEnv ?? {}), ...prepared.inheritedEnv };
     }
 
     for (const override of serializeCodexConfigOverrides(configOverrides)) {
@@ -143,7 +138,7 @@ export class CodexCliBackend implements AgentBackend {
     }
 
     try {
-      const result = await this.runCodex(args, attachmentNote + fullPrompt, request.sessionId, request.env);
+      const result = await this.runCodex(args, attachmentNote + fullPrompt, request.sessionId, codexEnv);
       const restored = restoreModifiedProtectedFiles(protectedFiles);
       if (restored.length > 0) {
         const suffix = result.error ? ` Underlying error: ${result.error}` : '';

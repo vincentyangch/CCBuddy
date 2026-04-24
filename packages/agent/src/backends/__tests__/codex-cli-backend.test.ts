@@ -296,7 +296,7 @@ describe('CodexCliBackend', () => {
     expect(complete.sdkSessionId).toBe('existing-id');
   });
 
-  it('passes config overrides for approval policy, MCP env, network access, and rules file', async () => {
+  it('passes config overrides for approval policy, non-sensitive MCP env, network access, and rules file', async () => {
     const proc = makeMockProcess();
     mockSpawn.mockReturnValue(proc as any);
 
@@ -311,7 +311,7 @@ describe('CodexCliBackend', () => {
         name: 'test',
         command: '/path/with "quotes"',
         args: ['--flag', 'val\\ue'],
-        env: { TOKEN: 'abc123' },
+        env: { PUBLIC_SETTING: 'visible' },
       }],
     });
 
@@ -330,9 +330,49 @@ describe('CodexCliBackend', () => {
     expect(args).toContain('sandbox_workspace_write.network_access=false');
     expect(args).toContain('mcp_servers.test.command="/path/with \\"quotes\\""');
     expect(args).toContain('mcp_servers.test.args=["--flag", "val\\\\ue"]');
-    expect(args).toContain('mcp_servers.test.env.TOKEN="abc123"');
+    expect(args).toContain('mcp_servers.test.env.PUBLIC_SETTING="visible"');
     const rulesOverride = (args as string[]).find((arg) => arg.startsWith('exec_policy.rules_file='));
     expect(rulesOverride).toContain('ccbuddy.rules');
+  });
+
+  it('keeps sensitive MCP env values out of Codex config args while preserving process env', async () => {
+    const proc = makeMockProcess();
+    mockSpawn.mockReturnValue(proc as any);
+
+    const backend = new CodexCliBackend();
+    const request = makeRequest({
+      env: { HOMEASSISTANT_TOKEN: 'parent-secret' },
+      mcpServers: [{
+        name: 'secrets',
+        command: 'node',
+        args: ['server.js'],
+        env: {
+          HOMEASSISTANT_TOKEN: 'mcp-secret',
+          CCBUDDY_DASHBOARD_TOKEN: 'dashboard-secret',
+          PUBLIC_SETTING: 'visible',
+        },
+      }],
+    });
+
+    const gen = backend.execute(request);
+    const nextPromise = gen.next();
+
+    process.nextTick(() => {
+      proc.stdout.emit('data', Buffer.from('{"type":"item.completed","item":{"id":"msg1","type":"agent_message","text":"ok"}}\n'));
+      proc.emit('close', 0);
+    });
+
+    await nextPromise;
+
+    const [, args, options] = mockSpawn.mock.calls[0] as [string, string[], { env: Record<string, string> }];
+    const renderedArgs = args.join(' ');
+    expect(renderedArgs).toContain('mcp_servers.secrets.env.PUBLIC_SETTING="visible"');
+    expect(renderedArgs).not.toContain('mcp-secret');
+    expect(renderedArgs).not.toContain('dashboard-secret');
+    expect(renderedArgs).not.toContain('mcp_servers.secrets.env.HOMEASSISTANT_TOKEN');
+    expect(renderedArgs).not.toContain('mcp_servers.secrets.env.CCBUDDY_DASHBOARD_TOKEN');
+    expect(options.env.HOMEASSISTANT_TOKEN).toBe('mcp-secret');
+    expect(options.env.CCBUDDY_DASHBOARD_TOKEN).toBe('dashboard-secret');
   });
 
   it('passes reasoning effort, service tier, and verbosity config overrides', async () => {

@@ -18,6 +18,8 @@ export interface BaseJob {
   timezone?: string;
   /** Fire at startup if the job was missed within this many minutes */
   catchupWindowMinutes?: number;
+  /** Abort prompt jobs after this many milliseconds. */
+  timeoutMs?: number;
 }
 
 export interface PromptJob extends BaseJob {
@@ -72,6 +74,7 @@ export interface SchedulerDeps {
   defaultReasoningEffort?: ReasoningEffort;
   defaultVerbosity?: Verbosity;
   executeAgentRequest: (request: AgentRequest) => AsyncGenerator<AgentEvent>;
+  abortAgentRequest?: (sessionId: string) => Promise<void>;
   sendProactiveMessage: (target: MessageTarget, text: string) => Promise<void>;
   runSkill?: (name: string, input: Record<string, unknown>) => Promise<string>;
   checkDatabase: () => Promise<boolean>;

@@ -3,6 +3,7 @@ import { dirname, isAbsolute, normalize, resolve } from 'node:path';
 const DIRECT_FILE_RULES = new Map([
     ['local-config', 'config/local.yaml'],
 ]);
+const SENSITIVE_ENV_KEY_PATTERN = /(TOKEN|SECRET|PASSWORD|PASS|API_KEY|AUTH|CREDENTIAL|COOKIE|SESSION|JWT)/i;
 function isPlainObject(value) {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -85,6 +86,28 @@ export function serializeCodexConfigOverrides(configOverrides) {
     const overrides = [];
     flattenConfigOverrides(configOverrides, '', overrides);
     return overrides;
+}
+export function prepareCodexMcpServers(mcpServers) {
+    const config = {};
+    const inheritedEnv = {};
+    for (const server of mcpServers ?? []) {
+        const inlineEnv = {};
+        for (const [key, value] of Object.entries(server.env ?? {})) {
+            if (SENSITIVE_ENV_KEY_PATTERN.test(key)) {
+                inheritedEnv[key] = value;
+            }
+            else {
+                inlineEnv[key] = value;
+            }
+        }
+        config[server.name] = {
+            type: 'stdio',
+            command: server.command,
+            args: server.args,
+            ...(Object.keys(inlineEnv).length > 0 ? { env: inlineEnv } : {}),
+        };
+    }
+    return { config, inheritedEnv };
 }
 export function snapshotProtectedFiles(workingDirectory, rules) {
     const baseDir = resolve(workingDirectory ?? process.cwd());

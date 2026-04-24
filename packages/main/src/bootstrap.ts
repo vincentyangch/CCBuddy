@@ -661,6 +661,7 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
       env: forwardedEnv,
       systemPrompt: [identityPrompt, request.systemPrompt, skillNudge].filter(Boolean).join('\n\n'),
     }),
+    abortAgentRequest: (sessionId) => agentService.abort(sessionId),
     sendProactiveMessage,
     runSkill: undefined, // skill-type jobs use the agent prompt path; direct skill execution deferred
     assembleContext: (userId, sessionId) => {

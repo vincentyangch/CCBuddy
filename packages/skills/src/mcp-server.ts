@@ -194,6 +194,14 @@ async function main(): Promise<void> {
   // Resolved from --owner-user-id arg, falling back to the first user in the DB.
   let ownerUserId: string = args.ownerUserId;
   if (args.memoryDbPath) {
+    // Ensure externally supplied memory DBs have the current schema before
+    // SessionDatabase prepares statements against newer columns.
+    profileDatabase = new MemoryDatabase(args.memoryDbPath);
+    profileDatabase.init();
+    profileStore = new ProfileStore(profileDatabase);
+    sessionDb = new SessionDatabase(profileDatabase.raw());
+    workspaceStore = new WorkspaceStore(profileDatabase.raw());
+
     memoryDatabase = new MemoryDatabase(args.memoryDbPath, { readonly: true });
     const messageStore = new MessageStore(memoryDatabase);
     const summaryStore = new SummaryStore(memoryDatabase);
@@ -203,12 +211,6 @@ async function main(): Promise<void> {
       const userIds = messageStore.getDistinctUserIds();
       if (userIds.length > 0) ownerUserId = userIds[0];
     }
-
-    // Writable connection for profile updates (WAL mode supports concurrent writers)
-    profileDatabase = new MemoryDatabase(args.memoryDbPath);
-    profileStore = new ProfileStore(profileDatabase);
-    sessionDb = new SessionDatabase(profileDatabase.raw());
-    workspaceStore = new WorkspaceStore(profileDatabase.raw());
 
     // Register cleanup handlers for database shutdown
     const closeDatabases = () => { memoryDatabase?.close(); profileDatabase?.close(); };

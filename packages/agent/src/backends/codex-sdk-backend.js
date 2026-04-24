@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { Codex } from '@openai/codex-sdk';
 import { generateCodexRules } from './codex-rules.js';
-import { restoreModifiedProtectedFiles, restoreProtectedFiles, snapshotProtectedFiles } from './codex-runtime-helpers.js';
+import { prepareCodexMcpServers, restoreModifiedProtectedFiles, restoreProtectedFiles, snapshotProtectedFiles } from './codex-runtime-helpers.js';
 const PROVISIONAL_REMOTE_SESSION_PREFIX = '__pending_remote__:';
 function isProvisionalRemoteSdkSessionId(sdkSessionId) {
     return typeof sdkSessionId === 'string' && sdkSessionId.startsWith(PROVISIONAL_REMOTE_SESSION_PREFIX);
@@ -72,12 +72,14 @@ export class CodexSdkBackend {
             const codexConfig = {};
             // MCP servers — pass via config overrides
             if (request.mcpServers && request.mcpServers.length > 0) {
-                for (const s of request.mcpServers) {
-                    codexConfig[`mcp_servers.${s.name}.type`] = 'stdio';
-                    codexConfig[`mcp_servers.${s.name}.command`] = s.command;
-                    codexConfig[`mcp_servers.${s.name}.args`] = s.args;
-                    if (s.env)
-                        codexConfig[`mcp_servers.${s.name}.env`] = s.env;
+                const prepared = prepareCodexMcpServers(request.mcpServers);
+                Object.assign(codexEnv, prepared.inheritedEnv);
+                for (const [name, server] of Object.entries(prepared.config)) {
+                    codexConfig[`mcp_servers.${name}.type`] = server.type;
+                    codexConfig[`mcp_servers.${name}.command`] = server.command;
+                    codexConfig[`mcp_servers.${name}.args`] = server.args;
+                    if (server.env)
+                        codexConfig[`mcp_servers.${name}.env`] = server.env;
                 }
             }
             // Wire in deny rules file if generated

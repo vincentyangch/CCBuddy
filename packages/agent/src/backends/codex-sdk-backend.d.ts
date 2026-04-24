@@ -1,11 +1,13 @@
-import type { AgentBackend, AgentRequest, AgentEvent, PermissionGateRule } from '@ccbuddy/core';
+import type { AgentBackend, AgentRequest, AgentEvent, PermissionGateRule, ServiceTier } from '@ccbuddy/core';
 export interface CodexSdkBackendOptions {
     codexPath?: string;
     apiKey?: string;
     networkAccess?: boolean;
     defaultSandbox?: 'read-only' | 'workspace-write' | 'danger-full-access';
+    defaultServiceTier?: ServiceTier;
     /** Permission gate rules to convert to static Codex deny rules */
     permissionGateRules?: PermissionGateRule[];
+    startupTimeoutMs?: number;
 }
 export declare class CodexSdkBackend implements AgentBackend {
     private readonly options;

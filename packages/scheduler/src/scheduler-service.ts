@@ -2,6 +2,7 @@ import { CronRunner } from './cron-runner.js';
 import { HeartbeatMonitor } from './heartbeat.js';
 import { WebhookServer } from './webhook-server.js';
 import type { SchedulerDeps, ScheduledJob, InternalJob } from './types.js';
+import { resolve } from 'node:path';
 
 export class SchedulerService {
   private cronRunner: CronRunner;
@@ -15,6 +16,7 @@ export class SchedulerService {
     this.cronRunner = new CronRunner({
       eventBus: deps.eventBus,
       executeAgentRequest: deps.executeAgentRequest,
+      abortAgentRequest: deps.abortAgentRequest,
       sendProactiveMessage: deps.sendProactiveMessage,
       runSkill: deps.runSkill,
       timezone: deps.config.scheduler.timezone,
@@ -24,6 +26,7 @@ export class SchedulerService {
       assembleContext: deps.assembleContext,
       internalJobs: deps.internalJobs,
       storeMessage: deps.storeMessage,
+      systemWorkspaceRoot: resolve(deps.config.data_dir, 'scheduler-workspaces'),
     });
   }
 
@@ -74,6 +77,7 @@ export class SchedulerService {
         running: false,
         timezone: jobConfig.timezone,
         catchupWindowMinutes: jobConfig.catchup_window_minutes,
+        timeoutMs: jobConfig.timeout_ms,
       };
 
       this.jobs.push(job);
