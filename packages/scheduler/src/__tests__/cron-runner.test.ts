@@ -674,6 +674,32 @@ describe('CronRunner', () => {
 
       runner.stop();
     });
+
+    it('does not catch up a schedule already handled by the cron callback', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-04-25T12:59:30.000Z'));
+
+      const deps = createMockDeps({ catchupCheckIntervalMs: 60_000 });
+      const runner = new CronRunner(deps);
+      const job = createMockJob({
+        name: 'morning_briefing_weekend',
+        cron: '0 8 * * 0,6',
+        timezone: 'America/Chicago',
+        catchupWindowMinutes: 120,
+      });
+
+      runner.registerJob(job);
+
+      vi.setSystemTime(new Date('2026-04-25T13:00:00.500Z'));
+      await runner.executeJob(job, { source: 'cron' });
+      expect(deps.executeAgentRequest).toHaveBeenCalledTimes(1);
+
+      vi.setSystemTime(new Date('2026-04-25T13:02:00.000Z'));
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(deps.executeAgentRequest).toHaveBeenCalledTimes(1);
+
+      runner.stop();
+    });
   });
 
   describe('error handling', () => {

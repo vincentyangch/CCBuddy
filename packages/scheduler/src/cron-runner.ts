@@ -175,7 +175,9 @@ export class CronRunner {
     const source = trigger.source ?? 'cron';
     const sessionId = `scheduler:cron:${job.name}:${randomUUID().slice(0, 8)}`;
     const startedAt = Date.now();
-    this.markScheduleHandled(job, trigger.scheduledAt);
+    const scheduledAt = trigger.scheduledAt
+      ?? (source === 'cron' ? this.getPreviousExpectedAt(job, new Date(startedAt)) : null);
+    this.markScheduleHandled(job, scheduledAt ?? undefined);
     job.running = true;
     job.lastRun = startedAt;
     this.logJobLifecycle('started', job, { source, sessionId, startedAt });
@@ -598,6 +600,17 @@ export class CronRunner {
         currentDate: from,
         tz: this.getJobTimezone(job),
       }).next().toDate().getTime();
+    } catch {
+      return null;
+    }
+  }
+
+  private getPreviousExpectedAt(job: ScheduledJob, from = new Date()): Date | null {
+    try {
+      return CronExpressionParser.parse(job.cron, {
+        currentDate: from,
+        tz: this.getJobTimezone(job),
+      }).prev().toDate();
     } catch {
       return null;
     }
