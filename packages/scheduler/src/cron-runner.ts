@@ -11,7 +11,7 @@ import type {
   AgentEvent,
   MessageTarget,
 } from '@ccbuddy/core';
-import type { ScheduledJob, PromptJob, SkillJob, ShellJob, InternalJob } from './types.js';
+import type { ScheduledJob, PromptJob, SkillJob, ShellJob, InternalJob, SchedulerRunSource } from './types.js';
 
 interface ShellJobError extends Error {
   code?: number | string | null;
@@ -33,8 +33,10 @@ export interface CronRunnerOptions {
   defaultReasoningEffort?: AgentRequest['reasoningEffort'];
   defaultVerbosity?: AgentRequest['verbosity'];
   defaultPromptJobTimeoutMs?: number;
+  catchupCheckIntervalMs?: number;
   systemWorkspaceRoot?: string;
   internalJobs?: Map<string, () => Promise<void>>;
+  jobStateStore?: import('./types.js').SchedulerJobStateStore;
   storeMessage?: (params: {
     userId: string;
     sessionId: string;
@@ -47,7 +49,9 @@ export interface CronRunnerOptions {
 export class CronRunner {
   private readonly tasks = new Map<string, ScheduledTask>();
   private readonly jobs = new Map<string, ScheduledJob>();
+  private readonly handledScheduleTimes = new Set<string>();
   private readonly opts: CronRunnerOptions;
+  private catchupMonitor: ReturnType<typeof setInterval> | null = null;
 
   constructor(opts: CronRunnerOptions) {
     this.opts = opts;
@@ -81,10 +85,18 @@ export class CronRunner {
     const existing = this.tasks.get(job.name);
     if (existing) existing.stop();
 
+    void this.recordJobDefinition(job);
+    this.logJobLifecycle('registered', job, {
+      nextExpectedAt: this.getNextExpectedAt(job),
+    });
+
     const task = nodeCron.schedule(
       job.cron,
-      () => {
-        void this.executeJob(job);
+      (scheduledAt?: Date | string) => {
+        void this.executeJob(job, {
+          source: 'cron',
+          scheduledAt: scheduledAt instanceof Date ? scheduledAt : undefined,
+        });
       },
       { timezone: job.timezone ?? this.opts.timezone },
     );
@@ -95,6 +107,26 @@ export class CronRunner {
     // Catch-up: fire immediately if the job was missed within the catchup window
     if (job.catchupWindowMinutes && job.catchupWindowMinutes > 0) {
       void this.checkAndCatchup(job);
+      this.ensureCatchupMonitor();
+    }
+  }
+
+  private ensureCatchupMonitor(): void {
+    if (this.catchupMonitor) return;
+    const intervalMs = this.opts.catchupCheckIntervalMs ?? 5 * 60 * 1000;
+    if (intervalMs <= 0) return;
+
+    this.catchupMonitor = setInterval(() => {
+      void this.runCatchupChecks();
+    }, intervalMs);
+    this.catchupMonitor.unref?.();
+  }
+
+  private async runCatchupChecks(): Promise<void> {
+    for (const job of this.jobs.values()) {
+      if (job.catchupWindowMinutes && job.catchupWindowMinutes > 0) {
+        await this.checkAndCatchup(job);
+      }
     }
   }
 
@@ -113,11 +145,12 @@ export class CronRunner {
 
       // Get previous scheduled occurrence
       const prev = interval.prev();
-      if (prev.toDate() >= windowStart) {
+      const prevDate = prev.toDate();
+      if (prevDate >= windowStart && !this.hasHandledSchedule(job, prevDate)) {
         console.log(
-          `[Scheduler] Catch-up: running missed job "${job.name}" (was due at ${prev.toDate().toISOString()})`,
+          `[Scheduler] Catch-up: running missed job "${job.name}" (was due at ${prevDate.toISOString()})`,
         );
-        await this.executeJob(job);
+        await this.executeJob(job, { source: 'catchup', scheduledAt: prevDate });
       }
     } catch (err) {
       // Non-fatal — just skip catch-up if cron-parser fails
@@ -125,23 +158,39 @@ export class CronRunner {
     }
   }
 
-  async executeJob(job: ScheduledJob): Promise<void> {
+  async executeJob(
+    job: ScheduledJob,
+    trigger: { source?: SchedulerRunSource; scheduledAt?: Date } = {},
+  ): Promise<boolean> {
     if (job.running) {
       console.warn(`[Scheduler] Skipping "${job.name}" — previous run still in progress`);
-      return;
+      this.logJobLifecycle('skipped', job, {
+        source: trigger.source ?? 'cron',
+        reason: 'previous run still in progress',
+      });
+      await this.recordJobSkipped(job, 'previous run still in progress');
+      return false;
     }
 
+    const source = trigger.source ?? 'cron';
+    const sessionId = `scheduler:cron:${job.name}:${randomUUID().slice(0, 8)}`;
+    const startedAt = Date.now();
+    this.markScheduleHandled(job, trigger.scheduledAt);
     job.running = true;
+    job.lastRun = startedAt;
+    this.logJobLifecycle('started', job, { source, sessionId, startedAt });
+    await this.recordJobStarted(job, sessionId, startedAt);
     try {
       if (job.type === 'internal') {
-        await this.executeInternalJob(job);
+        await this.executeInternalJob(job, sessionId, startedAt, source);
       } else if (job.type === 'skill') {
-        await this.executeSkillJob(job);
+        await this.executeSkillJob(job, sessionId, startedAt, source);
       } else if (job.type === 'shell') {
-        await this.executeShellJob(job);
+        await this.executeShellJob(job, sessionId, startedAt, source);
       } else {
-        await this.executePromptJob(job);
+        await this.executePromptJob(job, sessionId, startedAt, source);
       }
+      return true;
     } finally {
       job.running = false;
     }
@@ -151,8 +200,21 @@ export class CronRunner {
     for (const task of this.tasks.values()) {
       task.stop();
     }
+    if (this.catchupMonitor) {
+      clearInterval(this.catchupMonitor);
+      this.catchupMonitor = null;
+    }
     this.tasks.clear();
     this.jobs.clear();
+  }
+
+  async runJobNow(jobName: string): Promise<{ jobName: string; accepted: boolean }> {
+    const job = this.jobs.get(jobName);
+    if (!job) {
+      throw new Error(`Scheduled job not found: ${jobName}`);
+    }
+    const accepted = await this.executeJob(job, { source: 'manual' });
+    return { jobName, accepted };
   }
 
   private async storeJobMessages(
@@ -195,8 +257,12 @@ export class CronRunner {
     });
   }
 
-  private async executePromptJob(job: PromptJob): Promise<void> {
-    const sessionId = `scheduler:cron:${job.name}:${randomUUID().slice(0, 8)}`;
+  private async executePromptJob(
+    job: PromptJob,
+    sessionId: string,
+    startedAt: number,
+    source: SchedulerRunSource,
+  ): Promise<void> {
     const memoryContext = this.opts.assembleContext(job.user, sessionId);
     this.logPromptJobDiagnostics(job, sessionId);
 
@@ -245,7 +311,7 @@ export class CronRunner {
 
         const event = result.value;
         if (event.type === 'error') {
-          await this.handleError(job, timedOut && timeoutError ? timeoutError : event.error);
+          await this.handleError(job, timedOut && timeoutError ? timeoutError : event.error, sessionId, startedAt, source);
           return;
         }
         if (event.type === 'complete') {
@@ -253,32 +319,35 @@ export class CronRunner {
             await this.opts.sendProactiveMessage(job.target, event.response);
             await this.storeJobMessages(job, sessionId, event.response);
           }
-          await this.publishComplete(job, true);
+          await this.publishComplete(job, true, sessionId, startedAt, source);
           return;
         }
       }
 
-      await this.handleError(job, timedOut && timeoutError ? timeoutError : 'agent ended without a result');
+      await this.handleError(job, timedOut && timeoutError ? timeoutError : 'agent ended without a result', sessionId, startedAt, source);
     } catch (err) {
       if (timedOut && timeoutError) {
         void generator.return?.(undefined);
-        await this.handleError(job, timeoutError);
+        await this.handleError(job, timeoutError, sessionId, startedAt, source);
         return;
       }
       const message = err instanceof Error ? err.message : String(err);
-      await this.handleError(job, message);
+      await this.handleError(job, message, sessionId, startedAt, source);
     } finally {
       if (timeout) clearTimeout(timeout);
     }
   }
 
-  private async executeSkillJob(job: SkillJob): Promise<void> {
+  private async executeSkillJob(
+    job: SkillJob,
+    sessionId: string,
+    startedAt: number,
+    source: SchedulerRunSource,
+  ): Promise<void> {
     if (!this.opts.runSkill) {
-      await this.handleError(job, 'runSkill not configured');
+      await this.handleError(job, 'runSkill not configured', sessionId, startedAt, source);
       return;
     }
-
-    const sessionId = `scheduler:cron:${job.name}:${randomUUID().slice(0, 8)}`;
 
     try {
       const result = await this.opts.runSkill(job.payload, {});
@@ -286,15 +355,19 @@ export class CronRunner {
         await this.opts.sendProactiveMessage(job.target, result);
         await this.storeJobMessages(job, sessionId, result);
       }
-      await this.publishComplete(job, true);
+      await this.publishComplete(job, true, sessionId, startedAt, source);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      await this.handleError(job, message);
+      await this.handleError(job, message, sessionId, startedAt, source);
     }
   }
 
-  private async executeShellJob(job: ShellJob): Promise<void> {
-    const sessionId = `scheduler:cron:${job.name}:${randomUUID().slice(0, 8)}`;
+  private async executeShellJob(
+    job: ShellJob,
+    sessionId: string,
+    startedAt: number,
+    source: SchedulerRunSource,
+  ): Promise<void> {
     console.log('[Scheduler] Starting shell job', {
       jobName: job.name,
       sessionId,
@@ -313,7 +386,7 @@ export class CronRunner {
         await this.opts.sendProactiveMessage(job.target, response);
         await this.storeJobMessages(job, sessionId, response);
       }
-      await this.publishComplete(job, true);
+      await this.publishComplete(job, true, sessionId, startedAt, source);
       console.log('[Scheduler] Shell job completed', {
         jobName: job.name,
         sessionId,
@@ -326,7 +399,7 @@ export class CronRunner {
         sessionId,
         error: message,
       });
-      await this.handleError(job, message);
+      await this.handleError(job, message, sessionId, startedAt, source);
     }
   }
 
@@ -414,57 +487,222 @@ export class CronRunner {
       : `shell exited with ${code}: ${detail}`;
   }
 
-  private async handleError(job: PromptJob | SkillJob | ShellJob, error: string): Promise<void> {
+  private async handleError(
+    job: PromptJob | SkillJob | ShellJob,
+    error: string,
+    sessionId: string,
+    startedAt: number,
+    source: SchedulerRunSource,
+  ): Promise<void> {
     await this.opts.sendProactiveMessage(
       job.target,
       `Scheduled job "${job.name}" failed: ${error}`,
     );
-    await this.publishComplete(job, false);
+    await this.publishComplete(job, false, sessionId, startedAt, source, error);
   }
 
-  private async publishComplete(job: PromptJob | SkillJob | ShellJob, success: boolean): Promise<void> {
+  private async publishComplete(
+    job: PromptJob | SkillJob | ShellJob,
+    success: boolean,
+    sessionId: string,
+    startedAt: number,
+    source: SchedulerRunSource,
+    error?: string,
+  ): Promise<void> {
+    const completedAt = Date.now();
+    const durationMs = completedAt - startedAt;
+    this.logJobLifecycle(success ? 'completed' : 'failed', job, {
+      source,
+      sessionId,
+      completedAt,
+      durationMs,
+      ...(error ? { error } : {}),
+    });
+    await this.recordJobCompleted(job, sessionId, success, completedAt, durationMs, error);
     await this.opts.eventBus.publish('scheduler.job.complete', {
       jobName: job.name,
-      source: 'cron',
+      source,
       success,
       target: job.target,
       timestamp: Date.now(),
     });
   }
 
-  private async executeInternalJob(job: InternalJob): Promise<void> {
+  private async executeInternalJob(
+    job: InternalJob,
+    sessionId: string,
+    startedAt: number,
+    source: SchedulerRunSource,
+  ): Promise<void> {
     const callback = this.opts.internalJobs?.get(job.name);
     if (!callback) {
       console.error(`[Scheduler] Internal job "${job.name}" has no registered callback`);
+      await this.publishInternalComplete(job, false, sessionId, startedAt, source, 'missing callback');
+      return;
+    }
+
+    try {
+      await callback();
+      await this.publishInternalComplete(job, true, sessionId, startedAt, source);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[Scheduler] Internal job "${job.name}" failed:`, message);
+      await this.publishInternalComplete(job, false, sessionId, startedAt, source, message);
+    }
+  }
+
+  private async publishInternalComplete(
+    job: InternalJob,
+    success: boolean,
+    sessionId: string,
+    startedAt: number,
+    source: SchedulerRunSource,
+    error?: string,
+  ): Promise<void> {
+    const completedAt = Date.now();
+    const durationMs = completedAt - startedAt;
+    this.logJobLifecycle(success ? 'completed' : 'failed', job, {
+      source,
+      sessionId,
+      completedAt,
+      durationMs,
+      ...(error ? { error } : {}),
+    });
+    await this.recordJobCompleted(job, sessionId, success, completedAt, durationMs, error);
+    if (!success && error === 'missing callback') {
       await this.opts.eventBus.publish('scheduler.job.complete', {
         jobName: job.name,
-        source: 'cron' as const,
+        source,
         success: false,
         target: { platform: 'system', channel: 'internal' },
         timestamp: Date.now(),
       });
       return;
     }
+    await this.opts.eventBus.publish('scheduler.job.complete', {
+      jobName: job.name,
+      source,
+      success,
+      target: { platform: 'system', channel: 'internal' },
+      timestamp: Date.now(),
+    });
+  }
 
+  private getJobTimezone(job: ScheduledJob): string {
+    return job.timezone ?? this.opts.timezone;
+  }
+
+  private getNextExpectedAt(job: ScheduledJob, from = new Date()): number | null {
     try {
-      await callback();
-      await this.opts.eventBus.publish('scheduler.job.complete', {
+      return CronExpressionParser.parse(job.cron, {
+        currentDate: from,
+        tz: this.getJobTimezone(job),
+      }).next().toDate().getTime();
+    } catch {
+      return null;
+    }
+  }
+
+  private handledKey(job: ScheduledJob, scheduledAt: Date): string {
+    return `${job.name}:${scheduledAt.getTime()}`;
+  }
+
+  private hasHandledSchedule(job: ScheduledJob, scheduledAt: Date): boolean {
+    return this.handledScheduleTimes.has(this.handledKey(job, scheduledAt));
+  }
+
+  private markScheduleHandled(job: ScheduledJob, scheduledAt?: Date): void {
+    if (!scheduledAt) return;
+    this.handledScheduleTimes.add(this.handledKey(job, scheduledAt));
+  }
+
+  private logJobLifecycle(
+    status: 'registered' | 'started' | 'completed' | 'failed' | 'skipped',
+    job: ScheduledJob,
+    details: Record<string, unknown> = {},
+  ): void {
+    const payload = {
+      jobName: job.name,
+      type: job.type,
+      cron: job.cron,
+      timezone: this.getJobTimezone(job),
+      ...details,
+    };
+    const serialized = JSON.stringify(payload);
+    if (status === 'failed') {
+      console.error(`[Scheduler] Job ${status} ${serialized}`);
+    } else if (status === 'skipped') {
+      console.warn(`[Scheduler] Job ${status} ${serialized}`);
+    } else {
+      console.log(`[Scheduler] Job ${status} ${serialized}`);
+    }
+  }
+
+  private async recordJobDefinition(job: ScheduledJob): Promise<void> {
+    try {
+      const target = job.type === 'internal' ? undefined : job.target;
+      await this.opts.jobStateStore?.upsertJob({
         jobName: job.name,
-        source: 'cron' as const,
-        success: true,
-        target: { platform: 'system', channel: 'internal' },
-        timestamp: Date.now(),
+        type: job.type,
+        cron: job.cron,
+        timezone: this.getJobTimezone(job),
+        enabled: job.enabled,
+        targetPlatform: target?.platform ?? null,
+        targetChannel: target?.channel ?? null,
+        nextExpectedAt: this.getNextExpectedAt(job),
+        updatedAt: Date.now(),
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error(`[Scheduler] Internal job "${job.name}" failed:`, message);
-      await this.opts.eventBus.publish('scheduler.job.complete', {
+      console.warn('[Scheduler] job state upsert failed:', err);
+    }
+  }
+
+  private async recordJobStarted(job: ScheduledJob, sessionId: string, startedAt: number): Promise<void> {
+    try {
+      await this.opts.jobStateStore?.markStarted({
         jobName: job.name,
-        source: 'cron' as const,
-        success: false,
-        target: { platform: 'system', channel: 'internal' },
-        timestamp: Date.now(),
+        sessionId,
+        startedAt,
+        nextExpectedAt: this.getNextExpectedAt(job),
       });
+    } catch (err) {
+      console.warn('[Scheduler] job state start update failed:', err);
+    }
+  }
+
+  private async recordJobCompleted(
+    job: ScheduledJob,
+    sessionId: string,
+    success: boolean,
+    completedAt: number,
+    durationMs: number,
+    error?: string,
+  ): Promise<void> {
+    try {
+      await this.opts.jobStateStore?.markCompleted({
+        jobName: job.name,
+        sessionId,
+        success,
+        completedAt,
+        durationMs,
+        error,
+        nextExpectedAt: this.getNextExpectedAt(job),
+      });
+    } catch (err) {
+      console.warn('[Scheduler] job state completion update failed:', err);
+    }
+  }
+
+  private async recordJobSkipped(job: ScheduledJob, reason: string): Promise<void> {
+    try {
+      await this.opts.jobStateStore?.markSkipped({
+        jobName: job.name,
+        reason,
+        skippedAt: Date.now(),
+        nextExpectedAt: this.getNextExpectedAt(job),
+      });
+    } catch (err) {
+      console.warn('[Scheduler] job state skip update failed:', err);
     }
   }
 }

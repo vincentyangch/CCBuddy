@@ -76,7 +76,7 @@ export interface AgentProgressEvent {
 
 export interface SchedulerJobCompleteEvent {
   jobName: string;
-  source: 'cron' | 'heartbeat' | 'webhook';
+  source: 'cron' | 'catchup' | 'manual' | 'heartbeat' | 'webhook';
   success: boolean;
   target: MessageTarget;
   timestamp: number;

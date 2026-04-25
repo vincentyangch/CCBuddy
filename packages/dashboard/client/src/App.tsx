@@ -8,12 +8,14 @@ import { ConversationsPage } from './pages/ConversationsPage';
 import { LogsPage } from './pages/LogsPage';
 import { ConfigPage } from './pages/ConfigPage';
 import { ChatPage } from './pages/ChatPage';
+import { SchedulerPage } from './pages/SchedulerPage';
 
 const navGroups = [
   {
     label: 'Operations',
     items: [
       { to: '/', label: 'Status' },
+      { to: '/scheduler', label: 'Scheduler' },
       { to: '/sessions', label: 'Runtime Sessions' },
       { to: '/logs', label: 'Logs' },
     ],
@@ -38,6 +40,7 @@ function Layout({ children }: { children: React.ReactNode }) {
   const pathname = location.pathname.replace(/\/$/, '') || '/';
   const isMigrated =
     pathname === '/' ||
+    pathname === '/scheduler' ||
     pathname === '/sessions' ||
     pathname.startsWith('/sessions/') ||
     pathname === '/logs' ||
@@ -95,6 +98,7 @@ export default function App() {
         <Layout>
           <Routes>
             <Route path="/" element={<StatusPage />} />
+            <Route path="/scheduler" element={<SchedulerPage />} />
             <Route path="/sessions" element={<SessionsPage />} />
             <Route path="/sessions/:key" element={<SessionDetailPage />} />
             <Route path="/conversations" element={<ConversationsPage />} />

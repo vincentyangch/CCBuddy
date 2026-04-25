@@ -22,6 +22,26 @@ type SettingsResponse = { config: any };
 type ReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 type ServiceTier = 'flex' | 'fast';
 type Verbosity = 'low' | 'medium' | 'high';
+export type SchedulerJobStatus = 'registered' | 'running' | 'succeeded' | 'failed' | 'skipped';
+
+export interface SchedulerJobState {
+  jobName: string;
+  type: string;
+  cron: string;
+  timezone: string;
+  enabled: boolean;
+  targetPlatform: string | null;
+  targetChannel: string | null;
+  lastStatus: SchedulerJobStatus | null;
+  lastSessionId: string | null;
+  lastStartedAt: number | null;
+  lastCompletedAt: number | null;
+  lastSuccessAt: number | null;
+  lastError: string | null;
+  lastDurationMs: number | null;
+  nextExpectedAt: number | null;
+  updatedAt: number;
+}
 
 export const api = {
   auth: (token: string) =>
@@ -32,6 +52,12 @@ export const api = {
     }).then(r => r.ok),
 
   status: () => request<any>('/api/status'),
+  schedulerJobs: () => request<{ jobs: SchedulerJobState[] }>('/api/scheduler/jobs'),
+  runSchedulerJob: (jobName: string) =>
+    request<{ ok: boolean; result: { jobName: string; accepted: boolean } }>(
+      `/api/scheduler/jobs/${encodeURIComponent(jobName)}/run`,
+      { method: 'POST' },
+    ),
   sessions: (status?: string) => {
     const params = status ? `?status=${status}` : '';
     return request<{ sessions: any[] }>(`/api/sessions${params}`);

@@ -62,12 +62,49 @@ export interface InternalJob extends BaseJob {
 
 export type ScheduledJob = PromptJob | SkillJob | ShellJob | InternalJob;
 
+export type SchedulerRunSource = 'cron' | 'catchup' | 'manual' | 'heartbeat' | 'webhook';
+
 export interface TriggerResult {
-  source: 'cron' | 'heartbeat' | 'webhook';
+  source: SchedulerRunSource;
   name: string;
   response: string;
   target: MessageTarget;
   timestamp: number;
+}
+
+export interface SchedulerJobStateStore {
+  upsertJob(params: {
+    jobName: string;
+    type: ScheduledJob['type'];
+    cron: string;
+    timezone: string;
+    enabled: boolean;
+    targetPlatform?: string | null;
+    targetChannel?: string | null;
+    nextExpectedAt?: number | null;
+    updatedAt?: number;
+  }): void | Promise<void>;
+  markStarted(params: {
+    jobName: string;
+    sessionId: string;
+    startedAt?: number;
+    nextExpectedAt?: number | null;
+  }): void | Promise<void>;
+  markCompleted(params: {
+    jobName: string;
+    sessionId: string;
+    success: boolean;
+    completedAt?: number;
+    durationMs?: number | null;
+    error?: string | null;
+    nextExpectedAt?: number | null;
+  }): void | Promise<void>;
+  markSkipped(params: {
+    jobName: string;
+    reason: string;
+    skippedAt?: number;
+    nextExpectedAt?: number | null;
+  }): void | Promise<void>;
 }
 
 export interface HealthCheckResult {
@@ -91,6 +128,7 @@ export interface SchedulerDeps {
   checkAgent: () => Promise<{ reachable: boolean; durationMs: number }>;
   assembleContext: (userId: string, sessionId: string) => string;
   internalJobs?: Map<string, () => Promise<void>>;
+  jobStateStore?: SchedulerJobStateStore;
   storeMessage?: (params: {
     userId: string;
     sessionId: string;

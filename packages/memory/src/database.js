@@ -80,6 +80,26 @@ export class MemoryDatabase {
         directory TEXT NOT NULL,
         created_at INTEGER NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS scheduler_job_state (
+        job_name TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        cron TEXT NOT NULL,
+        timezone TEXT NOT NULL,
+        enabled BOOLEAN NOT NULL DEFAULT 1,
+        target_platform TEXT,
+        target_channel TEXT,
+        last_status TEXT,
+        last_session_id TEXT,
+        last_started_at INTEGER,
+        last_completed_at INTEGER,
+        last_success_at INTEGER,
+        last_error TEXT,
+        last_duration_ms INTEGER,
+        next_expected_at INTEGER,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_scheduler_job_state_next ON scheduler_job_state(next_expected_at);
     `);
         // Migrations — add consolidation columns if missing
         const messagesCols = this.db.pragma('table_info(messages)');

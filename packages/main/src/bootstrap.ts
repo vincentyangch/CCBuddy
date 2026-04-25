@@ -14,6 +14,7 @@ import {
   AgentEventStore,
   SessionDatabase,
   WorkspaceStore,
+  SchedulerJobStore,
 } from '@ccbuddy/memory';
 import { SkillRegistry, MCP_SERVER_PATH } from '@ccbuddy/skills';
 import { Gateway } from '@ccbuddy/gateway';
@@ -224,6 +225,7 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
   const summaryStore = new SummaryStore(database);
   const profileStore = new ProfileStore(database);
   const workspaceStore = new WorkspaceStore(database.raw());
+  const schedulerJobStore = new SchedulerJobStore(database.raw());
 
   const contextAssembler = new ContextAssembler(messageStore, summaryStore, profileStore, {
     maxContextTokens: config.memory.max_context_tokens,
@@ -527,12 +529,20 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
 
   // 12b. Start dashboard if enabled
   let dashboardServer: DashboardServer | undefined;
+  let schedulerService: SchedulerService | undefined;
   if (config.dashboard.enabled) {
     dashboardServer = new DashboardServer({
       eventBus,
       agentService,
       messageStore,
       agentEventStore,
+      schedulerJobStore,
+      runSchedulerJob: async (jobName: string) => {
+        if (!schedulerService) {
+          throw new Error('Scheduler is not started yet');
+        }
+        return schedulerService.runJobNow(jobName);
+      },
       config,
       configDir: resolvedConfigDir,
       logFiles: {
@@ -647,7 +657,7 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
     ['memory_backup', () => backupService.backup()],
   ]);
 
-  const schedulerService = new SchedulerService({
+  schedulerService = new SchedulerService({
     config,
     eventBus,
     get defaultModel() { return config.agent.model; },
@@ -687,6 +697,7 @@ You have profile tools (profile_get, profile_set, profile_delete) to remember th
       });
     },
     internalJobs,
+    jobStateStore: schedulerJobStore,
     storeMessage: (params) => {
       messageStore.add({
         userId: params.userId,

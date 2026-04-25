@@ -20,6 +20,13 @@ function createMockDeps() {
     agentEventStore: {
       getBySession: vi.fn().mockReturnValue([]),
     },
+    schedulerJobStore: {
+      list: vi.fn().mockReturnValue([]),
+    },
+    runSchedulerJob: vi.fn().mockResolvedValue({
+      jobName: 'evening_briefing',
+      accepted: true,
+    }),
     config: {
       dashboard: { enabled: true, port: 0, host: '127.0.0.1', auth_token_env: 'TEST_DASHBOARD_TOKEN' },
       data_dir: '/tmp/test-ccbuddy',
@@ -246,6 +253,65 @@ describe('DashboardServer', () => {
       search: undefined,
       dateFrom: undefined,
       dateTo: undefined,
+    });
+  });
+
+  it('GET /api/scheduler/jobs returns persisted scheduler job state', async () => {
+    const deps = createMockDeps();
+    deps.schedulerJobStore.list.mockReturnValue([
+      {
+        jobName: 'evening_briefing',
+        type: 'prompt',
+        cron: '0 23 * * *',
+        timezone: 'America/Chicago',
+        enabled: true,
+        targetPlatform: 'discord',
+        targetChannel: 'general',
+        lastStatus: 'succeeded',
+        lastStartedAt: 1_000,
+        lastCompletedAt: 2_000,
+        lastSuccessAt: 2_000,
+        lastError: null,
+        nextExpectedAt: 10_000,
+      },
+    ]);
+    server = new DashboardServer(deps as any);
+    const address = await server.start();
+
+    const res = await fetch(`${address}/api/scheduler/jobs`, {
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      jobs: [
+        expect.objectContaining({
+          jobName: 'evening_briefing',
+          lastStatus: 'succeeded',
+          nextExpectedAt: 10_000,
+        }),
+      ],
+    });
+  });
+
+  it('POST /api/scheduler/jobs/:name/run triggers a scheduler job', async () => {
+    const deps = createMockDeps();
+    server = new DashboardServer(deps as any);
+    const address = await server.start();
+
+    const res = await fetch(`${address}/api/scheduler/jobs/evening_briefing/run`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+
+    expect(res.status).toBe(200);
+    expect(deps.runSchedulerJob).toHaveBeenCalledWith('evening_briefing');
+    expect(await res.json()).toEqual({
+      ok: true,
+      result: {
+        jobName: 'evening_briefing',
+        accepted: true,
+      },
     });
   });
 

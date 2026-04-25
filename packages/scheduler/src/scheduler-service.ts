@@ -26,6 +26,7 @@ export class SchedulerService {
       assembleContext: deps.assembleContext,
       internalJobs: deps.internalJobs,
       storeMessage: deps.storeMessage,
+      jobStateStore: deps.jobStateStore,
       systemWorkspaceRoot: resolve(deps.config.data_dir, 'scheduler-workspaces'),
     });
   }
@@ -47,6 +48,10 @@ export class SchedulerService {
 
   getJobs(): readonly ScheduledJob[] {
     return this.jobs;
+  }
+
+  async runJobNow(jobName: string): Promise<{ jobName: string; accepted: boolean }> {
+    return this.cronRunner.runJobNow(jobName);
   }
 
   private registerCronJobs(): void {

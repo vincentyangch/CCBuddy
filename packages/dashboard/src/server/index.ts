@@ -16,7 +16,7 @@ import type { EventBus, CCBuddyConfig } from '@ccbuddy/core';
 import { isValidModel, isValidModelForBackend, getModelOptionsForBackend } from '@ccbuddy/core';
 import type { BackendType } from '@ccbuddy/core';
 import type { SessionInfo } from '@ccbuddy/agent';
-import type { MessageQueryParams, MessageQueryResult, StoredAgentEvent } from '@ccbuddy/memory';
+import type { MessageQueryParams, MessageQueryResult, StoredAgentEvent, SchedulerJobState } from '@ccbuddy/memory';
 
 export interface DashboardDeps {
   eventBus: EventBus;
@@ -33,6 +33,10 @@ export interface DashboardDeps {
   agentEventStore: {
     getBySession(sessionId: string, pagination?: { limit: number; offset: number }): StoredAgentEvent[];
   };
+  schedulerJobStore?: {
+    list(): SchedulerJobState[];
+  };
+  runSchedulerJob?: (jobName: string) => Promise<{ jobName: string; accepted: boolean }>;
   config: CCBuddyConfig;
   configDir: string;
   logFiles: { stdout: string; stderr: string; app: string };
@@ -180,6 +184,27 @@ export class DashboardServer {
         queueSize: this.deps.agentService.queueSize,
         uptime: process.uptime(),
       };
+    });
+
+    // GET /api/scheduler/jobs — persisted scheduler job health and timing
+    this.app.get('/api/scheduler/jobs', async () => {
+      return { jobs: this.deps.schedulerJobStore?.list() ?? [] };
+    });
+
+    // POST /api/scheduler/jobs/:name/run — trigger a registered job immediately
+    this.app.post<{ Params: { name: string } }>('/api/scheduler/jobs/:name/run', async (request, reply) => {
+      if (!this.deps.runSchedulerJob) {
+        return reply.status(501).send({ error: 'Scheduler controls not available' });
+      }
+
+      try {
+        const result = await this.deps.runSchedulerJob(request.params.name);
+        return { ok: true, result };
+      } catch (err) {
+        const message = (err as Error).message;
+        const status = message.includes('not found') ? 404 : 500;
+        return reply.status(status).send({ error: message });
+      }
     });
 
     // GET /api/sessions

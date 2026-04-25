@@ -67,6 +67,12 @@ function createMockDeps(overrides: Partial<CronRunnerOptions> = {}): CronRunnerO
   const assembleContext = vi.fn().mockReturnValue('Memory context for user');
 
   const storeMessage = vi.fn(async () => {});
+  const jobStateStore = {
+    upsertJob: vi.fn(),
+    markStarted: vi.fn(),
+    markCompleted: vi.fn(),
+    markSkipped: vi.fn(),
+  };
 
   return {
     eventBus,
@@ -76,6 +82,7 @@ function createMockDeps(overrides: Partial<CronRunnerOptions> = {}): CronRunnerO
     assembleContext,
     timezone: 'UTC',
     storeMessage,
+    jobStateStore,
     ...overrides,
   };
 }
@@ -101,6 +108,18 @@ describe('CronRunner', () => {
         job.cron,
         expect.any(Function),
         expect.objectContaining({ timezone: 'UTC' }),
+      );
+      expect(deps.jobStateStore?.upsertJob).toHaveBeenCalledWith(
+        expect.objectContaining({
+          jobName: 'daily-report',
+          type: 'prompt',
+          cron: '0 9 * * *',
+          timezone: 'UTC',
+          enabled: true,
+          targetPlatform: 'discord',
+          targetChannel: 'general',
+          nextExpectedAt: expect.any(Number),
+        }),
       );
     });
 
@@ -580,6 +599,24 @@ describe('CronRunner', () => {
           timestamp: expect.any(Number),
         }),
       );
+      expect(deps.jobStateStore?.markStarted).toHaveBeenCalledWith(
+        expect.objectContaining({
+          jobName: 'daily-report',
+          sessionId: expect.stringMatching(/^scheduler:cron:daily-report:[a-f0-9]{8}$/),
+          startedAt: expect.any(Number),
+          nextExpectedAt: expect.any(Number),
+        }),
+      );
+      expect(deps.jobStateStore?.markCompleted).toHaveBeenCalledWith(
+        expect.objectContaining({
+          jobName: 'daily-report',
+          sessionId: expect.stringMatching(/^scheduler:cron:daily-report:[a-f0-9]{8}$/),
+          success: true,
+          completedAt: expect.any(Number),
+          durationMs: expect.any(Number),
+          nextExpectedAt: expect.any(Number),
+        }),
+      );
     });
   });
 
@@ -593,6 +630,49 @@ describe('CronRunner', () => {
 
       expect(deps.executeAgentRequest).not.toHaveBeenCalled();
       expect(deps.sendProactiveMessage).not.toHaveBeenCalled();
+      expect(deps.jobStateStore?.markSkipped).toHaveBeenCalledWith(
+        expect.objectContaining({
+          jobName: 'daily-report',
+          reason: 'previous run still in progress',
+          skippedAt: expect.any(Number),
+          nextExpectedAt: expect.any(Number),
+        }),
+      );
+    });
+  });
+
+  describe('missed-run recovery', () => {
+    it('periodically runs a missed catch-up job once while inside its catch-up window', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-04-25T03:30:00.000Z'));
+
+      const deps = createMockDeps({ catchupCheckIntervalMs: 60_000 });
+      const runner = new CronRunner(deps);
+      const job = createMockJob({
+        name: 'evening_briefing',
+        cron: '0 23 * * *',
+        timezone: 'America/Chicago',
+        catchupWindowMinutes: 60,
+      });
+
+      runner.registerJob(job);
+      await vi.runOnlyPendingTimersAsync();
+      expect(deps.executeAgentRequest).not.toHaveBeenCalled();
+
+      vi.setSystemTime(new Date('2026-04-25T04:30:00.000Z'));
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      expect(deps.executeAgentRequest).toHaveBeenCalledTimes(1);
+      expect(deps.executeAgentRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: expect.stringMatching(/^scheduler:cron:evening_briefing:[a-f0-9]{8}$/),
+        }),
+      );
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(deps.executeAgentRequest).toHaveBeenCalledTimes(1);
+
+      runner.stop();
     });
   });
 
