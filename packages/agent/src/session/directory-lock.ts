@@ -3,6 +3,7 @@ import { resolve, sep } from 'node:path';
 export interface LockHolder {
   sessionId: string;
   userId: string;
+  acquiredAt: number;
 }
 
 export interface AcquireResult {
@@ -16,16 +17,16 @@ export class DirectoryLock {
   acquire(dir: string, sessionId: string, userId: string): AcquireResult {
     const normalized = resolve(dir);
 
-    // Check for conflicts (same dir, parent, or child)
+    // Check for conflicts (same dir, parent, or child). Even requests from the
+    // same conversation session must serialize because Codex locks by workspace.
     for (const [lockedDir, holder] of this.locks) {
-      if (holder.sessionId === sessionId) continue; // same session — no conflict
       if (this.pathsConflict(normalized, lockedDir)) {
         return { acquired: false, heldBy: holder };
       }
     }
 
     // Acquire or re-acquire
-    this.locks.set(normalized, { sessionId, userId });
+    this.locks.set(normalized, { sessionId, userId, acquiredAt: Date.now() });
     return { acquired: true };
   }
 

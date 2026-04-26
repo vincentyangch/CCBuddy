@@ -88,53 +88,61 @@ export class AgentService {
       return;
     }
 
-    // Directory lock — wait if another session is using the same directory
-    if (request.workingDirectory) {
-      const lockResult = this.directoryLock.acquire(
-        request.workingDirectory, request.sessionId, request.userId,
-      );
-      if (!lockResult.acquired) {
-        // Notify about conflict
-        if (this.eventBus) {
-          void this.eventBus.publish('session.conflict', {
-            userId: request.userId,
-            sessionId: request.sessionId,
-            channelId: request.channelId,
-            platform: request.platform,
-            workingDirectory: request.workingDirectory,
-            conflictingSessionId: lockResult.heldBy?.sessionId,
-          });
-        }
-
-        // Wait for lock to be released
-        const acquired = await this.waitForDirectoryLock(request);
-        if (!acquired) {
-          yield { ...base, type: 'error', error: 'directory busy — request timed out' };
-          return;
-        }
-      }
-      this.sessionDirectories.set(request.sessionId, request.workingDirectory);
-    }
-
-    // Check concurrency — queue if at cap, reject if queue also full
-    if (this.activeConcurrent >= this.maxConcurrent) {
-      const queued = await this.tryEnqueue(request);
-      if (!queued) {
-        if (request.workingDirectory) {
-          this.directoryLock.release(request.workingDirectory, request.sessionId);
-          this.sessionDirectories.delete(request.sessionId);
-        }
+    let hasExecutionSlot = false;
+    let hasDirectoryLock = false;
+    try {
+      // Check concurrency before taking a directory lock. A request waiting for a
+      // global slot should not make its workspace look busy.
+      hasExecutionSlot = await this.acquireExecutionSlot(request);
+      if (!hasExecutionSlot) {
         yield { ...base, type: 'error', error: 'server busy' };
         return;
       }
-    }
 
-    // Track session
-    this.sessionManager.getOrCreate(request.sessionId);
+      // Directory lock — wait if another request is using the same or nested directory.
+      if (request.workingDirectory) {
+        const lockResult = this.directoryLock.acquire(
+          request.workingDirectory, request.sessionId, request.userId,
+        );
+        if (!lockResult.acquired) {
+          const lockAgeMs = lockResult.heldBy?.acquiredAt
+            ? Date.now() - lockResult.heldBy.acquiredAt
+            : undefined;
+          console.warn('[AgentService] Directory busy; queueing request', {
+            sessionId: request.sessionId,
+            workingDirectory: request.workingDirectory,
+            conflictingSessionId: lockResult.heldBy?.sessionId,
+            conflictingUserId: lockResult.heldBy?.userId,
+            lockAgeMs,
+          });
 
-    // Execute backend and yield events
-    this.activeConcurrent += 1;
-    try {
+          if (this.eventBus) {
+            void this.eventBus.publish('session.conflict', {
+              userId: request.userId,
+              sessionId: request.sessionId,
+              channelId: request.channelId,
+              platform: request.platform,
+              workingDirectory: request.workingDirectory,
+              conflictingSessionId: lockResult.heldBy?.sessionId,
+              conflictingUserId: lockResult.heldBy?.userId,
+              lockAgeMs,
+            });
+          }
+
+          const acquired = await this.waitForDirectoryLock(request);
+          if (!acquired) {
+            yield { ...base, type: 'error', error: 'directory busy — request timed out' };
+            return;
+          }
+        }
+        hasDirectoryLock = true;
+        this.sessionDirectories.set(request.sessionId, request.workingDirectory);
+      }
+
+      // Track session
+      this.sessionManager.getOrCreate(request.sessionId);
+
+      // Execute backend and yield events
       for await (const event of this.backend.execute(request)) {
         // Publish progress events to the event bus
         if (this.eventBus !== undefined) {
@@ -163,15 +171,26 @@ export class AgentService {
         yield event;
       }
     } finally {
-      this.activeConcurrent -= 1;
       // Release directory lock and drain directory queue
-      if (request.workingDirectory) {
+      if (hasDirectoryLock && request.workingDirectory) {
         this.directoryLock.release(request.workingDirectory, request.sessionId);
         this.sessionDirectories.delete(request.sessionId);
-        this.drainDirectoryQueue(request.workingDirectory);
+        this.drainDirectoryQueues();
       }
-      this.drainQueue();
+      if (hasExecutionSlot) {
+        this.activeConcurrent -= 1;
+        this.drainQueue();
+      }
     }
+  }
+
+  private async acquireExecutionSlot(request: AgentRequest): Promise<boolean> {
+    if (this.activeConcurrent < this.maxConcurrent) {
+      this.activeConcurrent += 1;
+      return true;
+    }
+
+    return this.tryEnqueue(request);
   }
 
   private tryEnqueue(request: AgentRequest): Promise<boolean> {
@@ -230,16 +249,20 @@ export class AgentService {
     });
   }
 
-  private drainDirectoryQueue(workingDirectory: string): void {
-    const dir = resolvePath(workingDirectory);
-    const queue = this.directoryQueue.get(dir);
-    if (!queue || queue.length === 0) return;
+  private drainDirectoryQueues(): void {
+    for (const [dir, queue] of Array.from(this.directoryQueue.entries())) {
+      if (queue.length === 0) {
+        this.directoryQueue.delete(dir);
+        continue;
+      }
+      if (this.directoryLock.isLocked(dir)) continue;
 
-    const next = queue.shift()!;
-    if (queue.length === 0) this.directoryQueue.delete(dir);
+      const next = queue.shift()!;
+      if (queue.length === 0) this.directoryQueue.delete(dir);
 
-    clearTimeout(next.timer);
-    next.resolve();
+      clearTimeout(next.timer);
+      next.resolve();
+    }
   }
 
   private drainQueue(): void {
@@ -247,6 +270,7 @@ export class AgentService {
       const next = this.queue.dequeue();
       if (next === undefined) break;
       clearTimeout(next.timer);
+      this.activeConcurrent += 1;
       next.resolve();
     }
   }
@@ -259,7 +283,7 @@ export class AgentService {
     if (dir) {
       this.directoryLock.release(dir, sessionId);
       this.sessionDirectories.delete(sessionId);
-      this.drainDirectoryQueue(dir);
+      this.drainDirectoryQueues();
     }
   }
 

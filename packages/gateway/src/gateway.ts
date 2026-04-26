@@ -95,7 +95,7 @@ export class Gateway {
       deps.eventBus.subscribe('session.conflict', (event) => {
         const adapter = this.adapters.get(event.platform);
         if (adapter) {
-          const msg = `Another session is using this directory — your request has been queued and will run when it's free.`;
+          const msg = `Another request is using this workspace — your request has been queued and will run when it's free.`;
           adapter.sendText(event.channelId, msg).catch((err) => {
             console.error(`[Gateway] Failed to send conflict notification:`, err);
           });

@@ -175,6 +175,71 @@ describe('AgentService', () => {
       expect(events2[0].type).toBe('complete');
     });
 
+    it('serializes overlapping requests from the same session and directory', async () => {
+      let active = 0;
+      let maxActive = 0;
+      const backend: AgentBackend = {
+        async *execute(req: AgentRequest): AsyncGenerator<AgentEvent> {
+          active++;
+          maxActive = Math.max(maxActive, active);
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          active--;
+          const base: AgentEventBase = {
+            sessionId: req.sessionId,
+            userId: req.userId,
+            channelId: req.channelId,
+            platform: req.platform,
+          };
+          yield { ...base, type: 'complete', response: 'done' };
+        },
+        abort: vi.fn(),
+      };
+      const service = new AgentService({ ...defaultOpts, backend });
+
+      const gen1 = service.handleRequest(makeRequest({
+        sessionId: 'same-session',
+        workingDirectory: '/project',
+      }));
+      const gen2 = service.handleRequest(makeRequest({
+        sessionId: 'same-session',
+        workingDirectory: '/project',
+      }));
+
+      const [events1, events2] = await Promise.all([
+        collectEvents(gen1),
+        collectEvents(gen2),
+      ]);
+
+      expect(events1[0].type).toBe('complete');
+      expect(events2[0].type).toBe('complete');
+      expect(maxActive).toBe(1);
+    });
+
+    it('wakes parent-directory waiters when a child directory lock is released', async () => {
+      const service = new AgentService({
+        ...defaultOpts,
+        backend: makeBackend('done', 50),
+        queueTimeoutSeconds: 1,
+      });
+
+      const gen1 = service.handleRequest(makeRequest({
+        sessionId: 'scheduler-session',
+        workingDirectory: '/project/data/scheduler-workspaces/morning-briefing',
+      }));
+      const gen2 = service.handleRequest(makeRequest({
+        sessionId: 'interactive-session',
+        workingDirectory: '/project',
+      }));
+
+      const [events1, events2] = await Promise.all([
+        collectEvents(gen1),
+        collectEvents(gen2),
+      ]);
+
+      expect(events1[0].type).toBe('complete');
+      expect(events2[0].type).toBe('complete');
+    });
+
     it('skips lock for requests without workingDirectory', async () => {
       const service = new AgentService({ ...defaultOpts, backend: makeBackend('done') });
       const events = await collectEvents(
@@ -207,6 +272,7 @@ describe('AgentService', () => {
 
       expect(conflicts).toHaveLength(1);
       expect((conflicts[0] as any).sessionId).toBe('session-2');
+      expect((conflicts[0] as any).lockAgeMs).toEqual(expect.any(Number));
     });
 
     it('releases lock on error so next request proceeds', async () => {

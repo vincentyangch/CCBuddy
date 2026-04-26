@@ -11,11 +11,12 @@ describe('DirectoryLock', () => {
     expect(lock.isLocked('/project')).toBe(false);
   });
 
-  it('same session re-acquires same directory (idempotent)', () => {
+  it('same session is blocked on the same directory', () => {
     const lock = new DirectoryLock();
     lock.acquire('/project', 'session-1', 'user-1');
     const result = lock.acquire('/project', 'session-1', 'user-1');
-    expect(result.acquired).toBe(true);
+    expect(result.acquired).toBe(false);
+    expect(result.heldBy?.sessionId).toBe('session-1');
   });
 
   it('different session is blocked on same directory', () => {

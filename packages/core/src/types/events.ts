@@ -36,6 +36,8 @@ export interface SessionConflictEvent {
   workingDirectory: string;
   conflictingPid?: number;
   conflictingSessionId?: string;
+  conflictingUserId?: string;
+  lockAgeMs?: number;
 }
 
 export interface HealthAlertEvent {
