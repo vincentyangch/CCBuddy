@@ -691,12 +691,43 @@ describe('CronRunner', () => {
       runner.registerJob(job);
 
       vi.setSystemTime(new Date('2026-04-25T13:00:00.500Z'));
-      await runner.executeJob(job, { source: 'cron' });
+      await runner.executeJob(job, {
+        source: 'cron',
+        scheduledAt: new Date('2026-04-25T13:00:00.500Z'),
+      });
       expect(deps.executeAgentRequest).toHaveBeenCalledTimes(1);
 
       vi.setSystemTime(new Date('2026-04-25T13:02:00.000Z'));
       await vi.advanceTimersByTimeAsync(60_000);
       expect(deps.executeAgentRequest).toHaveBeenCalledTimes(1);
+
+      runner.stop();
+    });
+
+    it('does not catch up a schedule already completed before restart', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-04-26T04:55:00.000Z'));
+
+      const deps = createMockDeps({ catchupCheckIntervalMs: 60_000 });
+      deps.jobStateStore = {
+        ...deps.jobStateStore!,
+        get: vi.fn(() => ({
+          lastSuccessAt: new Date('2026-04-26T04:01:23.421Z').getTime(),
+          nextExpectedAt: new Date('2026-04-27T04:00:00.000Z').getTime(),
+        })),
+      };
+      const runner = new CronRunner(deps);
+      const job = createMockJob({
+        name: 'evening_briefing',
+        cron: '0 23 * * *',
+        timezone: 'America/Chicago',
+        catchupWindowMinutes: 60,
+      });
+
+      runner.registerJob(job);
+      await vi.runOnlyPendingTimersAsync();
+
+      expect(deps.executeAgentRequest).not.toHaveBeenCalled();
 
       runner.stop();
     });

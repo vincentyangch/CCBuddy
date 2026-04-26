@@ -146,7 +146,7 @@ export class CronRunner {
       // Get previous scheduled occurrence
       const prev = interval.prev();
       const prevDate = prev.toDate();
-      if (prevDate >= windowStart && !this.hasHandledSchedule(job, prevDate)) {
+      if (prevDate >= windowStart && !(await this.hasHandledOrCompletedSchedule(job, prevDate))) {
         console.log(
           `[Scheduler] Catch-up: running missed job "${job.name}" (was due at ${prevDate.toISOString()})`,
         );
@@ -175,8 +175,11 @@ export class CronRunner {
     const source = trigger.source ?? 'cron';
     const sessionId = `scheduler:cron:${job.name}:${randomUUID().slice(0, 8)}`;
     const startedAt = Date.now();
-    const scheduledAt = trigger.scheduledAt
-      ?? (source === 'cron' ? this.getPreviousExpectedAt(job, new Date(startedAt)) : null);
+    const observedScheduledAt = trigger.scheduledAt
+      ?? (source === 'cron' ? new Date(startedAt) : null);
+    const scheduledAt = observedScheduledAt
+      ? this.getExpectedAtOrBefore(job, observedScheduledAt)
+      : null;
     this.markScheduleHandled(job, scheduledAt ?? undefined);
     job.running = true;
     job.lastRun = startedAt;
@@ -616,12 +619,49 @@ export class CronRunner {
     }
   }
 
+  private getExpectedAtOrBefore(job: ScheduledJob, observedAt: Date): Date | null {
+    try {
+      return CronExpressionParser.parse(job.cron, {
+        currentDate: new Date(observedAt.getTime() + 1),
+        tz: this.getJobTimezone(job),
+      }).prev().toDate();
+    } catch {
+      return null;
+    }
+  }
+
   private handledKey(job: ScheduledJob, scheduledAt: Date): string {
     return `${job.name}:${scheduledAt.getTime()}`;
   }
 
   private hasHandledSchedule(job: ScheduledJob, scheduledAt: Date): boolean {
     return this.handledScheduleTimes.has(this.handledKey(job, scheduledAt));
+  }
+
+  private async hasHandledOrCompletedSchedule(job: ScheduledJob, scheduledAt: Date): Promise<boolean> {
+    if (this.hasHandledSchedule(job, scheduledAt)) return true;
+
+    if (await this.hasPersistedSuccessForSchedule(job, scheduledAt)) {
+      this.markScheduleHandled(job, scheduledAt);
+      return true;
+    }
+
+    return false;
+  }
+
+  private async hasPersistedSuccessForSchedule(job: ScheduledJob, scheduledAt: Date): Promise<boolean> {
+    try {
+      const state = await this.opts.jobStateStore?.get?.(job.name);
+      const lastSuccessAt = state?.lastSuccessAt;
+      const nextExpectedAt = state?.nextExpectedAt;
+      if (typeof lastSuccessAt !== 'number') return false;
+      if (lastSuccessAt < scheduledAt.getTime()) return false;
+      if (typeof nextExpectedAt === 'number' && nextExpectedAt <= scheduledAt.getTime()) return false;
+      return true;
+    } catch (err) {
+      console.warn(`[Scheduler] job state catch-up check failed for "${job.name}":`, err);
+      return false;
+    }
   }
 
   private markScheduleHandled(job: ScheduledJob, scheduledAt?: Date): void {

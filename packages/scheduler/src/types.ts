@@ -105,6 +105,13 @@ export interface SchedulerJobStateStore {
     skippedAt?: number;
     nextExpectedAt?: number | null;
   }): void | Promise<void>;
+  get?(jobName: string): {
+    lastSuccessAt?: number | null;
+    nextExpectedAt?: number | null;
+  } | undefined | Promise<{
+    lastSuccessAt?: number | null;
+    nextExpectedAt?: number | null;
+  } | undefined>;
 }
 
 export interface HealthCheckResult {
