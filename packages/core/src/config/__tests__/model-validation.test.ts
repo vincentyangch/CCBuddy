@@ -18,6 +18,7 @@ describe('isValidModel', () => {
     expect(isValidModel('gpt-5')).toBe(true);
     expect(isValidModel('gpt-5.4-mini')).toBe(true);
     expect(isValidModel('gpt-5.4-pro')).toBe(true);
+    expect(isValidModel('gpt-5.5')).toBe(true);
     expect(isValidModel('o3')).toBe(true);
     expect(isValidModel('o4-mini')).toBe(true);
   });
@@ -44,6 +45,7 @@ describe('isValidModelForBackend', () => {
     expect(isValidModelForBackend('gpt-5', 'codex-sdk')).toBe(true);
     expect(isValidModelForBackend('gpt-5.4-mini', 'codex-cli')).toBe(true);
     expect(isValidModelForBackend('gpt-5.4-pro', 'codex-sdk')).toBe(true);
+    expect(isValidModelForBackend('gpt-5.5', 'codex-sdk')).toBe(true);
     expect(isValidModelForBackend('o3', 'codex-cli')).toBe(true);
     expect(isValidModelForBackend('o4-mini', 'codex-sdk')).toBe(true);
   });
@@ -78,6 +80,7 @@ describe('getModelOptionsForBackend', () => {
     expect(options).toContain('gpt-5.4');
     expect(options).toContain('gpt-5.4-mini');
     expect(options).toContain('gpt-5.4-pro');
+    expect(options).toContain('gpt-5.5');
     expect(options).not.toContain('sonnet');
   });
 });

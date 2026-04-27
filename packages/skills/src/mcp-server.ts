@@ -332,7 +332,7 @@ async function main(): Promise<void> {
     if (args.sessionKey) {
       const isCodex = args.backend.startsWith('codex');
       const modelDesc = isCodex
-        ? 'Model alias (gpt-5.4, gpt-5.4-mini, gpt-5.4-pro, gpt-5.4-nano) or full OpenAI model ID'
+        ? 'Model alias (gpt-5.4, gpt-5.4-mini, gpt-5.4-pro, gpt-5.4-nano, gpt-5.5) or full OpenAI model ID'
         : 'Model alias (sonnet, opus, haiku, opus[1m], sonnet[1m], opusplan) or full model ID (e.g., claude-opus-4-6)';
       const runtimeModelLists = loadRuntimeModelLists(args.dataDir);
       const available = getModelOptionsForBackend(args.backend, runtimeModelLists);

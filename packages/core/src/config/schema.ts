@@ -288,7 +288,7 @@ export const DEFAULT_CONFIG: CCBuddyConfig = {
       default_sandbox: 'workspace-write',
     },
     claude_models: ['sonnet', 'opus', 'haiku', 'opus[1m]', 'sonnet[1m]', 'opusplan'],
-    codex_models: ['gpt-5.4', 'gpt-5.4-mini', 'gpt-5.4-pro', 'gpt-5.4-nano'],
+    codex_models: ['gpt-5.4', 'gpt-5.4-mini', 'gpt-5.4-pro', 'gpt-5.4-nano', 'gpt-5.5'],
     external_mcp_servers: [],
   },
   memory: {

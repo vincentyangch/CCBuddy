@@ -9,6 +9,7 @@ export const CODEX_MODEL_ALIASES = [
   'gpt-5.4-mini',
   'gpt-5.4-pro',
   'gpt-5.4-nano',
+  'gpt-5.5',
 ] as const;
 
 export const KNOWN_MODEL_ALIASES = [

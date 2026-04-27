@@ -85,6 +85,7 @@ ccbuddy:
       - "gpt-5.4-mini"
       - "gpt-5.4-pro"
       - "gpt-5.4-nano"
+      - "gpt-5.5"
     # Optional extra stdio MCP servers to expose alongside the built-in skills server.
     # Example:
     # external_mcp_servers:
