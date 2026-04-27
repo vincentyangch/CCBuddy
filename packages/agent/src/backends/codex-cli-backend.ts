@@ -4,6 +4,7 @@ import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import type { AgentBackend, AgentRequest, AgentEvent, AgentEventBase, PermissionGateRule, ServiceTier } from '@ccbuddy/core';
+import { createLaunchctlGuardBin, prependPathEntry, removeLaunchctlGuardBin, shouldInstallLaunchctlGuard } from './codex-launchctl-guard.js';
 import { generateCodexRules } from './codex-rules.js';
 import { prepareCodexMcpServers, restoreModifiedProtectedFiles, serializeCodexConfigOverrides, snapshotProtectedFiles, type CodexConfigOverrideObject } from './codex-runtime-helpers.js';
 import { isProvisionalRemoteSdkSessionId } from '../session/session-store.js';
@@ -21,6 +22,7 @@ export class CodexCliBackend implements AgentBackend {
   private readonly options: CodexCliBackendOptions;
   private processes: Map<string, ChildProcess> = new Map();
   private readonly rulesFilePath: string | null;
+  private readonly launchctlGuardDir: string | null;
 
   constructor(options: CodexCliBackendOptions = {}) {
     this.options = options;
@@ -33,6 +35,10 @@ export class CodexCliBackend implements AgentBackend {
     } else {
       this.rulesFilePath = null;
     }
+
+    this.launchctlGuardDir = shouldInstallLaunchctlGuard(options.permissionGateRules)
+      ? createLaunchctlGuardBin()
+      : null;
   }
 
   async *execute(request: AgentRequest): AsyncGenerator<AgentEvent> {
@@ -174,6 +180,7 @@ export class CodexCliBackend implements AgentBackend {
     if (this.rulesFilePath) {
       try { rmSync(dirname(this.rulesFilePath), { recursive: true, force: true }); } catch { /* ignore */ }
     }
+    removeLaunchctlGuardBin(this.launchctlGuardDir);
   }
 
   private runCodex(
@@ -186,6 +193,9 @@ export class CodexCliBackend implements AgentBackend {
       const env = { ...process.env, ...extraEnv } as Record<string, string>;
       if (this.options.apiKey) {
         env.CODEX_API_KEY = this.options.apiKey;
+      }
+      if (this.launchctlGuardDir) {
+        prependPathEntry(env, this.launchctlGuardDir);
       }
 
       const proc = spawn(this.options.codexPath ?? 'codex', args, {

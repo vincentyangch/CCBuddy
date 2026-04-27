@@ -29,6 +29,8 @@ describe('generateCodexRules', () => {
   it('generates deny rules for launchctl', () => {
     const output = generateCodexRules(defaultRules);
     expect(output).toContain('prefix_rule(pattern=["launchctl"], decision="deny")');
+    expect(output).toContain('prefix_rule(pattern=["/bin/launchctl"], decision="deny")');
+    expect(output).toContain('prefix_rule(pattern=["/usr/bin/launchctl"], decision="deny")');
   });
 
   it('generates deny rules for npm-publish', () => {

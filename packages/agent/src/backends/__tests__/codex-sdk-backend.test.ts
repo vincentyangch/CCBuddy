@@ -409,6 +409,34 @@ describe('CodexSdkBackend', () => {
     backend.destroy(); // clean up temp files
   });
 
+  it('prepends launchctl guard bin to Codex PATH when launchctl gate is configured', async () => {
+    const rules: PermissionGateRule[] = [
+      { name: 'launchctl', pattern: 'launchctl', tool: 'Bash', description: 'Block LaunchAgent operations' },
+    ];
+
+    mockRunStreamed.mockResolvedValue({
+      events: makeEventStream(
+        { type: 'thread.started', thread_id: 'thread-1' },
+        { type: 'item.completed', item: { id: 'msg1', type: 'agent_message', text: 'ok' } },
+        { type: 'turn.completed', usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } },
+      ),
+    });
+
+    const backend = new CodexSdkBackend({ permissionGateRules: rules });
+    try {
+      for await (const _ of backend.execute(makeRequest())) { /* consume */ }
+
+      const codexOpts = MockCodex.mock.calls[0][0] as any;
+      const guardDir = codexOpts.env.PATH.split(':')[0];
+      const guardScript = join(guardDir, 'launchctl');
+      expect(guardDir).toContain('ccbuddy-codex-launchctl-guard');
+      expect(existsSync(guardScript)).toBe(true);
+      expect(readFileSync(guardScript, 'utf8')).toContain('refusing to run launchctl');
+    } finally {
+      backend.destroy();
+    }
+  });
+
   it('does not set exec_policy.rules_file when no permission gate rules', async () => {
     mockRunStreamed.mockResolvedValue({
       events: makeEventStream(

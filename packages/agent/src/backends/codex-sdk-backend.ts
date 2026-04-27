@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import type { AgentBackend, AgentRequest, AgentEvent, AgentEventBase, PermissionGateRule, ServiceTier } from '@ccbuddy/core';
 import { Codex, type ThreadOptions, type ThreadEvent, type Input, type UserInput } from '@openai/codex-sdk';
+import { createLaunchctlGuardBin, prependPathEntry, removeLaunchctlGuardBin, shouldInstallLaunchctlGuard } from './codex-launchctl-guard.js';
 import { generateCodexRules } from './codex-rules.js';
 import { prepareCodexMcpServers, restoreModifiedProtectedFiles, restoreProtectedFiles, snapshotProtectedFiles } from './codex-runtime-helpers.js';
 import { isProvisionalRemoteSdkSessionId } from '../session/session-store.js';
@@ -48,6 +49,7 @@ export class CodexSdkBackend implements AgentBackend {
   private readonly options: CodexSdkBackendOptions;
   private readonly abortControllers = new Map<string, AbortController>();
   private readonly rulesFilePath: string | null;
+  private readonly launchctlGuardDir: string | null;
 
   constructor(options: CodexSdkBackendOptions = {}) {
     this.options = options;
@@ -63,12 +65,17 @@ export class CodexSdkBackend implements AgentBackend {
     } else {
       this.rulesFilePath = null;
     }
+
+    this.launchctlGuardDir = shouldInstallLaunchctlGuard(options.permissionGateRules)
+      ? createLaunchctlGuardBin()
+      : null;
   }
 
   destroy(): void {
     if (this.rulesFilePath) {
       try { rmSync(dirname(this.rulesFilePath), { recursive: true, force: true }); } catch { /* ignore */ }
     }
+    removeLaunchctlGuardBin(this.launchctlGuardDir);
   }
 
   async *execute(request: AgentRequest): AsyncGenerator<AgentEvent> {
@@ -100,6 +107,9 @@ export class CodexSdkBackend implements AgentBackend {
           codexConfig[`mcp_servers.${name}.args`] = server.args;
           if (server.env) codexConfig[`mcp_servers.${name}.env`] = server.env;
         }
+      }
+      if (this.launchctlGuardDir) {
+        prependPathEntry(codexEnv, this.launchctlGuardDir);
       }
 
       // Wire in deny rules file if generated

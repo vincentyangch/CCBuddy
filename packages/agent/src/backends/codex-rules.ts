@@ -52,6 +52,8 @@ function expandGateRule(rule: PermissionGateRule): CodexDenyRule[] {
     case 'launchctl':
       rules.push(
         { pattern: ['launchctl'], comment: rule.description },
+        { pattern: ['/bin/launchctl'], comment: rule.description },
+        { pattern: ['/usr/bin/launchctl'], comment: rule.description },
       );
       break;
 

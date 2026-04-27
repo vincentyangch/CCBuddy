@@ -29,7 +29,7 @@ function expandGateRule(rule) {
             rules.push({ pattern: ['git', 'reset', '--hard'], comment: rule.description }, { pattern: ['git', 'checkout', '.'], comment: rule.description }, { pattern: ['git', 'clean', '-f'], comment: rule.description }, { pattern: ['git', 'clean', '-fd'], comment: rule.description }, { pattern: ['git', 'push', '--force'], comment: rule.description });
             break;
         case 'launchctl':
-            rules.push({ pattern: ['launchctl'], comment: rule.description });
+            rules.push({ pattern: ['launchctl'], comment: rule.description }, { pattern: ['/bin/launchctl'], comment: rule.description }, { pattern: ['/usr/bin/launchctl'], comment: rule.description });
             break;
         case 'npm-publish':
             rules.push({ pattern: ['npm', 'publish'], comment: rule.description });

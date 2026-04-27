@@ -3,6 +3,7 @@ import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { Codex } from '@openai/codex-sdk';
+import { createLaunchctlGuardBin, prependPathEntry, removeLaunchctlGuardBin, shouldInstallLaunchctlGuard } from './codex-launchctl-guard.js';
 import { generateCodexRules } from './codex-rules.js';
 import { prepareCodexMcpServers, restoreModifiedProtectedFiles, restoreProtectedFiles, snapshotProtectedFiles } from './codex-runtime-helpers.js';
 const PROVISIONAL_REMOTE_SESSION_PREFIX = '__pending_remote__:';
@@ -31,6 +32,7 @@ export class CodexSdkBackend {
     options;
     abortControllers = new Map();
     rulesFilePath;
+    launchctlGuardDir;
     constructor(options = {}) {
         this.options = options;
         // Generate static deny rules from permission gate config
@@ -45,6 +47,9 @@ export class CodexSdkBackend {
         else {
             this.rulesFilePath = null;
         }
+        this.launchctlGuardDir = shouldInstallLaunchctlGuard(options.permissionGateRules)
+            ? createLaunchctlGuardBin()
+            : null;
     }
     destroy() {
         if (this.rulesFilePath) {
@@ -53,6 +58,7 @@ export class CodexSdkBackend {
             }
             catch { /* ignore */ }
         }
+        removeLaunchctlGuardBin(this.launchctlGuardDir);
     }
     async *execute(request) {
         const base = {
@@ -81,6 +87,9 @@ export class CodexSdkBackend {
                     if (server.env)
                         codexConfig[`mcp_servers.${name}.env`] = server.env;
                 }
+            }
+            if (this.launchctlGuardDir) {
+                prependPathEntry(codexEnv, this.launchctlGuardDir);
             }
             // Wire in deny rules file if generated
             if (this.rulesFilePath) {

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { AgentRequest } from '@ccbuddy/core';
 import { EventEmitter } from 'events';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -333,6 +333,37 @@ describe('CodexCliBackend', () => {
     expect(args).toContain('mcp_servers.test.env.PUBLIC_SETTING="visible"');
     const rulesOverride = (args as string[]).find((arg) => arg.startsWith('exec_policy.rules_file='));
     expect(rulesOverride).toContain('ccbuddy.rules');
+  });
+
+  it('prepends launchctl guard bin to Codex CLI PATH when launchctl gate is configured', async () => {
+    const proc = makeMockProcess();
+    mockSpawn.mockReturnValue(proc as any);
+
+    const backend = new CodexCliBackend({
+      permissionGateRules: [
+        { name: 'launchctl', pattern: 'launchctl', tool: 'Bash', description: 'Block LaunchAgent operations' },
+      ],
+    });
+    const gen = backend.execute(makeRequest());
+    const nextPromise = gen.next();
+
+    process.nextTick(() => {
+      proc.stdout.emit('data', Buffer.from('{"type":"item.completed","item":{"id":"msg1","type":"agent_message","text":"ok"}}\n'));
+      proc.emit('close', 0);
+    });
+
+    try {
+      await nextPromise;
+
+      const [, , options] = mockSpawn.mock.calls[0] as [string, string[], { env: Record<string, string> }];
+      const guardDir = options.env.PATH.split(':')[0];
+      const guardScript = join(guardDir, 'launchctl');
+      expect(guardDir).toContain('ccbuddy-codex-launchctl-guard');
+      expect(existsSync(guardScript)).toBe(true);
+      expect(readFileSync(guardScript, 'utf8')).toContain('refusing to run launchctl');
+    } finally {
+      backend.destroy();
+    }
   });
 
   it('keeps sensitive MCP env values out of Codex config args while preserving process env', async () => {
