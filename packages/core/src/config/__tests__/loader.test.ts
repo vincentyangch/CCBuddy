@@ -89,6 +89,17 @@ ccbuddy:
     expect(config.gateway.unknown_user_reply).toBe(true);
   });
 
+  it('loads Codex startup timeout from yaml', () => {
+    writeFileSync(join(tmpDir, 'default.yaml'), `ccbuddy:
+  agent:
+    codex:
+      startup_timeout_ms: 90000
+`);
+
+    const config = loadConfig(tmpDir);
+    expect(config.agent.codex.startup_timeout_ms).toBe(90000);
+  });
+
   it('maps legacy top-level permission_gates into agent.permission_gates', () => {
     writeFileSync(join(tmpDir, 'default.yaml'), `ccbuddy:
   permission_gates:

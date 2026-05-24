@@ -192,6 +192,7 @@ export async function bootstrap(configDir?: string): Promise<BootstrapResult> {
           networkAccess: config.agent.codex.network_access,
           defaultSandbox: config.agent.codex.default_sandbox,
           defaultServiceTier: config.agent.codex.default_service_tier,
+          startupTimeoutMs: config.agent.codex.startup_timeout_ms,
           permissionGateRules: config.agent.permission_gates.enabled
             ? config.agent.permission_gates.rules
             : undefined,

@@ -19,6 +19,7 @@ export interface CodexConfig {
   codex_path?: string;
   network_access: boolean;
   default_sandbox: 'read-only' | 'workspace-write' | 'danger-full-access';
+  startup_timeout_ms?: number;
   default_reasoning_effort?: ReasoningEffort;
   default_service_tier?: ServiceTier;
   default_verbosity?: Verbosity;
@@ -286,6 +287,7 @@ export const DEFAULT_CONFIG: CCBuddyConfig = {
       api_key_env: 'OPENAI_API_KEY',
       network_access: true,
       default_sandbox: 'workspace-write',
+      startup_timeout_ms: 90_000,
     },
     claude_models: ['sonnet', 'opus', 'haiku', 'opus[1m]', 'sonnet[1m]', 'opusplan'],
     codex_models: ['gpt-5.4', 'gpt-5.4-mini', 'gpt-5.4-pro', 'gpt-5.4-nano', 'gpt-5.5'],

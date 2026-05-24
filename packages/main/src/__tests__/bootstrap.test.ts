@@ -73,6 +73,7 @@ const mockConsolidationService = vi.fn();
 const mockBackupService = vi.fn();
 const mockSessionDatabase = vi.fn();
 const mockWorkspaceStore = vi.fn().mockReturnValue({ get: vi.fn() });
+const mockSchedulerJobStore = vi.fn();
 
 vi.mock('@ccbuddy/memory', () => ({
   MemoryDatabase: function (this: unknown, ...args: unknown[]) {
@@ -107,6 +108,9 @@ vi.mock('@ccbuddy/memory', () => ({
   },
   WorkspaceStore: function (this: unknown, ...args: unknown[]) {
     return mockWorkspaceStore(...args);
+  },
+  SchedulerJobStore: function (this: unknown, ...args: unknown[]) {
+    return mockSchedulerJobStore(...args);
   },
 }));
 
@@ -482,6 +486,7 @@ describe('bootstrap', () => {
           network_access: false,
           default_sandbox: 'read-only',
           default_service_tier: 'fast',
+          startup_timeout_ms: 90_000,
         },
       },
     });
@@ -494,6 +499,7 @@ describe('bootstrap', () => {
       networkAccess: false,
       defaultSandbox: 'read-only',
       defaultServiceTier: 'fast',
+      startupTimeoutMs: 90_000,
       permissionGateRules: codexConfig.agent.permission_gates.rules,
     }));
   });

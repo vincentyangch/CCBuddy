@@ -73,6 +73,7 @@ ccbuddy:
       api_key_env: "OPENAI_API_KEY"
       network_access: true
       default_sandbox: "workspace-write"
+      startup_timeout_ms: 90000
     claude_models:
       - "sonnet"
       - "opus"
